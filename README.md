@@ -2,7 +2,10 @@
 
 ## Goal
 
-Run an **LLM-driven embodied agent** in **ManiSkill** simulation on **Windows (Git-Bash)** without robot hardware, optionally using a real **VLA over HTTP** (Octo `octo-small-1.5`) instead of a stub policy. Architecture, milestones, and API contracts live in **`SRD.md`** (oriented at maintainers/agents).
+Making robots to successfuly accomplish **Long-horizon** tasks via an **LLM loop**.
+This will include breaking the requested task into **subtasks**, creating **callable tools** via the LLM, using **VLAs** for complex arm moves, and feeding the LLM **RGB** from sim or cameras until the top-level task is done.
+**Platform-generic**—ManiSkill first, then LIBERO.
+Full picture: **`SRD.md`**.
 
 ## Setup
 
@@ -28,14 +31,14 @@ source .octo-venv/Scripts/activate
 # One-time: install JAX + FastAPI + Octo stack for services/octo_service.py (weights e.g. under ~/.cache/octo-small-1.5).
 ```
 
-**Config:** copy `longor/.env.example` → `longor/.env` and set LLM keys (e.g. `OPENAI_API_KEY` if using OpenAI) and any VLA vars you need.
+**Config:** create a file `longor/.env` and set LLM keys (e.g. `OPENAI_API_KEY` if using OpenAI) and any VLA vars you need.
 
 ## Usage
 
 **Terminal A — VLA server**
 
 ```bash
-cd ..                    # parent of longor/
+# at parent of longor/
 source .octo-venv/Scripts/activate
 python longor/services/octo_service.py
 ```
@@ -45,19 +48,16 @@ Wait until the service reports healthy on port **8765** (or the port in your `.e
 **Terminal B — PickCube example (with VLA)**
 
 ```bash
-cd ..                    # parent of longor/
+# at parent of longor/
 source .venv/Scripts/activate
-cd longor
-VLA_SERVICE_URL=http://localhost:8765 PYTHONPATH=src python examples/maniskill_pickcube.py
+python examples/maniskill_pickcube.py
 ```
-
-Omit `VLA_SERVICE_URL` to use the **stub** policy path (no Octo process).
 
 **Regression tests**
 
 ```bash
-cd longor
-source ../.venv/Scripts/activate
+# at parent of longor/
+source .venv/Scripts/activate
 pytest
 ```
 

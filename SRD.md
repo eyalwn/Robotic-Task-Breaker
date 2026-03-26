@@ -11,7 +11,7 @@ Enable **long-horizon** robot tasks by running an **LLM in a closed loop**:
 3. **Feedback** is **RGB only** (sim renderer or real camera): capture → LLM / VLA as needed, then continue until the top-level task is done.
 4. **Subtask success or failure** is judged by the **LLM** when a subtask ends. Finer replanning vs retry policy is **out of scope** for this document.
 
-**Platforms (non-exhaustive):** the codebase stays **platform-generic**; planned targets are **ManiSkill** simulation (including XLeRobot-style assets where applicable), **LIBERO** simulation, and **real XLeRobot** hardware.
+**Platforms (non-exhaustive):** the codebase stays **platform-generic**; near-term targets are **ManiSkill** and **LIBERO** simulation.
 
 **Arm control:** manipulation policies are **VLAs only**, behind a **single VLA HTTP server** at a time (see below). Other stacks (navigation, grippers without VLA) are ordinary tools/backends as the codebase evolves.
 
@@ -19,25 +19,21 @@ Enable **long-horizon** robot tasks by running an **LLM in a closed loop**:
 
 ### M1
 
-End-to-end **long-horizon loop** on **simulation only**, **Windows**, **ManiSkill** first: LLM + subtask list + parameterized manipulation tools + one VLA server + RGB.
+**Linux** support for the existing sim + VLA + agent stack (**parity** with Windows for dev/CI).
 
 ### M2
 
-**Linux** support for the same sim + VLA stack (parity with Windows for dev/CI).
+**LIBERO** simulation backend (same agent/VLA contract; env-specific adapters).
 
 ### M3
 
-**LIBERO** simulation backend (same agent/VLA contract; env-specific adapters).
+**Additional VLA backends** beyond the first HTTP service (e.g. **π₀.5** / Pi0.5-class models on capable hosts). Prefer a **stable HTTP-facing contract** where practical.
 
 ### M4
 
-**Additional VLA backends** (including heavier models than the initial lightweight server—stronger hosts). Same HTTP-facing contract where possible.
+**Multi-tool long-horizon loop** on **simulation** (**ManiSkill** first, **Windows** reference host): LLM + ordered **subtasks** + **more than one** distinct **tool** used across the run (not a single fixed manipulation tool only), **RGB** feedback, **VLA** manipulation via parameterized factories and **one** VLA HTTP server at a time.
 
-### M5
-
-**Real XLeRobot** hardware path (RGB, VLA tools, backends)—subject to safety and bring-up work not specified here.
-
-Order and numbering may be adjusted; **M2–M4** are urgent parallel concerns after **M1** is demonstrable.
+**M1–M3** widen OS, sim, and policy options; **M4** is the integrated loop milestone on the reference stack.
 
 ## VLA integration — architecture
 
