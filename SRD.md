@@ -23,11 +23,11 @@ Enable **long-horizon** robot tasks by running an **LLM in a closed loop**:
 
 ### M2
 
-**LIBERO** simulation backend (same agent/VLA contract; env-specific adapters).
+**Additional VLA backends** beyond the first HTTP service (e.g. **π₀.5** / Pi0.5-class models on capable hosts). Prefer a **stable HTTP-facing contract** where practical.
 
 ### M3
 
-**Additional VLA backends** beyond the first HTTP service (e.g. **π₀.5** / Pi0.5-class models on capable hosts). Prefer a **stable HTTP-facing contract** where practical.
+**LIBERO** simulation backend (same agent/VLA contract; env-specific adapters).
 
 ### M4
 
