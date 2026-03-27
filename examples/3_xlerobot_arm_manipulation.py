@@ -9,6 +9,12 @@ Device paths are read from env vars (set these before running on HW):
   ROBOCREW_USB_LEFT     left-arm/head USB port    (default: /dev/arm_left)
 """
 import os
+import sys
+from pathlib import Path
+
+_src = Path(__file__).resolve().parents[1] / "src"
+if str(_src) not in sys.path:
+    sys.path.insert(0, str(_src))
 
 from core.camera import RobotCamera
 from core.tools import save_checkpoint
@@ -25,7 +31,6 @@ from robots.XLeRobot.tools import \
     create_turn_right, \
     create_turn_left
 from robots.XLeRobot.servo_controls import ServoControler
-from pathlib import Path
 
 
 prompt_path = Path(__file__).parent.parent.resolve() / "src/robots/XLeRobot/xlerobot.prompt"

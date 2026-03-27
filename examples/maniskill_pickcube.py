@@ -7,7 +7,14 @@ Observation/render sanity for VLA:
   Fix rendering first (driver/apps/headless mode) before tuning VLA axis settings.
 """
 import os
+import sys
 import time
+from pathlib import Path
+
+_src = Path(__file__).resolve().parents[1] / "src"
+if str(_src) not in sys.path:
+    sys.path.insert(0, str(_src))
+
 from dotenv import find_dotenv, load_dotenv
 import logging
 

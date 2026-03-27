@@ -9,7 +9,7 @@ from pathlib import Path
 
 MODE = os.environ.get("MODE", "0660")
 GROUP = os.environ.get("GROUP", "dialout")
-SYMLINK_PREFIX = os.environ.get("SYMLINK_PREFIX", "longor")
+SYMLINK_PREFIX = os.environ.get("SYMLINK_PREFIX", "Longor")
 
 
 def udevadm(args):

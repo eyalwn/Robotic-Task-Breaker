@@ -17,7 +17,7 @@ import pytest
 from PIL import Image
 TestClient = pytest.importorskip("starlette.testclient").TestClient
 
-# Make `services/` importable when running from repo root / longor/
+# Make `services/` importable when running from repo root / Longor/
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
 import services.octo_service as svc

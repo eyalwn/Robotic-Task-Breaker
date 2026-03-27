@@ -101,7 +101,7 @@ def main():
 		return
 
 	rules = [build_rule(entry["device"], entry["alias"]) for entry in assignments]
-	rules_path = "/etc/udev/rules.d/99-longor.rules"
+	rules_path = "/etc/udev/rules.d/99-Longor.rules"
 	with open(rules_path, "w", encoding="ascii") as fh:
 		fh.write("\n\n".join(rules) + "\n")
 	print(f"Saved {len(rules)} rules to {rules_path}.")
