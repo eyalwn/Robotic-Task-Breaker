@@ -21,6 +21,23 @@ Enable **long-horizon** robot tasks by running an **LLM in a closed loop**:
 
 **Linux** support for the existing sim + VLA + agent stack (**parity** with Windows for dev/CI).
 
+**Scope**
+
+- Documented setup paths for **Linux** (POSIX venv activation, ManiSkill upstream install, Octo/JAX on **NVIDIA + CUDA** where applicable) without breaking the **Windows** flow already used on the reference machine.
+- A fresh clone + `README.md` steps should get a developer to: **two venvs**, **Octo HTTP service** running, **`examples/maniskill_pickcube.py`** against ManiSkill + VLA, and **`pytest`** (same expectations as Windows; **integration** tests are marked — see `pytest.ini` / `pytest -m integration`).
+
+**Acceptance (manual, on Linux host)**
+
+- [ ] `.venv`: `pip install -r requirements.txt`, install ManiSkill per [ManiSkill installation](https://maniskill.readthedocs.io/en/latest/user_guide/getting_started/installation.html), run `pytest` from repo root.
+- [ ] `.octo-venv`: Octo stack + JAX (GPU build on CUDA host) + `services/requirements-octo.txt`; weights available at `VLA_MODEL_DIR`; `python services/octo_service.py` serves `/health` on `VLA_PORT`.
+- [ ] With both terminals up and `.env` filled, `python examples/maniskill_pickcube.py` completes a run (success/failure per sim/policy is fine; wiring must work).
+- [ ] Windows instructions in `README.md` remain valid (Git-Bash / `Scripts\activate`).
+
+**Out of scope for M1**
+
+- CI matrix on Linux (optional follow-up).
+- New backends or changing the VLA HTTP contract.
+
 ### M2
 
 **Additional VLA backends** beyond the first HTTP service (e.g. **π₀.5** / Pi0.5-class models on capable hosts). Prefer a **stable HTTP-facing contract** where practical.
