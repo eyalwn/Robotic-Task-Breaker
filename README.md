@@ -20,7 +20,15 @@ source .venv/Scripts/activate    # Git-Bash on Windows
 pip install -r requirements.txt
 ```
 
-The PickCube example also needs **ManiSkill / SAPIEN** (not in `requirements.txt`); install per your machine and upstream docs. Optional hardware stacks: `requirements-optional.txt`.
+The PickCube example also needs **ManiSkill / SAPIEN** (not in `requirements.txt`); install per your machine and upstream docs.
+
+**Environment variables**
+
+- Copy the committed template once: `cp .env.example .env` (Git-Bash on Windows: same command).
+- Edit `.env` locally. **Do not commit `.env`** — it is gitignored; only `.env.example` is shared.
+- Set at least one LLM credential your chosen `LLM_MODEL` needs (e.g. `OPENAI_API_KEY` for OpenAI, or `GOOGLE_API_KEY` for Google models). Other keys in `.env.example` are safe defaults you can adjust (VLA port, ManiSkill options, etc.).
+
+`python-dotenv` loads `.env` from the repo root when you run examples and `LLMAgent`.
 
 **2 — Octo VLA HTTP service (`.octo-venv`)**
 
@@ -30,8 +38,6 @@ python -m venv .octo-venv
 source .octo-venv/Scripts/activate
 # One-time: install JAX + FastAPI + Octo stack for services/octo_service.py (weights e.g. under ~/.cache/octo-small-1.5).
 ```
-
-**Config:** create `.env` in this repo (see `.env.example` if present) and set LLM keys (e.g. `OPENAI_API_KEY` if using OpenAI) and any VLA vars you need.
 
 ## Usage
 
@@ -43,15 +49,17 @@ source .octo-venv/Scripts/activate
 python services/octo_service.py
 ```
 
-Wait until the service reports healthy on port **8765** (or the port in your `.env`).
+Wait until the service reports healthy on the port from your `.env` (default **8765**, `VLA_PORT`).
 
 **Terminal B — PickCube example (with VLA)**
 
 ```bash
 cd /path/to/Longor
 source .venv/Scripts/activate
-VLA_SERVICE_URL=http://localhost:8765 python examples/maniskill_pickcube.py
+python examples/maniskill_pickcube.py
 ```
+
+The example talks to Octo at `http://localhost:${VLA_PORT}` (set `VLA_PORT` in `.env` if you changed the server port).
 
 You can also run `python examples/maniskill_pickcube.py` from `Longor/`; examples prepend `src` on `sys.path` automatically.
 
