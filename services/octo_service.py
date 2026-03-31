@@ -1,6 +1,7 @@
 """
 Octo-small-1.5 FastAPI inference service.
-Run: python services/octo_service.py
+Run from repo root: python services/run_vla_server.py (VLA_POLICY=octo-small-1.5 in .env).
+Direct: python services/octo_service.py
 Env: VLA_MODEL_DIR, VLA_PORT, VLA_ACTION_SCALE
 """
 

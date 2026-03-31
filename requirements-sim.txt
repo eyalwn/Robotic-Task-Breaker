@@ -1,0 +1,13 @@
+# ManiSkill stack for PickCube only (until M3 — see README).
+#
+# Default: CPU-oriented PyTorch wheels from PyPI (works on Windows Git Bash and Linux CPU).
+#
+# Linux + NVIDIA (GPU PyTorch): install PyTorch with CUDA *first* using the command from
+#   https://pytorch.org/get-started/locally/
+# then install ManiSkill only:
+#   pip install "mani-skill>=3.0.0b20"
+# (Skip reinstalling torch from this file if you already installed a CUDA build.)
+
+torch>=2.1,<3
+torchvision>=0.16
+mani-skill>=3.0.0b20

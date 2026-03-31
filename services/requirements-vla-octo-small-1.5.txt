@@ -1,0 +1,5 @@
+# Pin file for policy octo-small-1.5 — install order: README §3 (VLA venv).
+jax>=0.4
+python-dotenv>=1.0
+fastapi>=0.100
+uvicorn[standard]>=0.23

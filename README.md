@@ -1,111 +1,146 @@
 # Longor
 
-This file lives at the **repository root** (the directory that contains `src/`, `examples/`, and `services/`). If your checkout is nested (e.g. `…/RoboCrew/Longor`), `cd` to that inner folder before running the commands below.
+Note: This file lives at the **repository root** (the directory that contains `src/`, `examples/`, and `services/`). If your checkout is nested (e.g. `…/RoboCrew/Longor`), `cd` to that inner folder first.
+
+**Supported dev hosts:** **Linux** and **Windows (Git Bash)** only.
 
 ## Goal
 
-Making robots to successfuly accomplish **Long-horizon** tasks via an **LLM loop**.
-This will include breaking the requested task into **subtasks**, creating **callable tools** via the LLM, using **VLAs** for complex arm moves, and feeding the LLM **RGB** from sim or cameras until the top-level task is done.
-**Platform-generic**—ManiSkill first, then LIBERO.
-Full picture: **`SRD.md`**.
+Long-horizon robot tasks via an **LLM loop**, **VLAs** for arm moves, **RGB** feedback from sim or cameras. **ManiSkill** first, then LIBERO (see `SRD.md`).
 
 ## Setup
 
-**Layout:** create two virtualenvs **inside this repo** (same folder as `README.md`): `.venv` (app/sim/LLM) and `.octo-venv` (Octo VLA server).
+Create **two** virtualenvs in this directory: `.venv` (app / sim / LLM) and `.vla-venv` (VLA HTTP server only). You may use `python -m pip` via the venv’s interpreter so you do not need to activate while installing.
 
-**Activate a venv**
+### 1 — Environment file
 
-| OS | Command |
-| --- | --- |
-| **Linux / macOS** | `source .venv/bin/activate` or `source .octo-venv/bin/activate` |
-| **Windows (Git Bash)** | `source .venv/Scripts/activate` or `source .octo-venv/Scripts/activate` |
-| **Windows (cmd)** | `.venv\Scripts\activate.bat` |
-| **Windows (PowerShell)** | `.venv\Scripts\Activate.ps1` |
+1. `cp .env.example .env`
+2. Set secrets (e.g. `OPENAI_API_KEY`) and `VLA_POLICY` (e.g. `octo-small-1.5` for the default stack).
+3. Never commit `.env` (gitignored).
 
-**1 — Client / sim / LLM (`.venv`)**
+### 2 — App venv (`.venv`)
+
+From the repo root:
+
+**Linux (with CUDA)**
+
+GPU PyTorch for ManiSkill: **do not** run `pip install -r requirements-sim.txt` here; that file pins **CPU** `torch`/`torchvision`. Install **CUDA** PyTorch first (use the `pip` command from [pytorch.org/get-started](https://pytorch.org/get-started/locally/) for your CUDA version), then ManiSkill:
 
 ```bash
-cd /path/to/Longor
+python3 -m venv .venv
+.venv/bin/python -m pip install -U pip
+.venv/bin/python -m pip install -r requirements.txt
+# Then run the PyTorch+CUDA install line from pytorch.org (not shown here — it varies by CUDA).
+.venv/bin/python -m pip install "mani-skill>=3.0.0b20"
+```
+
+**Windows (Git Bash)**
+
+```bash
 python -m venv .venv
-source .venv/bin/activate        # Linux / macOS
-# source .venv/Scripts/activate  # Windows — Git Bash
-pip install -r requirements.txt
+.venv/Scripts/python -m pip install -U pip
+.venv/Scripts/python -m pip install -r requirements.txt
+.venv/Scripts/python -m pip install -r requirements-sim.txt
 ```
 
-**ManiSkill** (required for `examples/maniskill_pickcube.py`) is **not** in `requirements.txt`. Install per the official guide: [ManiSkill — installation](https://maniskill.readthedocs.io/en/latest/user_guide/getting_started/installation.html) (typically `pip install mani_skill` plus a matching **PyTorch** install). Upstream targets **Linux + NVIDIA GPU + Vulkan**; **Windows** is supported but often more fragile—keep `MANISKILL_SIM_BACKEND` / driver notes from `.env.example` when debugging.
+**Note:** Rationale for `requirements-sim.txt` vs CUDA is in the header of `requirements-sim.txt`.
+**Note:** keep `MANISKILL_ENV=PickCube-v1` in `.env` (until M3).
 
-**Environment variables**
+### 3 — VLA venv (`.vla-venv`)
 
-- Copy the committed template once: `cp .env.example .env` (Git-Bash on Windows: same command).
-- Edit `.env` locally. **Do not commit `.env`** — it is gitignored; only `.env.example` is shared.
-- Set at least one LLM credential your chosen `LLM_MODEL` needs (e.g. `OPENAI_API_KEY` for OpenAI, or `GOOGLE_API_KEY` for Google models). Other keys in `.env.example` are safe defaults you can adjust (VLA port, ManiSkill options, etc.).
+**Flow (any policy):**
+Note: the venv paths in this section refer to Linux. For Windows, replace every `.vla-venv/bin/python` command with: `.vla-venv/Scripts/python`.
 
-`python-dotenv` loads `.env` from the repo root when you run examples and `LLMAgent`.
-
-**2 — Octo VLA HTTP service (`.octo-venv`)**
-
-Use a **separate** venv: Octo/JAX versions are sensitive and differ from the app venv.
-
+1. make sure that the value in `VLA_POLICY` is listed in `services/run_vla_server.py`; adding a new policy means a new `requirements-vla-*.txt`, a server module, and a registry entry.
+2. Create `.vla-venv` and upgrade `pip`.
 ```bash
-cd /path/to/Longor
-python -m venv .octo-venv
-source .octo-venv/bin/activate        # Linux / macOS
-# source .octo-venv/Scripts/activate  # Windows — Git Bash
+python -m venv .vla-venv
+.vla-venv/bin/python -m pip install -U pip
 ```
+**Note:** for `octo-small-1.5` use Python 3.11 or lower (due to the dependency `tensorflow_text` - tends to fail on Windows with Python **3.12+**).
+3. Install JAX the way your OS needs. for Linux:
+```bash
+.vla-venv/bin/python -m pip install -U "jax[cuda12]"
+# (`jax[cuda13]` is fine if that matches your driver — see [JAX — NVIDIA GPU](https://jax.readthedocs.io/en/latest/installation.html#nvidia-gpu))
+```
+for Windows (JAX supports CPU only):
+```bash
+.vla-venv/Scripts/python -m pip install -U jax
+```
+4. Install the **policy’s upstream Python package** (clone + editable install — see the Octo example below; other policies follow their upstream docs).
+For Octo for example, the commands will be:
+```bash
+git clone https://github.com/octo-models/octo.git ~/octo
+.vla-venv/bin/python -m pip install -e ~/octo
+```
+5. Install Longor’s deps requirements for that policy (JAX + HTTP shim, etc.):
+```bash
+.vla-venv/bin/python -m pip install -r ~/octo/requirements.txt
+.vla-venv/bin/python -m pip install -r services/requirements-vla-octo-small-1.5.txt  # replace with your policy id
+```
+6. Download the model's weights into `VLA_MODEL_DIR` (paths differ per policy; see `.env.example` and the policy’s upstream docs).
 
-1. **Install Octo** from [octo-models/octo](https://github.com/octo-models/octo) (their README: `pip install -e .` and `pip install -r requirements.txt` inside a clone of that repo). Use a Python version they support (often 3.10).
-2. **Install JAX** for your hardware ([JAX installation](https://jax.readthedocs.io/en/latest/installation.html)):
-   - **Linux + NVIDIA (recommended for this project):** e.g. `pip install -U "jax[cuda12]"` or `"jax[cuda13]"` matching your driver/CUDA stack (see JAX docs; CUDA wheels are **Linux x86_64**).
-   - **CPU-only / Windows:** `pip install -U jax` (CPU). NVIDIA GPU wheels for JAX are **not** available for native Windows; use CPU JAX or WSL2/Linux for GPU Octo.
-3. **HTTP shim deps:** from this repo’s root, with `.octo-venv` active:  
-   `pip install -r services/requirements-octo.txt`
-4. **Weights:** `services/octo_service.py` loads a **local directory** `VLA_MODEL_DIR` (default `~/.cache/octo-small-1.5`). Download or sync the **octo-small** checkpoint from [Hugging Face — rail-berkeley](https://huggingface.co/rail-berkeley) into that path so the directory exists and matches what `OctoModel.load_pretrained` expects for a filesystem path.
-
-If Octo’s pinned JAX and a GPU JAX build conflict, prefer adjusting JAX **after** Octo’s base install per Octo/JAX issue trackers, or use the versions Octo documents for GPU.
+**Note:** Use one venv per policy stack. If you switch `VLA_POLICY` and pip conflicts appear, delete `.vla-venv`, recreate it, and reinstall.
 
 ## Usage
 
 **Terminal A — VLA server**
+Linux (with CUDA):
 
 ```bash
 cd /path/to/Longor
-source .octo-venv/bin/activate        # Linux / macOS
-# source .octo-venv/Scripts/activate   # Windows — Git Bash
-python services/octo_service.py
+source .vla-venv/bin/activate
+python services/run_vla_server.py
 ```
 
-Wait until the service reports healthy on the port from your `.env` (default **8765**, `VLA_PORT`).
-
-**Terminal B — PickCube example (with VLA)**
+Windows (Git Bash):
 
 ```bash
 cd /path/to/Longor
-source .venv/bin/activate             # Linux / macOS
-# source .venv/Scripts/activate       # Windows — Git Bash
+source .vla-venv/Scripts/activate
+python services/run_vla_server.py
+```
+
+`VLA_POLICY` in `.env` selects the implementation (e.g. `octo-small-1.5`). Wait until `GET /health` on `VLA_PORT` (default **8765**) succeeds.
+
+**Terminal B — PickCube example**
+Linux (with CUDA):
+
+```bash
+cd /path/to/Longor
+source .venv/bin/activate
 python examples/maniskill_pickcube.py
 ```
 
-The example talks to Octo at `http://localhost:${VLA_PORT}` (set `VLA_PORT` in `.env` if you changed the server port).
-
-You can also run `python examples/maniskill_pickcube.py` from `Longor/`; examples prepend `src` on `sys.path` automatically.
-
-**Regression tests**
+Windows (Git Bash):
 
 ```bash
 cd /path/to/Longor
-source .venv/bin/activate             # Linux / macOS
-# source .venv/Scripts/activate       # Windows — Git Bash
+source .venv/Scripts/activate
+python examples/maniskill_pickcube.py
+```
+
+The client uses `http://localhost:${VLA_PORT}`. Examples add `src` to `sys.path` automatically.
+
+## Tests
+
+with '.venv' activated, run:
+
+```bash
 pytest
 ```
 
-(`pytest.ini` sets `pythonpath = src`.)
+`pytest.ini` sets `pythonpath = src`.
 
-**Linux + GPU checklist (M1)**
+**Integration tests:**
+`pytest -m integration` (needs a running VLA server).
 
-- NVIDIA driver + Vulkan usable for ManiSkill (see ManiSkill docs).
-- In `.env`, try clearing **`MANISKILL_SIM_BACKEND`** or set a GPU backend only if ManiSkill docs recommend it for your build; **`MANISKILL_SIM_BACKEND=cpu`** stays the safe default for Windows and for headless CPU-only Linux.
-- **VLA axis remap/signs** in `.env.example` were tuned for **Windows CPU** PickCube; on Linux/GPU you may need different values—treat them as calibration, not universal constants.
+**Linux + GPU notes**
+
+- ManiSkill wants a working **Vulkan** stack for typical setups (see ManiSkill docs).
+- In `.env`, **`MANISKILL_SIM_BACKEND=cpu`** is the safe default (especially on Windows). On Linux + GPU you may clear it or set a GPU backend per ManiSkill docs.
+- **`VLA_AXIS_REMAP` / `VLA_AXIS_SIGNS`** in `.env.example` were tuned for **Windows CPU** PickCube; re-tune on Linux/GPU if motion looks wrong.
 
 ---
 
-More detail: **`SRD.md`**.
+More detail: `SRD.md`.

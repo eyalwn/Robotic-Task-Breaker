@@ -1,6 +1,7 @@
 """
 Tests for services/octo_service.py.
-Run with:  .octo-venv/Scripts/python -m pytest services/tests/ -v
+Run with:  .vla-venv/Scripts/python -m pytest services/tests/ -v  (Windows)
+            .vla-venv/bin/python -m pytest services/tests/ -v       (Linux)
 """
 
 from __future__ import annotations

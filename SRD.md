@@ -11,25 +11,27 @@ Enable **long-horizon** robot tasks by running an **LLM in a closed loop**:
 3. **Feedback** is **RGB only** (sim renderer or real camera): capture → LLM / VLA as needed, then continue until the top-level task is done.
 4. **Subtask success or failure** is judged by the **LLM** when a subtask ends. Finer replanning vs retry policy is **out of scope** for this document.
 
-**Platforms (non-exhaustive):** the codebase stays **platform-generic**; near-term targets are **ManiSkill** and **LIBERO** simulation.
+**Platforms (non-exhaustive):** the codebase stays **platform-generic**; near-term targets are **ManiSkill** and **LIBERO** simulation. The **Linux** reference setup assumes **NVIDIA + CUDA** (see `README.md`); **Windows (Git Bash)** remains a supported dev host without CUDA GPU for JAX/VLA.
 
 **Arm control:** manipulation policies are **VLAs only**, behind a **single VLA HTTP server** at a time (see below). Other stacks (navigation, grippers without VLA) are ordinary tools/backends as the codebase evolves.
 
 ## Milestones (first)
 
-### M1
+### M1 (in progress)
+
+Note: Docs complete; Linux validation pending (colleague).
 
 **Linux** support for the existing sim + VLA + agent stack (**parity** with Windows for dev/CI).
 
 **Scope**
 
-- Documented setup paths for **Linux** (POSIX venv activation, ManiSkill upstream install, Octo/JAX on **NVIDIA + CUDA** where applicable) without breaking the **Windows** flow already used on the reference machine.
+- Documented setup paths for **Linux (with CUDA)** (POSIX venv, ManiSkill, JAX+VLA on **NVIDIA**) without breaking the **Windows (Git Bash)** flow on the reference machine.
 - A fresh clone + `README.md` steps should get a developer to: **two venvs**, **Octo HTTP service** running, **`examples/maniskill_pickcube.py`** against ManiSkill + VLA, and **`pytest`** (same expectations as Windows; **integration** tests are marked — see `pytest.ini` / `pytest -m integration`).
 
 **Acceptance (manual, on Linux host)**
 
-- [ ] `.venv`: `pip install -r requirements.txt`, install ManiSkill per [ManiSkill installation](https://maniskill.readthedocs.io/en/latest/user_guide/getting_started/installation.html), run `pytest` from repo root.
-- [ ] `.octo-venv`: Octo stack + JAX (GPU build on CUDA host) + `services/requirements-octo.txt`; weights available at `VLA_MODEL_DIR`; `python services/octo_service.py` serves `/health` on `VLA_PORT`.
+- [ ] `.venv`: `pip install -r requirements.txt` (+ sim deps), ManiSkill for PickCube per `README.md` / [ManiSkill installation](https://maniskill.readthedocs.io/en/latest/user_guide/getting_started/installation.html), run `pytest` from repo root.
+- [ ] `.vla-venv`: **Python 3.11** for Octo policy (see `README.md` — avoid **3.12+** on Windows for `tensorflow_text`); policy stack + `services/requirements-vla-octo-small-1.5.txt`; weights at `VLA_MODEL_DIR`; `VLA_POLICY` set; `python services/run_vla_server.py` serves `/health` on `VLA_PORT`.
 - [ ] With both terminals up and `.env` filled, `python examples/maniskill_pickcube.py` completes a run (success/failure per sim/policy is fine; wiring must work).
 - [ ] Windows instructions in `README.md` remain valid (Git-Bash / `Scripts\activate`).
 
@@ -57,12 +59,12 @@ Enable **long-horizon** robot tasks by running an **LLM in a closed loop**:
 The **client** (`vla` + sim/robot backends) talks to a **single VLA service process** over HTTP. The service implementation may swap (small vs large model); the **wire contract** stays generic.
 
 ```
-┌─────────────────────┐   HTTP    ┌──────────────────────────┐
+┌─────────────────────┐   HTTP    ┌───────────────────────────┐
 │  Agent / example    │◄─────────►│  VLA server (1 process)   │
 │  (app venv)         │           │  loads policy weights     │
 │  vla.* + backend    │           │  POST predict, GET health │
 │  RGB in, actions    │           │                           │
-│  applied via arm API│           └──────────────────────────┘
+│  applied via arm API│           └───────────────────────────┘
 └─────────────────────┘
 ```
 
@@ -86,7 +88,7 @@ Use **`.env`** at the repository root (see `.env.example`). Typical families of 
 
 - **Backend / env:** which sim or robot, task name, display/render flags.
 - **LLM:** model id, API keys (never committed).
-- **VLA:** base URL for the HTTP service, timeouts, and any calibration env vars consumed by `vla` (see `vla/config.py`).
+- **VLA:** `VLA_POLICY` (which server implementation to run), port/weights paths, timeouts, and calibration env vars consumed by `vla` (see `vla/config.py`).
 
 Exact names evolve in code; the SRD only requires **config-driven** selection, not hard-coded paths.
 
