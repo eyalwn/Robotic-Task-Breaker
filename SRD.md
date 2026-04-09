@@ -11,7 +11,7 @@ Enable **long-horizon** robot tasks by running an **LLM in a closed loop**:
 3. **Feedback** is **RGB only** (sim renderer or real camera): capture → LLM / VLA as needed, then continue until the top-level task is done.
 4. **Subtask success or failure** is judged by the **LLM** when a subtask ends. Finer replanning vs retry policy is **out of scope** for this document.
 
-**Platforms (non-exhaustive):** the codebase stays **platform-generic**; near-term targets are **ManiSkill** and **LIBERO** simulation. The **Linux** reference setup assumes **NVIDIA + CUDA** (see `README.md`); **Windows (Git Bash)** remains a supported dev host without CUDA GPU for JAX/VLA.
+**Platforms (non-exhaustive):** the codebase stays **platform-generic**; near-term targets are **ManiSkill** and **LIBERO** simulation. The **Linux** reference setup assumes **NVIDIA + CUDA** (see `README.md`). **Windows (Git Bash)** supports the **app** venv and, for Octo **`octo-small-1.5`**, a dedicated Windows inference requirements file that **avoids** upstream `tensorflow_text` (no PyPI wheels for common Windows/Python combos) — see `README.md` §3 and `services/requirements-vla-octo-small-1.5-windows.txt`.
 
 **Arm control:** manipulation policies are **VLAs only**, behind a **single VLA HTTP server** at a time (see below). Other stacks (navigation, grippers without VLA) are ordinary tools/backends as the codebase evolves.
 
@@ -31,9 +31,9 @@ Note: Docs complete; Linux validation pending (colleague).
 **Acceptance (manual, on Linux host)**
 
 - [ ] `.venv`: `pip install -r requirements.txt` (+ sim deps), ManiSkill for PickCube per `README.md` / [ManiSkill installation](https://maniskill.readthedocs.io/en/latest/user_guide/getting_started/installation.html), run `pytest` from repo root.
-- [ ] `.vla-venv`: **Python 3.11** for Octo policy (see `README.md` — avoid **3.12+** on Windows for `tensorflow_text`); policy stack + `services/requirements-vla-octo-small-1.5.txt`; weights at `VLA_MODEL_DIR`; `VLA_POLICY` set; `python services/run_vla_server.py` serves `/health` on `VLA_PORT`.
+- [ ] `.vla-venv`: Octo per `README.md` §3 — **Linux:** Octo `requirements.txt` + `services/requirements-vla-octo-small-1.5.txt`; **Windows:** `services/requirements-vla-octo-small-1.5-windows.txt` + `pip install -e ~/octo --no-deps` (no upstream `requirements.txt`); weights at `VLA_MODEL_DIR`; **`VLA_POLICY`** set; `python services/run_vla_server.py` serves `/health` on `VLA_PORT`.
 - [ ] With both terminals up and `.env` filled, `python examples/maniskill_pickcube.py` completes a run (success/failure per sim/policy is fine; wiring must work).
-- [ ] Windows instructions in `README.md` remain valid (Git-Bash / `Scripts\activate`).
+- [ ] `README.md` remains valid for **Windows (Git Bash)** and **Linux (with CUDA)** including Octo VLA venv paths in §3.
 
 **Out of scope for M1**
 

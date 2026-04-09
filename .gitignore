@@ -2,6 +2,9 @@
 notes.txt
 .*/
 .cursorignore
+__pycache__/
+.*/
+notes.txt
 *.db
 *.log
 

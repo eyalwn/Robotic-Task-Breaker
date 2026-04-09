@@ -1,5 +1,7 @@
-# Pin file for policy octo-small-1.5 — install order: README §3 (VLA venv).
+# Pin file for policy octo-small-1.5 — Linux/WSL after Octo's `requirements.txt` (see README §3).
+# Windows: use `requirements-vla-octo-small-1.5-windows.txt` instead (do not install Octo's full requirements.txt).
 jax>=0.4
 python-dotenv>=1.0
 fastapi>=0.100
 uvicorn[standard]>=0.23
+python-multipart>=0.0.6

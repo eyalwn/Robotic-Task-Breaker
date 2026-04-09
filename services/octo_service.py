@@ -24,7 +24,12 @@ from PIL import Image
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("octo_service")
 
-VLA_MODEL_DIR = os.environ.get("VLA_MODEL_DIR", str(Path.home() / ".cache" / "octo-small-1.5"))
+def _model_dir_raw() -> str:
+    raw = os.environ.get("VLA_MODEL_DIR", str(Path.home() / ".cache" / "octo-small-1.5"))
+    return os.path.expanduser(raw.strip())
+
+
+VLA_MODEL_DIR = _model_dir_raw()
 VLA_PORT = int(os.environ.get("VLA_PORT", "8765"))
 VLA_ACTION_SCALE = float(os.environ.get("VLA_ACTION_SCALE", "0.05"))
 VLA_ACTION_CLIP = float(os.environ.get("VLA_ACTION_CLIP", "2.0"))
@@ -63,18 +68,25 @@ def build_obs(img_np: np.ndarray) -> dict:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _model
-    model_path = Path(VLA_MODEL_DIR)
-    if not model_path.exists():
-        log.error("Model dir not found: %s", model_path)
-        sys.exit(1)
+    load_arg = VLA_MODEL_DIR
+    if not load_arg.startswith("hf://"):
+        p = Path(load_arg)
+        if not p.is_dir():
+            log.error(
+                "Model dir not found: %s\n"
+                "  Download weights into that folder, or set VLA_MODEL_DIR=hf://rail-berkeley/octo-small-1.5 "
+                "(needs network; uses Hugging Face cache).",
+                p,
+            )
+            sys.exit(1)
 
-    log.info("Loading octo-small-1.5 from %s ...", model_path)
+    log.info("Loading octo-small-1.5 from %s ...", load_arg)
     t0 = time.perf_counter()
     try:
         from octo.model.octo_model import OctoModel
         # load_pretrained calls asyncio.run() internally; must run in a thread
         # so it gets a clean event loop (not the one uvicorn is already running).
-        _model = await asyncio.to_thread(OctoModel.load_pretrained, str(model_path))
+        _model = await asyncio.to_thread(OctoModel.load_pretrained, load_arg)
     except Exception as exc:
         log.error("Model load failed: %s", exc)
         sys.exit(1)

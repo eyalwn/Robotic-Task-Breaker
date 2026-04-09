@@ -15,8 +15,9 @@ Create **two** virtualenvs in this directory: `.venv` (app / sim / LLM) and `.vl
 ### 1 — Environment file
 
 1. `cp .env.example .env`
-2. Set secrets (e.g. `OPENAI_API_KEY`) and `VLA_POLICY` (e.g. `octo-small-1.5` for the default stack).
-3. Never commit `.env` (gitignored).
+2. Set secrets (e.g. `OPENAI_API_KEY`). Set **`VLA_POLICY`** to an id implemented in `services/run_vla_server.py` (e.g. `octo-small-1.5`) — **required** before `run_vla_server.py` will start the right stack.
+3. Set **`VLA_MODEL_DIR`** to a directory that will hold policy weights; create it when you download checkpoints (the server exits if the path is missing).
+**Never commit `.env` (gitignored).**
 
 ### 2 — App venv (`.venv`)
 
@@ -48,39 +49,40 @@ python -m venv .venv
 
 ### 3 — VLA venv (`.vla-venv`)
 
-**Flow (any policy):**
-Note: the venv paths in this section refer to Linux. For Windows, replace every `.vla-venv/bin/python` command with: `.vla-venv/Scripts/python`.
+**Note:** — **One stack per venv**. If pip conflicts appear when switching policies, delete `.vla-venv` and recreate.
 
-1. make sure that the value in `VLA_POLICY` is listed in `services/run_vla_server.py`; adding a new policy means a new `requirements-vla-*.txt`, a server module, and a registry entry.
-2. Create `.vla-venv` and upgrade `pip`.
+---
+
+#### Windows (Git Bash) — Octo `octo-small-1.5`
+
+Use **Python 3.11** (`py -3.11`).
+
 ```bash
-python -m venv .vla-venv
+py -3.11 -m venv .vla-venv
+.vla-venv/Scripts/python -m pip install -U pip
+git clone https://github.com/octo-models/octo.git ~/octo
+.vla-venv/Scripts/python -m pip install -r services/requirements-vla-octo-small-1.5-windows.txt
+.vla-venv/Scripts/python -m pip install -e ~/octo --no-deps
+```
+
+Then download weights into **`VLA_MODEL_DIR`** (see `.env.example`; e.g. [rail-berkeley/octo-small-1.5](https://huggingface.co/rail-berkeley/octo-small-1.5) on Hugging Face).
+
+---
+
+#### Linux (with CUDA) — Octo `octo-small-1.5`
+
+```bash
+python3 -m venv .vla-venv
 .vla-venv/bin/python -m pip install -U pip
-```
-**Note:** for `octo-small-1.5` use Python 3.11 or lower (due to the dependency `tensorflow_text` - tends to fail on Windows with Python **3.12+**).
-3. Install JAX the way your OS needs. for Linux:
-```bash
 .vla-venv/bin/python -m pip install -U "jax[cuda12]"
-# (`jax[cuda13]` is fine if that matches your driver — see [JAX — NVIDIA GPU](https://jax.readthedocs.io/en/latest/installation.html#nvidia-gpu))
-```
-for Windows (JAX supports CPU only):
-```bash
-.vla-venv/Scripts/python -m pip install -U jax
-```
-4. Install the **policy’s upstream Python package** (clone + editable install — see the Octo example below; other policies follow their upstream docs).
-For Octo for example, the commands will be:
-```bash
+# or jax[cuda13] — https://jax.readthedocs.io/en/latest/installation.html#nvidia-gpu
 git clone https://github.com/octo-models/octo.git ~/octo
 .vla-venv/bin/python -m pip install -e ~/octo
-```
-5. Install Longor’s deps requirements for that policy (JAX + HTTP shim, etc.):
-```bash
 .vla-venv/bin/python -m pip install -r ~/octo/requirements.txt
-.vla-venv/bin/python -m pip install -r services/requirements-vla-octo-small-1.5.txt  # replace with your policy id
+.vla-venv/bin/python -m pip install -r services/requirements-vla-octo-small-1.5.txt
 ```
-6. Download the model's weights into `VLA_MODEL_DIR` (paths differ per policy; see `.env.example` and the policy’s upstream docs).
 
-**Note:** Use one venv per policy stack. If you switch `VLA_POLICY` and pip conflicts appear, delete `.vla-venv`, recreate it, and reinstall.
+Then weights into **`VLA_MODEL_DIR`** as above. If Octo’s pins fight your JAX install, recreate the venv and follow Octo’s README / issues.
 
 ## Usage
 
