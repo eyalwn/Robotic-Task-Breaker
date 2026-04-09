@@ -15,8 +15,7 @@ Create **two** virtualenvs in this directory: `.venv` (app / sim / LLM) and `.vl
 ### 1 — Environment file
 
 1. `cp .env.example .env`
-2. Set secrets (e.g. `OPENAI_API_KEY`). Set **`VLA_POLICY`** to an id implemented in `services/run_vla_server.py` (e.g. `octo-small-1.5`) — **required** before `run_vla_server.py` will start the right stack.
-3. Set **`VLA_MODEL_DIR`** to a directory that will hold policy weights; create it when you download checkpoints (the server exits if the path is missing).
+2. Set secrets (e.g. `OPENAI_API_KEY`). Set **`VLA_POLICY`** to an id implemented in `services/run_vla_server.py` (e.g. `octo-small-1.5`). Octo loads **`rail-berkeley/octo-small-1.5`** from Hugging Face on first service start (see `services/octo_service.py`).
 **Never commit `.env` (gitignored).**
 
 ### 2 — App venv (`.venv`)
@@ -47,13 +46,13 @@ python -m venv .venv
 **Note:** Rationale for `requirements-sim.txt` vs CUDA is in the header of `requirements-sim.txt`.
 **Note:** keep `MANISKILL_ENV=PickCube-v1` in `.env` (until M3).
 
-### 3 — VLA venv (`.vla-venv`)
+### 3 — VLA venv (Octo `octo-small-1.5`)
 
 **Note:** — **One stack per venv**. If pip conflicts appear when switching policies, delete `.vla-venv` and recreate.
 
 ---
 
-#### Windows (Git Bash) — Octo `octo-small-1.5`
+#### Windows (Git Bash)
 
 Use **Python 3.11** (`py -3.11`).
 
@@ -65,11 +64,11 @@ git clone https://github.com/octo-models/octo.git ~/octo
 .vla-venv/Scripts/python -m pip install -e ~/octo --no-deps
 ```
 
-Then download weights into **`VLA_MODEL_DIR`** (see `.env.example`; e.g. [rail-berkeley/octo-small-1.5](https://huggingface.co/rail-berkeley/octo-small-1.5) on Hugging Face).
+First service start downloads weights from [rail-berkeley/octo-small-1.5](https://huggingface.co/rail-berkeley/octo-small-1.5) (needs network).
 
 ---
 
-#### Linux (with CUDA) — Octo `octo-small-1.5`
+#### Linux (with CUDA)
 
 ```bash
 python3 -m venv .vla-venv
@@ -82,7 +81,7 @@ git clone https://github.com/octo-models/octo.git ~/octo
 .vla-venv/bin/python -m pip install -r services/requirements-vla-octo-small-1.5.txt
 ```
 
-Then weights into **`VLA_MODEL_DIR`** as above. If Octo’s pins fight your JAX install, recreate the venv and follow Octo’s README / issues.
+Same Hugging Face weights as on Windows. If Octo’s pins fight your JAX install, recreate the venv and follow Octo’s README / issues.
 
 ## Usage
 

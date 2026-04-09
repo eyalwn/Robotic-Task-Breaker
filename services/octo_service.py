@@ -2,7 +2,7 @@
 Octo-small-1.5 FastAPI inference service.
 Run from repo root: python services/run_vla_server.py (VLA_POLICY=octo-small-1.5 in .env).
 Direct: python services/octo_service.py
-Env: VLA_MODEL_DIR, VLA_PORT, VLA_ACTION_SCALE
+Env: VLA_PORT, VLA_ACTION_SCALE, VLA_ACTION_CLIP
 """
 
 import asyncio
@@ -12,7 +12,6 @@ import os
 import sys
 import time
 from contextlib import asynccontextmanager
-from pathlib import Path
 
 import jax
 import jax.numpy as jnp
@@ -21,15 +20,12 @@ import uvicorn
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from PIL import Image
 
+# OctoModel.load_pretrained — Hugging Face id (cached after first download).
+OCTO_SMALL_15_MODEL_URI = "hf://rail-berkeley/octo-small-1.5"
+
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger("octo_service")
 
-def _model_dir_raw() -> str:
-    raw = os.environ.get("VLA_MODEL_DIR", str(Path.home() / ".cache" / "octo-small-1.5"))
-    return os.path.expanduser(raw.strip())
-
-
-VLA_MODEL_DIR = _model_dir_raw()
 VLA_PORT = int(os.environ.get("VLA_PORT", "8765"))
 VLA_ACTION_SCALE = float(os.environ.get("VLA_ACTION_SCALE", "0.05"))
 VLA_ACTION_CLIP = float(os.environ.get("VLA_ACTION_CLIP", "2.0"))
@@ -68,25 +64,13 @@ def build_obs(img_np: np.ndarray) -> dict:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _model
-    load_arg = VLA_MODEL_DIR
-    if not load_arg.startswith("hf://"):
-        p = Path(load_arg)
-        if not p.is_dir():
-            log.error(
-                "Model dir not found: %s\n"
-                "  Download weights into that folder, or set VLA_MODEL_DIR=hf://rail-berkeley/octo-small-1.5 "
-                "(needs network; uses Hugging Face cache).",
-                p,
-            )
-            sys.exit(1)
-
-    log.info("Loading octo-small-1.5 from %s ...", load_arg)
+    log.info("Loading octo-small-1.5 from %s ...", OCTO_SMALL_15_MODEL_URI)
     t0 = time.perf_counter()
     try:
         from octo.model.octo_model import OctoModel
         # load_pretrained calls asyncio.run() internally; must run in a thread
         # so it gets a clean event loop (not the one uvicorn is already running).
-        _model = await asyncio.to_thread(OctoModel.load_pretrained, load_arg)
+        _model = await asyncio.to_thread(OctoModel.load_pretrained, OCTO_SMALL_15_MODEL_URI)
     except Exception as exc:
         log.error("Model load failed: %s", exc)
         sys.exit(1)

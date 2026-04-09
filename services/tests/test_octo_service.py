@@ -10,9 +10,8 @@ import io
 import os
 import sys
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
-import jax.numpy as jnp
 import numpy as np
 import pytest
 from PIL import Image
@@ -28,11 +27,11 @@ from services.octo_service import IMAGE_SIZE, WINDOW, WRIST_SIZE, app, build_obs
 # Helpers
 # ---------------------------------------------------------------------------
 
-VLA_MODEL_DIR = os.environ.get("VLA_MODEL_DIR", str(Path.home() / ".cache" / "octo-small-1.5"))
-MODEL_AVAILABLE = Path(VLA_MODEL_DIR).exists()
+URI_FOR_TESTS = svc.OCTO_SMALL_15_MODEL_URI
+MODEL_AVAILABLE = os.environ.get("OCTO_TEST_LOAD_HF", "").lower() in ("1", "true", "yes")
 skip_if_no_model = pytest.mark.skipif(
     not MODEL_AVAILABLE,
-    reason=f"VLA_MODEL_DIR not found: {VLA_MODEL_DIR}",
+    reason="Set OCTO_TEST_LOAD_HF=1 to run Octo integration tests (HF download).",
 )
 
 
@@ -108,7 +107,7 @@ def test_predict_with_real_model():
     import jax
     from octo.model.octo_model import OctoModel
 
-    model = OctoModel.load_pretrained(VLA_MODEL_DIR)
+    model = OctoModel.load_pretrained(URI_FOR_TESTS)
 
     img_np = np.random.randint(0, 255, (IMAGE_SIZE, IMAGE_SIZE, 3), dtype=np.uint8)
     obs = build_obs(img_np)
@@ -133,29 +132,22 @@ def test_predict_with_real_model():
 
 @skip_if_no_model
 def test_predict_endpoint_with_real_model():
-    with patch("services.octo_service.Path") as MockPath:
-        # Make the path-existence check pass
-        mock_path_instance = MagicMock()
-        mock_path_instance.exists.return_value = True
-        mock_path_instance.__str__ = lambda self: VLA_MODEL_DIR
-        MockPath.return_value = mock_path_instance
-        MockPath.home.return_value = Path.home()
-
-        with TestClient(app) as client:
-            jpeg = make_jpeg()
-            resp = client.post(
-                "/predict",
-                files={"image": ("frame.jpg", jpeg, "image/jpeg")},
-                data={"task": "pick up the cube"},
-            )
+    with TestClient(app) as client:
+        jpeg = make_jpeg()
+        resp = client.post(
+            "/predict",
+            files={"image": ("frame.jpg", jpeg, "image/jpeg")},
+            data={"task": "pick up the cube"},
+        )
 
     assert resp.status_code == 200, f"got {resp.status_code}: {resp.text}"
     body = resp.json()
-    assert "action" in body
-    action = body["action"]
-    assert isinstance(action, list)
-    assert len(action) == 4
-    assert all(isinstance(v, float) for v in action)
+    assert "actions" in body
+    actions = body["actions"]
+    assert isinstance(actions, list) and len(actions) >= 1
+    first = actions[0]
+    assert isinstance(first, list) and len(first) == 4
+    assert all(isinstance(v, float) for v in first)
 
 
 # ---------------------------------------------------------------------------
