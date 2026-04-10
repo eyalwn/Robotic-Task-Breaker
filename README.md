@@ -15,7 +15,8 @@ Create **two** virtualenvs in this directory: `.venv` (app / sim / LLM) and `.vl
 ### 1 — Environment file
 
 1. `cp .env.example .env`
-2. Set secrets (e.g. `OPENAI_API_KEY`). Set **`VLA_POLICY`** to an id implemented in `services/run_vla_server.py` (e.g. `octo-small-1.5`). Octo loads **`rail-berkeley/octo-small-1.5`** from Hugging Face on first service start (see `services/octo_service.py`).
+2. Set secrets (e.g. `OPENAI_API_KEY`). Set `**VLA_POLICY`** to an id implemented in `services/run_vla_server.py` (e.g. `octo-small-1.5`). Octo loads `**rail-berkeley/octo-small-1.5**` from Hugging Face on first service start (see `services/octo_service.py`).
+
 **Never commit `.env` (gitignored).**
 
 ### 2 — App venv (`.venv`)
@@ -78,7 +79,7 @@ python3 -m venv .vla-venv
 git clone https://github.com/octo-models/octo.git ~/octo
 .vla-venv/bin/python -m pip install -e ~/octo
 .vla-venv/bin/python -m pip install -r ~/octo/requirements.txt
-.vla-venv/bin/python -m pip install -r services/requirements-vla-octo-small-1.5.txt
+.vla-venv/bin/python -m pip install -r services/requirements-vla-octo-small-1.5-linux.txt
 ```
 
 Same Hugging Face weights as on Windows. If Octo’s pins fight your JAX install, recreate the venv and follow Octo’s README / issues.
@@ -139,8 +140,8 @@ pytest
 **Linux + GPU notes**
 
 - ManiSkill wants a working **Vulkan** stack for typical setups (see ManiSkill docs).
-- In `.env`, **`MANISKILL_SIM_BACKEND=cpu`** is the safe default (especially on Windows). On Linux + GPU you may clear it or set a GPU backend per ManiSkill docs.
-- **`VLA_AXIS_REMAP` / `VLA_AXIS_SIGNS`** in `.env.example` were tuned for **Windows CPU** PickCube; re-tune on Linux/GPU if motion looks wrong.
+- In `.env`, `**MANISKILL_SIM_BACKEND=cpu`** is the safe default (especially on Windows). On Linux + GPU you may clear it or set a GPU backend per ManiSkill docs.
+- `**VLA_AXIS_REMAP` / `VLA_AXIS_SIGNS**` in `.env.example` were tuned for **Windows CPU** PickCube; re-tune on Linux/GPU if motion looks wrong.
 
 ---
 

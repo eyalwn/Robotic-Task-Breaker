@@ -53,7 +53,7 @@ def main() -> None:
                 file=sys.stderr,
             )
             print(
-                "  Linux: Octo requirements.txt + pip install -r services/requirements-vla-octo-small-1.5.txt",
+                "  Linux: Octo requirements.txt + pip install -r services/requirements-vla-octo-small-1.5-linux.txt",
                 file=sys.stderr,
             )
             print(

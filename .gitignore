@@ -7,6 +7,7 @@ __pycache__/
 notes.txt
 *.db
 *.log
+.env
 
 __pycache__/
 examples/_out/
