@@ -1,7 +1,7 @@
-"""Integration tests for the Octo VLA client ↔ server round-trip.
+"""Integration tests for the VLA HTTP client ↔ server round-trip.
 
 Run with:  pytest -m integration
-These tests require the octo_service to be started separately before running.
+These tests require the VLA HTTP service to be started separately before running.
 """
 from __future__ import annotations
 
@@ -109,7 +109,7 @@ def test_client_tool_single_step(live_url):
     tool = create_vla_manipulation(
         tool_name="pick_cube_with_policy",
         tool_description=(
-            "Execute a VLA-driven pick sequence by querying the Octo service."
+            "Execute a VLA-driven pick sequence by querying the VLA HTTP service."
         ),
         task_prompt="pick the cube",
         server_address=live_url,

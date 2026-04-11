@@ -13,10 +13,7 @@ import sys
 import time
 from contextlib import asynccontextmanager
 
-import jax
-import jax.numpy as jnp
 import numpy as np
-import uvicorn
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from PIL import Image
 
@@ -35,7 +32,7 @@ WRIST_SIZE = 128
 WINDOW = 1
 
 _model = None
-_rng = jax.random.PRNGKey(0)
+_rng = None
 
 
 def decode_image(raw_bytes: bytes) -> np.ndarray:
@@ -111,7 +108,10 @@ async def predict(
     # Create task from text
     octo_task = _model.create_tasks(texts=[task])
 
-    # Advance RNG and sample actions
+    import jax
+
+    if _rng is None:
+        _rng = jax.random.PRNGKey(0)
     _rng, sample_rng = jax.random.split(_rng)
     actions = _model.sample_actions(obs, octo_task, rng=sample_rng)
     # actions shape: (batch=1, horizon, action_dim)
@@ -126,4 +126,6 @@ async def predict(
 
 
 if __name__ == "__main__":
+    import uvicorn
+
     uvicorn.run(app, host="0.0.0.0", port=VLA_PORT)

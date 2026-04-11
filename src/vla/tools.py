@@ -615,7 +615,7 @@ def create_vla_manipulation(
     )
     logger.debug(
         "VLA step log legend: "
-        "raw=[dx,dy,dz,gripper] from Octo (unscaled) | "
+        "raw=[dx,dy,dz,gripper] from VLA (unscaled) | "
         "scaled=[dx,dy,dz] after scale+remap (metres, applied to arm) | "
         "sf=adaptive scale factor applied to scaled | "
         "eef=[x,y,z] end-effector world position | "

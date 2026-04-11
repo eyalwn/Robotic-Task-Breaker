@@ -177,7 +177,7 @@ class VLAConfig:
     ik_ratio_high: float = 3.0
     ik_ratio_warn_cooldown_steps: int = 20
     max_inner_steps: int = 60
-    # Modest default so CPU-bound Octo + sim runs get more than a few steps before
+    # Modest default so CPU-bound VLA + sim runs get more than a few steps before
     # max_tool_seconds; set VLA_MAX_TOOL_SECONDS=0 to disable the cap.
     max_tool_seconds: float | None = 90.0
     fail_dist_threshold: float = 0.22

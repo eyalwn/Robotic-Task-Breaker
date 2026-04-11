@@ -5,7 +5,7 @@ import os
 import sys
 from pathlib import Path
 
-_SUPPORTED = ("octo-small-1.5",)
+_SUPPORTED = ("octo-small-1.5", "pi05")
 
 
 def _load_dotenv() -> None:
@@ -34,9 +34,9 @@ def main() -> None:
         sys.exit(1)
 
     here = Path(__file__).resolve().parent
-    if policy == "octo-small-1.5":
-        import runpy
+    import runpy
 
+    if policy == "octo-small-1.5":
         target = here / "octo_service.py"
         if not target.is_file():
             print(f"error: missing {target}", file=sys.stderr)
@@ -62,6 +62,36 @@ def main() -> None:
             )
             print(f"  {exc}", file=sys.stderr)
             sys.exit(3)
+        return
+
+    if policy == "pi05":
+        target = here / "pi05_service.py"
+        if not target.is_file():
+            print(f"error: missing {target}", file=sys.stderr)
+            sys.exit(1)
+        try:
+            runpy.run_path(str(target), run_name="__main__")
+        except ImportError as exc:
+            print(
+                "error: OpenPI (Pi0.5) or HTTP deps not importable in this venv.",
+                file=sys.stderr,
+            )
+            print(
+                "  Linux + NVIDIA: install OpenPI from https://github.com/Physical-Intelligence/openpi "
+                "(uv sync / pip install -e . per upstream), then:",
+                file=sys.stderr,
+            )
+            print(
+                "    pip install -r services/requirements-vla-pi05-linux.txt",
+                file=sys.stderr,
+            )
+            print(
+                "  Pi0.5 is not supported on Windows. If you switched policies, recreate .vla-venv.",
+                file=sys.stderr,
+            )
+            print(f"  {exc}", file=sys.stderr)
+            sys.exit(3)
+        return
 
 
 if __name__ == "__main__":
