@@ -10,7 +10,7 @@ Long-horizon robot tasks via an **LLM loop**, **VLAs** for arm moves, **RGB** fe
 
 ## Setup
 
-Create **two** virtualenvs in this directory: `.venv` (app / sim / LLM) and `.vla-venv` (VLA HTTP server only). You may use `python -m pip` via the venv’s interpreter so you do not need to activate while installing.
+Create **two** virtualenvs in this directory: `.venv` (app / sim / LLM) and `.vla-venv` (VLA HTTP server only). You may use `python -m pip` via the venv's interpreter so you do not need to activate while installing.
 
 ### 1 — Environment file
 
@@ -47,13 +47,17 @@ python -m venv .venv
 **Note:** Rationale for `requirements-sim.txt` vs CUDA is in the header of `requirements-sim.txt`.
 **Note:** keep `MANISKILL_ENV=PickCube-v1` in `.env` (until M3).
 
-### 3 — VLA venv (Octo `octo-small-1.5`)
+### 3 — VLA venv
 
-**Note:** — **One stack per venv**. If pip conflicts appear when switching policies, delete `.vla-venv` and recreate.
+**One stack per venv.** If pip conflicts appear when switching policies, delete `.vla-venv` and recreate. Set `VLA_POLICY` in `.env` to match the installed stack.
+
+Pick **one** of the VLA stacks below.
 
 ---
 
-#### Windows (Git Bash)
+#### Octo `octo-small-1.5`
+
+##### Windows (Git Bash)
 
 Use **Python 3.11** (`py -3.11`).
 
@@ -67,9 +71,7 @@ git clone https://github.com/octo-models/octo.git ~/octo
 
 First service start downloads weights from [rail-berkeley/octo-small-1.5](https://huggingface.co/rail-berkeley/octo-small-1.5) (needs network).
 
----
-
-#### Linux (with CUDA)
+##### Linux (with CUDA)
 
 ```bash
 python3 -m venv .vla-venv
@@ -82,7 +84,27 @@ git clone https://github.com/octo-models/octo.git ~/octo
 .vla-venv/bin/python -m pip install -r services/requirements-vla-octo-small-1.5-linux.txt
 ```
 
-Same Hugging Face weights as on Windows. If Octo’s pins fight your JAX install, recreate the venv and follow Octo’s README / issues.
+Same Hugging Face weights as on Windows. If Octo's pins fight your JAX install, recreate the venv and follow Octo's README / issues.
+
+Set `VLA_POLICY=octo-small-1.5` in `.env`.
+
+---
+
+#### Pi0.5 (OpenPI) — Linux + NVIDIA GPU only
+
+Requires **NVIDIA GPU ≥ 8 GB VRAM**. Not supported on Windows.
+
+```bash
+python3 -m venv .vla-venv
+.vla-venv/bin/python -m pip install -U pip
+git clone --recurse-submodules https://github.com/Physical-Intelligence/openpi.git ~/openpi
+.vla-venv/bin/python -m pip install -e ~/openpi
+.vla-venv/bin/python -m pip install -r services/requirements-vla-pi05-linux.txt
+```
+
+Checkpoints download automatically on first service start from `gs://openpi-assets` (cached in `~/.cache/openpi`). If OpenPI's deps conflict, see [OpenPI installation](https://github.com/Physical-Intelligence/openpi?tab=readme-ov-file#installation) for `uv`-based setup.
+
+Set `VLA_POLICY=pi05` in `.env`.
 
 ## Usage
 

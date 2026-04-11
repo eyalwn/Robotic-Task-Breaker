@@ -40,9 +40,30 @@ Note: Docs complete; Linux validation pending (colleague).
 - CI matrix on Linux (optional follow-up).
 - New backends or changing the VLA HTTP contract.
 
-### M2
+### M2 (in progress)
 
-**Additional VLA backends** beyond the first HTTP service (e.g. **π₀.5** / Pi0.5-class models on capable hosts). Prefer a **stable HTTP-facing contract** where practical.
+**Additional VLA backend** — **π₀.5** (Pi0.5) via Physical Intelligence's [OpenPI](https://github.com/Physical-Intelligence/openpi) — proving the VLA HTTP contract is model-agnostic.
+
+**Scope**
+
+- `services/pi05_service.py`: FastAPI service wrapping OpenPI Pi0.5 inference, same `/health` + `POST /predict` contract as `octo_service.py`. Server-side maps Pi0.5's native action output to the `[dx, dy, dz, gripper]` wire format.
+- `services/run_vla_server.py` supports `VLA_POLICY=pi05`.
+- `services/requirements-vla-pi05-linux.txt` for the Pi0.5 `.vla-venv`.
+- Setup instructions in `README.md` for **Linux + NVIDIA GPU** (≥ 8 GB VRAM). Pi0.5 does **not** run on Windows.
+- `src/vla/` client code contains no model-specific assumptions (remove any Octo-specific references).
+
+**Acceptance (manual, on Linux + NVIDIA host)**
+
+- [ ] `.vla-venv` with OpenPI + service deps installed per `README.md`; `python services/run_vla_server.py` with `VLA_POLICY=pi05` starts and `GET /health` returns OK.
+- [ ] `POST /predict` with a JPEG + task text returns a valid `{"actions": [[dx,dy,dz,gripper], ...]}` response.
+- [ ] On **Windows**: `pytest` passes (unit tests mock the VLA service; no real Pi0.5 required).
+- [ ] No Octo-specific references remain in `src/vla/`.
+
+**Out of scope for M2**
+
+- Pi0.5 task success on ManiSkill (wiring correctness only; the model is not trained on sim data).
+- Pi0.5 on Windows (OpenPI requires Linux + NVIDIA GPU).
+- Fine-tuning or model adaptation.
 
 ### M3
 
