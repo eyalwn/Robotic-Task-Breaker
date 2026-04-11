@@ -1,12 +1,9 @@
-__pycache__/
-.venv/
-.octo-venv/
 .env
 notes.txt
-.cursor/
+.*/
 .cursorignore
 *.db
-.idea/
 *.log
 
+__pycache__/
 examples/_out/
