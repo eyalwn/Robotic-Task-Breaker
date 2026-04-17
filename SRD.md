@@ -17,9 +17,7 @@ Enable **long-horizon** robot tasks by running an **LLM in a closed loop**:
 
 ## Milestones (first)
 
-### M1 (in progress)
-
-Note: Docs complete; Linux validation pending (colleague).
+### M1 (implemented — Linux validation pending, Michael)
 
 **Linux** support for the existing sim + VLA + agent stack (**parity** with Windows for dev/CI).
 
@@ -40,7 +38,7 @@ Note: Docs complete; Linux validation pending (colleague).
 - CI matrix on Linux (optional follow-up).
 - New backends or changing the VLA HTTP contract.
 
-### M2 (in progress)
+### M2 (implemented — Linux validation pending, Michael)
 
 **Additional VLA backend** — **π₀.5** (Pi0.5) via Physical Intelligence's [OpenPI](https://github.com/Physical-Intelligence/openpi) — proving the VLA HTTP contract is model-agnostic.
 
