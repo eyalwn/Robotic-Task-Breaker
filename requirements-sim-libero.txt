@@ -1,0 +1,3 @@
+# LIBERO simulation deps (Linux only; requires sys_platform == 'linux')
+# Install into the app .venv after requirements.txt
+lerobot[libero]>=0.5

@@ -47,6 +47,17 @@ python -m venv .venv
 **Note:** Rationale for `requirements-sim.txt` vs CUDA is in the header of `requirements-sim.txt`.
 **Note:** keep `MANISKILL_ENV=PickCube-v1` in `.env` (until M3).
 
+#### LIBERO (Linux only)
+
+LIBERO requires **Linux** + MuJoCo. Install after the base `.venv`:
+
+```bash
+.venv/bin/python -m pip install -r requirements-sim-libero.txt
+export MUJOCO_GL=egl  # headless rendering (add to .bashrc)
+```
+
+Set `BACKEND=libero` in `.env`.
+
 ### 3 — VLA venv
 
 **One stack per venv.** If pip conflicts appear when switching policies, delete `.vla-venv` and recreate. Set `VLA_POLICY` in `.env` to match the installed stack.
@@ -127,8 +138,9 @@ python services/run_vla_server.py
 
 `VLA_POLICY` in `.env` selects the implementation (e.g. `octo-small-1.5`). Wait until `GET /health` on `VLA_PORT` (default **8765**) succeeds.
 
-**Terminal B — PickCube example**
-Linux (with CUDA):
+**Terminal B — sim example**
+
+*ManiSkill PickCube (Linux or Windows):*
 
 ```bash
 cd /path/to/Longor
@@ -145,6 +157,15 @@ python examples/maniskill_pickcube.py
 ```
 
 The client uses `http://localhost:${VLA_PORT}`. Examples add `src` to `sys.path` automatically.
+
+*LIBERO-Object (Linux only):*
+
+```bash
+cd /path/to/Longor
+source .venv/bin/activate
+export MUJOCO_GL=egl
+python examples/libero_object.py
+```
 
 ## Tests
 
