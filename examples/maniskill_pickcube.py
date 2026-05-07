@@ -43,8 +43,6 @@ ENV_ID = os.environ.get("MANISKILL_ENV", "PickCube-v1")
 RENDER_HUMAN = os.environ.get("DISPLAY_ENV", "0") == "1"
 TASK = os.environ.get("ROBOT_TASK", "pick the cube")
 VLA_PORT = int(os.environ.get("VLA_PORT", "8765"))
-# For this example, default to a single outer LLM turn unless user overrides.
-os.environ.setdefault("ROBOCREW_MAX_LOOPS", "1")
 MAX_LOOPS = int(os.environ.get("ROBOCREW_MAX_LOOPS", "1"))
 MAX_SECONDS = float(os.environ.get("ROBOCREW_MAX_SECONDS", "30"))
 FRAME_DIR = os.environ.get(
@@ -74,13 +72,7 @@ SYSTEM_PROMPT = (
 # Users can still override these in their environment.
 os.environ.setdefault("VLA_AXIS_REMAP", "2,0,1")
 os.environ.setdefault("VLA_AXIS_SIGNS", "1,-1,-1")
-os.environ.setdefault("VLA_MAX_INNER_STEPS", "60")
-os.environ.setdefault("VLA_MAX_TOOL_SECONDS", "90")
 os.environ.setdefault("VLA_SIM_PICKCUBE_GRIPPER_PROFILE", "true")
-os.environ.setdefault("VLA_FAIL_ON_PLACEHOLDER", "1")
-os.environ.setdefault("ROBOCREW_REQUIRE_RGBD", "1")
-os.environ.setdefault("MANISKILL_GYM_MAKE_RETRIES", "3")
-os.environ.setdefault("MANISKILL_GYM_MAKE_RETRY_SLEEP", "0.35")
 
 env = create_env(ENV_ID, render_human=RENDER_HUMAN)
 arm = ManiSkillArm(env)

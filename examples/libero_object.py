@@ -37,7 +37,6 @@ LIBERO_TASK_IDX = int(os.environ.get("LIBERO_TASK_IDX", "0"))
 RENDER_HUMAN = os.environ.get("DISPLAY_ENV", "0") == "1"
 TASK = os.environ.get("ROBOT_TASK", "complete the manipulation task")
 VLA_PORT = int(os.environ.get("VLA_PORT", "8765"))
-os.environ.setdefault("ROBOCREW_MAX_LOOPS", "1")
 MAX_LOOPS = int(os.environ.get("ROBOCREW_MAX_LOOPS", "1"))
 MAX_SECONDS = float(os.environ.get("ROBOCREW_MAX_SECONDS", "30"))
 FRAME_DIR = os.environ.get(
@@ -56,10 +55,6 @@ SYSTEM_PROMPT = (
     "- Do not ask for another turn and do not retry pick_cube_with_policy.\n"
     "- finish_task should briefly report the policy result/reason."
 )
-
-os.environ.setdefault("VLA_MAX_INNER_STEPS", "60")
-os.environ.setdefault("VLA_MAX_TOOL_SECONDS", "90")
-os.environ.setdefault("VLA_FAIL_ON_PLACEHOLDER", "1")
 
 env = create_env(
     task_suite=LIBERO_TASK_SUITE,

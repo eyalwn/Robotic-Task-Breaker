@@ -183,7 +183,7 @@ pytest
 **Linux + GPU notes**
 
 - ManiSkill wants a working **Vulkan** stack for typical setups (see ManiSkill docs).
-- In `.env`, `**MANISKILL_SIM_BACKEND=cpu`** is the safe default (especially on Windows). On Linux + GPU you may clear it or set a GPU backend per ManiSkill docs.
+- `MANISKILL_SIM_BACKEND` defaults to `cpu` on Windows and unset (GPU) on Linux; override in `.env` only if needed.
 - `**VLA_AXIS_REMAP` / `VLA_AXIS_SIGNS**` in `.env.example` were tuned for **Windows CPU** PickCube; re-tune on Linux/GPU if motion looks wrong.
 
 ---

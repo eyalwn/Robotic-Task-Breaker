@@ -8,8 +8,13 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 import time
 import warnings
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    import numpy as np
 
 from .vision_health import VisionHealth
 
@@ -22,6 +27,11 @@ _PREFERRED_ENVS = ["PickCube-v1", "PushCube-v1", "StackCube-v1", "LiftPegUpright
 # Steps used to approximate 1 m forward / 1 degree of turn
 _STEPS_PER_METER = 20
 _STEPS_PER_DEGREE = 1
+
+
+def _default_sim_backend() -> str | None:
+    """Return 'cpu' on Windows (avoids Vulkan DeviceLost); None elsewhere (let ManiSkill pick)."""
+    return "cpu" if sys.platform == "win32" else None
 
 
 def _require_maniskill():
@@ -109,15 +119,15 @@ def create_env(
     import gymnasium as gym
 
     obs_mode = os.environ.get("MANISKILL_OBS_MODE", "").strip() or obs_mode
-    require_rgbd = os.environ.get("ROBOCREW_REQUIRE_RGBD", "0").strip() == "1"
-    make_retries = max(1, int(os.environ.get("MANISKILL_GYM_MAKE_RETRIES", "3")))
+    require_rgbd = os.environ.get("ROBOCREW_REQUIRE_RGBD", "1").strip() == "1"
+    make_retries = max(1, int(os.environ.get("MANISKILL_GYM_MAKE_RETRIES", "1")))
     retry_sleep = max(
         0.0, float(os.environ.get("MANISKILL_GYM_MAKE_RETRY_SLEEP", "0.35"))
     )
     env_id = env_id or _pick_default_env(gym)
     render_mode = "human" if render_human else "rgb_array"
     render_backend = os.environ.get("MANISKILL_RENDER_BACKEND", "").strip() or None
-    sim_backend = os.environ.get("MANISKILL_SIM_BACKEND", "").strip() or None
+    sim_backend = os.environ.get("MANISKILL_SIM_BACKEND", "").strip() or _default_sim_backend()
     env_kwargs = {
         "render_mode": render_mode,
         "obs_mode": obs_mode,

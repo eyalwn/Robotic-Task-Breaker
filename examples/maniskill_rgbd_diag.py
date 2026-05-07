@@ -9,6 +9,7 @@ import sys
 
 import gymnasium as gym
 from dotenv import find_dotenv, load_dotenv
+from sim.maniskill_backend import _default_sim_backend
 
 
 def _has_rgb(obs) -> bool:
@@ -43,7 +44,7 @@ def main() -> int:
     obs_mode = os.environ.get("MANISKILL_OBS_MODE", "rgbd")
     render_mode = "human" if os.environ.get("DISPLAY_ENV", "0") == "1" else "rgb_array"
     render_backend = os.environ.get("MANISKILL_RENDER_BACKEND", "").strip() or None
-    sim_backend = os.environ.get("MANISKILL_SIM_BACKEND", "").strip() or None
+    sim_backend = os.environ.get("MANISKILL_SIM_BACKEND", "").strip() or _default_sim_backend()
     control_mode = os.environ.get("MANISKILL_CONTROL_MODE", "pd_joint_delta_pos")
     kwargs = {
         "obs_mode": obs_mode,

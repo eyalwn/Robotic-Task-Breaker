@@ -160,12 +160,12 @@ class VLAConfig:
     action_clip: float = 2.0
     axis_remap: Optional[List[int]] = None
     axis_signs: Optional[List[float]] = None
-    steps_per_action: int = 1
+    steps_per_action: int = 5
     stagnation_chunks: int = 3
     gripper_threshold: float = 0.5
     # Minimum |raw_gripper| required to allow open/close state changes.
     # This is a raw action-magnitude gate, not a 0-1 model confidence.
-    gripper_confidence: float = 0.5
+    gripper_confidence: float = 1.5
     grasp_dist: float = 0.03
     request_timeout: float = 60.0
     adaptive_scale: bool = True
@@ -179,7 +179,7 @@ class VLAConfig:
     max_inner_steps: int = 60
     # Modest default so CPU-bound VLA + sim runs get more than a few steps before
     # max_tool_seconds; set VLA_MAX_TOOL_SECONDS=0 to disable the cap.
-    max_tool_seconds: float | None = 90.0
+    max_tool_seconds: float | None = 25.0
     fail_dist_threshold: float = 0.22
     fail_dist_consecutive_steps: int = 20
     fail_worsening_steps: int = 20
@@ -188,7 +188,7 @@ class VLAConfig:
     sim_pickcube_gripper_profile: bool = True
     gripper_close_max_dist: float = 0.09
     success_lift_delta: float = 0.02
-    fail_on_placeholder: bool = False
+    fail_on_placeholder: bool = True
 
     @classmethod
     def from_env(cls) -> "VLAConfig":
