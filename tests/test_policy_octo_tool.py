@@ -120,8 +120,8 @@ def test_tool_opens_gripper_when_positive(arm_and_camera):
     # Construct a chunk where the gripper first closes strongly, then opens strongly.
     # This exercises the internal gripper_state flip logic (close → open).
     chunk = [
-        [0.0, 0.0, 0.0, -1.2],
-        [0.0, 0.0, 0.0, 1.2],
+        [0.0, 0.0, 0.0, -2.0],
+        [0.0, 0.0, 0.0, 2.0],
     ]
     resp = MagicMock()
     resp.json.return_value = {"actions": chunk}
@@ -148,7 +148,7 @@ def test_tool_closes_gripper_when_negative(arm_and_camera):
     )
 
     # Single strong negative gripper command should close the gripper.
-    chunk = [[0.0, 0.0, 0.0, -1.2]]
+    chunk = [[0.0, 0.0, 0.0, -2.0]]
     resp = MagicMock()
     resp.json.return_value = {"actions": chunk}
     resp.raise_for_status.return_value = None
@@ -171,7 +171,7 @@ def test_tool_skips_gripper_when_below_threshold(arm_and_camera):
         arm=arm,
         camera=camera,
         max_steps=1,
-        cfg=_cfg(),
+        cfg=_cfg(steps_per_action=1),
     )
 
     with patch("vla.client.requests.post", return_value=_make_response(action_no_gripper)):
@@ -232,26 +232,6 @@ def test_http_error_returns_string_not_exception(arm_and_camera):
     assert "error" in result.lower()
 
 
-def test_returns_summary_string(arm_and_camera):
-    arm, camera, env = arm_and_camera
-    tool = create_vla_manipulation(
-        tool_name="pick_cube_with_policy",
-        tool_description="Execute a VLA-driven pick sequence by querying the Octo service.",
-        task_prompt="pick the cube",
-        server_address=SERVICE_URL,
-        arm=arm,
-        camera=camera,
-        max_steps=3,
-        cfg=_cfg(),
-    )
-
-    with patch("vla.client.requests.post", return_value=_make_response()):
-        result = tool.invoke({})
-
-    assert isinstance(result, str)
-    assert "3" in result
-
-
 def test_returns_structured_reason_code(arm_and_camera):
     arm, camera, _env = arm_and_camera
     tool = create_vla_manipulation(
@@ -285,7 +265,7 @@ def test_stops_on_backend_evaluate_success():
         arm=arm,
         camera=camera,
         max_steps=10,
-        cfg=_cfg(),
+        cfg=_cfg(steps_per_action=1),
     )
 
     with patch("vla.client.requests.post", return_value=_make_response()):

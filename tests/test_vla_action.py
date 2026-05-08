@@ -143,7 +143,7 @@ def test_axis_hint_log_permutation_improves_cosine_alignment():
     assert best_cos > 0.99
 
 
-def test_stagnation_uses_global_min_dist_across_chunks():
+def test_stagnation_not_triggered_when_min_dist_improves_across_chunks():
     arm = _FakeArm(eef_xyz=[0.0, 0.0, 0.0], obj_xyz=[1.0, 0.0, 0.0])
     camera = _FakeCamera()
     cfg = VLAConfig(

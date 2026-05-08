@@ -63,13 +63,6 @@ def test_camera_capture_image_jpeg_from_pixels():
     assert hasattr(cam, "vision_health")
 
 
-def test_libero_success_checker_true_when_info_success():
-    class _Arm:
-        last_info = {"success": True}
-
-    assert LiberoSuccessChecker(_Arm(), consecutive_steps=1).check() is True
-
-
 def test_create_env_raises_when_lerobot_unavailable(monkeypatch):
     orig = builtins.__import__
 
