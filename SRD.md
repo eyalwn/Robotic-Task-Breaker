@@ -72,12 +72,12 @@ Enable **long-horizon** robot tasks by running an **LLM in a closed loop**:
 - `src/sim/libero_backend.py`: `create_env()`, `LiberoCamera`, `LiberoArm` adapters matching the `ManiSkillCamera`/`ManiSkillArm` interface (`capture_image`, `move_ee`, `set_gripper`). LIBERO uses MuJoCo + OSC controllers — direct EE delta control (no Jacobian IK needed).
 - `src/sim/libero_success_checker.py`: reads LIBERO's success flag from env info.
 - `examples/libero_object.py`: example script wiring LIBERO-Object + VLA, same pattern as `maniskill_pickcube.py`.
-- `requirements-sim-libero.txt`: LeRobot + LIBERO deps (**Linux only**; LIBERO requires `sys_platform == 'linux'`).
+- `requirements-libero.txt`: LeRobot + LIBERO deps (**Linux only**; LIBERO requires `sys_platform == 'linux'`).
 - `arm_tools.py` must work unchanged with `LiberoArm`.
 
 **Acceptance (manual, on Linux host)**
 
-- [ ] `.venv` with LeRobot + LIBERO deps from `requirements-sim-libero.txt`; `export MUJOCO_GL=egl`.
+- [ ] `.venv` with LeRobot + LIBERO deps from `requirements-libero.txt`; `export MUJOCO_GL=egl`.
 - [ ] `python examples/libero_object.py` with a running VLA server starts a LIBERO-Object task, drives the arm via VLA, and runs to completion (wiring correctness; task success not required).
 - [ ] On **Windows**: `pytest` passes (LIBERO backend unit tests mock the env; no real LIBERO required).
 - [ ] `arm_tools.py` works unchanged with `LiberoArm`.

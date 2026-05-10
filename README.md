@@ -25,7 +25,7 @@ From the repo root:
 
 **Linux (with CUDA)**
 
-GPU PyTorch for ManiSkill: **do not** run `pip install -r requirements-sim.txt` here; that file pins **CPU** `torch`/`torchvision`. Install **CUDA** PyTorch first (use the `pip` command from [pytorch.org/get-started](https://pytorch.org/get-started/locally/) for your CUDA version), then ManiSkill:
+GPU PyTorch for ManiSkill: **do not** run `pip install -r requirements-maniskill.txt` here; that file pins **CPU** `torch`/`torchvision`. Install **CUDA** PyTorch first (use the `pip` command from [pytorch.org/get-started](https://pytorch.org/get-started/locally/) for your CUDA version), then ManiSkill:
 
 ```bash
 python3 -m venv .venv
@@ -41,10 +41,10 @@ python3 -m venv .venv
 python -m venv .venv
 .venv/Scripts/python -m pip install -U pip
 .venv/Scripts/python -m pip install -r requirements.txt
-.venv/Scripts/python -m pip install -r requirements-sim.txt
+.venv/Scripts/python -m pip install -r requirements-maniskill.txt
 ```
 
-**Note:** Rationale for `requirements-sim.txt` vs CUDA is in the header of `requirements-sim.txt`.
+**Note:** Rationale for `requirements-maniskill.txt` vs CUDA is in the header of `requirements-maniskill.txt`.
 **Note:** keep `MANISKILL_ENV=PickCube-v1` in `.env` (until M3).
 
 #### LIBERO (Linux only)
@@ -52,7 +52,7 @@ python -m venv .venv
 LIBERO requires **Linux** + MuJoCo. Install after the base `.venv`:
 
 ```bash
-.venv/bin/python -m pip install -r requirements-sim-libero.txt
+.venv/bin/python -m pip install -r requirements-libero.txt
 export MUJOCO_GL=egl  # headless rendering (add to .bashrc)
 ```
 

@@ -31,7 +31,7 @@ def _require_lerobot_libero() -> None:
     if missing:
         raise RuntimeError(
             f"LIBERO backend requires: {', '.join(missing)}. "
-            "Install on Linux with: pip install -r requirements-sim-libero.txt"
+            "Install on Linux with: pip install -r requirements-libero.txt"
         )
 
 
