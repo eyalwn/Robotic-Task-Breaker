@@ -1,6 +1,6 @@
 """Earth Rover specific LLM agent that inherits from base LLMAgent with SDK-based image capture."""
 
-from core.LLMAgent import LLMAgent
+from core.llm_agent import LLMAgent
 from core.utils import basic_augmentation
 from robots.EarthRover.utils import calculate_robot_bearing
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage

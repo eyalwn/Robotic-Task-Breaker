@@ -24,7 +24,7 @@ from sim.success_checker import PickCubeSuccessChecker
 from sim.frame_saver import FrameSaver
 from sim.runner import run_sim_agent
 from core.tools import finish_task
-from core.LLMAgent import LLMAgent
+from core.llm_agent import LLMAgent
 
 load_dotenv(find_dotenv())
 logging.basicConfig(

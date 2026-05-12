@@ -18,7 +18,7 @@ if str(_src) not in sys.path:
     sys.path.insert(0, str(_src))
 
 from core.camera import RobotCamera
-from robots.XLeRobot.xlerobot_LLM_agent import XLeRobotAgent
+from robots.XLeRobot.xlerobot_llm_agent import XLeRobotAgent
 from robots.XLeRobot.tools import \
     create_go_to_precision_mode, \
     create_go_to_normal_mode, \

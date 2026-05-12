@@ -18,7 +18,7 @@ if str(_src) not in sys.path:
 
 from core.camera import RobotCamera
 from core.tools import save_checkpoint
-from robots.XLeRobot.xlerobot_LLM_agent import XLeRobotAgent
+from robots.XLeRobot.xlerobot_llm_agent import XLeRobotAgent
 from robots.XLeRobot.tools import \
     create_vla_single_arm_manipulation, \
     create_go_to_precision_mode, \

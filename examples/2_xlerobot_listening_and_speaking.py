@@ -14,7 +14,7 @@ if str(_src) not in sys.path:
     sys.path.insert(0, str(_src))
 
 from core.camera import RobotCamera
-from robots.XLeRobot.xlerobot_LLM_agent import XLeRobotAgent
+from robots.XLeRobot.xlerobot_llm_agent import XLeRobotAgent
 from robots.XLeRobot.tools import create_move_forward, create_turn_right, create_turn_left
 from robots.XLeRobot.servo_controls import ServoController
 from core.tools import finish_task

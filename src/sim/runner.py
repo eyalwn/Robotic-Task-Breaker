@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import logging
 import time
-from core.LLMAgent import LLMAgent
+from core.llm_agent import LLMAgent
 
 logger = logging.getLogger(__name__)
 

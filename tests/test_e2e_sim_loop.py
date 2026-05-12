@@ -48,12 +48,12 @@ def test_e2e_sim_loop(tmp_path, monkeypatch):
         bind_tools=lambda tools, **kw: types.SimpleNamespace(invoke=None)
     )
     monkeypatch.setattr(
-        "core.LLMAgent.init_chat_model",
+        "core.llm_agent.init_chat_model",
         lambda *a, **kw: fake_llm_obj,
     )
 
     # Import after monkeypatching so the patched name is used.
-    from core.LLMAgent import LLMAgent
+    from core.llm_agent import LLMAgent
     from core.tools import finish_task
     from sim.arm_tools import create_move_ee, create_set_gripper
     from sim.frame_saver import FrameSaver

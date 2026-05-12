@@ -1,7 +1,7 @@
 """XLeRobot-specific agent entry point; delegates all behaviour to the base LLMAgent."""
 from pathlib import Path
 
-from core.LLMAgent import LLMAgent
+from core.llm_agent import LLMAgent
 
 
 class XLeRobotAgent(LLMAgent):

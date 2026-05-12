@@ -87,9 +87,9 @@ def _build_agent(monkeypatch):
 	mock_llm = MagicMock()
 	mock_bound = MagicMock()
 	mock_llm.bind_tools.return_value = mock_bound
-	monkeypatch.setattr("core.LLMAgent.init_chat_model", lambda m: mock_llm)
+	monkeypatch.setattr("core.llm_agent.init_chat_model", lambda m: mock_llm)
 
-	from core.LLMAgent import LLMAgent
+	from core.llm_agent import LLMAgent
 
 	tools = [
 		_FakeTool("move_ee", "Moved EE."),

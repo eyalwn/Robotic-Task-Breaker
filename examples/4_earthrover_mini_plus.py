@@ -8,7 +8,7 @@ _src = Path(__file__).resolve().parents[1] / "src"
 if str(_src) not in sys.path:
     sys.path.insert(0, str(_src))
 
-from robots.EarthRover.Earth_Rover_LLM_agent import EarthRoverAgent
+from robots.EarthRover.earth_rover_llm_agent import EarthRoverAgent
 from robots.EarthRover.tools import \
     move_forward, \
     move_backward, \
