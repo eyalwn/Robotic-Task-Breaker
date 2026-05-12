@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     import numpy as np
 
-from .vision_health import VisionHealth
+from .camera_base import SimCameraBase, _frame_to_uint8, _make_placeholder_jpeg
 
 warnings.filterwarnings("ignore", category=UserWarning, module="sapien")
 
@@ -65,28 +65,6 @@ def _is_tensor(obj) -> bool:
         return isinstance(obj, torch.Tensor)
     except ImportError:
         return False
-
-
-def _frame_to_uint8(frame):
-    import numpy as np
-
-    try:
-        import torch
-
-        if isinstance(frame, torch.Tensor):
-            frame = frame.detach().cpu().numpy()
-    except ImportError:
-        pass
-    arr = np.asarray(frame)
-    if arr.ndim == 4:
-        arr = arr[0]
-    if arr.dtype != np.uint8:
-        arr = (
-            (arr * 255).clip(0, 255).astype(np.uint8)
-            if arr.max() <= 1.0
-            else arr.astype(np.uint8)
-        )
-    return arr
 
 
 def _human_render_mode(env) -> bool:
@@ -214,77 +192,9 @@ def create_env(
     return env
 
 
-_PLACEHOLDER_JPEG: bytes | None = None
-_PLACEHOLDER_WARNED = False
-_RENDER_FAILED_WARNED = False
-_RENDER_DEVICE_LOST = False  # once True, skip all env.render() calls permanently
-
-
 def _is_device_lost_error(exc: RuntimeError) -> bool:
     exc_str = str(exc)
     return "DeviceLost" in exc_str or "device lost" in exc_str.lower()
-
-
-def _read_render_frame(env, np_module):
-    global _RENDER_FAILED_WARNED, _RENDER_DEVICE_LOST
-    if _RENDER_DEVICE_LOST:
-        return None
-    try:
-        frame = env.render()
-    except RuntimeError as exc:
-        if _is_device_lost_error(exc):
-            _RENDER_DEVICE_LOST = True
-            logger.warning(
-                "ManiSkillCamera: GPU device lost (%s) — "
-                "disabling all render calls for this session.",
-                exc,
-            )
-        elif not _RENDER_FAILED_WARNED:
-            logger.warning(
-                "ManiSkillCamera: env.render() failed (%s) — falling back",
-                exc,
-            )
-            _RENDER_FAILED_WARNED = True
-        return None
-    if not isinstance(frame, np_module.ndarray) and not _is_tensor(frame):
-        return None
-    return frame
-
-
-def _read_unwrapped_render_frame(env, np_module):
-    if _RENDER_DEVICE_LOST:
-        return None
-    try:
-        frame = env.unwrapped.render(mode="rgb_array")
-    except Exception:
-        return None
-    if not isinstance(frame, np_module.ndarray) and not _is_tensor(frame):
-        return None
-    return frame
-
-
-def _placeholder_jpeg() -> bytes:
-    """Return a tiny JPEG with a 'human render mode — no rgb capture' overlay."""
-    global _PLACEHOLDER_JPEG
-    if _PLACEHOLDER_JPEG is not None:
-        return _PLACEHOLDER_JPEG
-    import cv2
-    import numpy as np
-
-    img = np.zeros((120, 400, 3), dtype=np.uint8)
-    cv2.putText(
-        img,
-        "human render mode -- no rgb capture",
-        (10, 65),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.55,
-        (200, 200, 200),
-        1,
-        cv2.LINE_AA,
-    )
-    ok, buf = cv2.imencode(".jpg", img)
-    _PLACEHOLDER_JPEG = buf.tobytes() if ok else b""
-    return _PLACEHOLDER_JPEG
 
 
 def _obs_to_rgb(obs) -> "np.ndarray | None":
@@ -342,42 +252,22 @@ def _obs_to_rgb(obs) -> "np.ndarray | None":
     return None
 
 
-class ManiSkillCamera:
+class ManiSkillCamera(SimCameraBase):
     """Wraps a ManiSkill env and exposes capture_image() compatible with LLMAgent.
 
     Pass *arm* (a :class:`ManiSkillArm`) so the camera can pull the latest
     observation frame when ``env.render()`` returns nothing (e.g. human mode).
     """
 
+    _PLACEHOLDER_TEXT = "human render mode -- no rgb capture"
+
     def __init__(self, env, arm=None) -> None:
-        global _RENDER_DEVICE_LOST
-        _RENDER_DEVICE_LOST = False
-        self._env = env
-        self._arm = arm  # optional; used as obs fallback in human render mode
-        self._first_capture_path_logged = False
-        self.vision_health = VisionHealth()
-        self.vision_degraded = False
-        self.session_unusable_for_vla = False
-        self.last_capture_was_placeholder = False
-        self._degraded_reason: str | None = None
-        self._degraded_error_logged = False
+        super().__init__(env, arm)
+        self._placeholder_warned = False
+        self._render_failed_warned = False
+        self._render_device_lost = False
 
-    def set_arm(self, arm) -> None:
-        """Late-bind the arm (useful when arm is created after camera)."""
-        self._arm = arm
-
-    def is_placeholder_jpeg(self, image_bytes: bytes) -> bool:
-        return image_bytes == _placeholder_jpeg()
-
-    def _mark_vision_degraded(self, reason: str) -> None:
-        self.vision_health.mark_unavailable(reason)
-        self.vision_degraded = True
-        self.session_unusable_for_vla = True
-        if self._degraded_reason is None:
-            self._degraded_reason = reason
-        if self._degraded_error_logged:
-            return
-        self._degraded_error_logged = True
+    def _log_vision_degraded(self, reason: str) -> None:
         logger.error(
             "Vision degraded for this simulation session (%s). "
             "VLA policy images are unavailable/unreliable. "
@@ -386,6 +276,41 @@ class ManiSkillCamera:
             "software/CPU rendering override for Windows, try that as well.",
             reason,
         )
+
+    def _read_render_frame(self, np_module):
+        if self._render_device_lost:
+            return None
+        try:
+            frame = self._env.render()
+        except RuntimeError as exc:
+            if _is_device_lost_error(exc):
+                self._render_device_lost = True
+                logger.warning(
+                    "ManiSkillCamera: GPU device lost (%s) — "
+                    "disabling all render calls for this session.",
+                    exc,
+                )
+            elif not self._render_failed_warned:
+                logger.warning(
+                    "ManiSkillCamera: env.render() failed (%s) — falling back",
+                    exc,
+                )
+                self._render_failed_warned = True
+            return None
+        if not isinstance(frame, np_module.ndarray) and not _is_tensor(frame):
+            return None
+        return frame
+
+    def _read_unwrapped_render_frame(self, np_module):
+        if self._render_device_lost:
+            return None
+        try:
+            frame = self._env.unwrapped.render(mode="rgb_array")
+        except Exception:
+            return None
+        if not isinstance(frame, np_module.ndarray) and not _is_tensor(frame):
+            return None
+        return frame
 
     def capture_image(self) -> bytes:
         """Render the env and return JPEG bytes.
@@ -396,7 +321,6 @@ class ManiSkillCamera:
           3. unwrapped.render(mode='rgb_array') — legacy fallback
           4. placeholder JPEG — never returns None
         """
-        global _PLACEHOLDER_WARNED
         import cv2
         import numpy as np
 
@@ -413,32 +337,32 @@ class ManiSkillCamera:
         # Fallback 1: renderer path
         if frame is None:
             capture_path = "render"
-            frame = _read_render_frame(self._env, np)
+            frame = self._read_render_frame(np)
 
         # Fallback 2: ask unwrapped env directly (skip if GPU device was lost — it may deadlock)
         if frame is None:
             capture_path = "unwrapped-render"
-            frame = _read_unwrapped_render_frame(self._env, np)
+            frame = self._read_unwrapped_render_frame(np)
 
         if frame is None:
-            if not _PLACEHOLDER_WARNED:
+            if not self._placeholder_warned:
                 logger.error(
                     "Camera capture unavailable: backend=%s obs_mode=%s placeholder=%s",
                     getattr(self._env, "_sim_render_backend", "unknown"),
                     getattr(self._env, "_sim_obs_mode", "unknown"),
                     True,
                 )
-            if _RENDER_DEVICE_LOST:
+            if self._render_device_lost:
                 self._mark_vision_degraded("vulkan_device_lost")
-            if not _PLACEHOLDER_WARNED:
+            if not self._placeholder_warned:
                 logger.debug(
                     "ManiSkillCamera: all RGB capture methods failed; "
                     "returning placeholder JPEG."
                 )
-                _PLACEHOLDER_WARNED = True
+                self._placeholder_warned = True
             self.last_capture_was_placeholder = True
             self._mark_vision_degraded("placeholder_capture")
-            return _placeholder_jpeg()
+            return _make_placeholder_jpeg(self._PLACEHOLDER_TEXT)
 
         if not self._first_capture_path_logged:
             logger.debug("ManiSkillCamera: first successful capture via '%s'", capture_path)
@@ -458,13 +382,6 @@ class ManiSkillCamera:
             raise RuntimeError("cv2.imencode failed")
         self.vision_health.mark_real(capture_path)
         return buf.tobytes()
-
-    def release(self) -> None:
-        pass
-
-    def reopen(self) -> None:
-        pass
-
 
 class ManiSkillArm:
     """Wraps a ManiSkill env and exposes move_ee / set_gripper for arm control.

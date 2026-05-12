@@ -102,25 +102,8 @@ def _parse_bool(env_var: str, default: bool) -> bool:
     return default
 
 
-def _parse_optional_float(env_var: str) -> float | None:
-    raw = os.environ.get(env_var)
-    if raw is None:
-        return None
-    text = raw.strip()
-    if not text:
-        return None
-    try:
-        value = float(text)
-    except ValueError:
-        logger.warning(
-            "%s=%r is invalid; expected a float or empty. Ignoring.",
-            env_var,
-            raw,
-        )
-        return None
-    if value <= 0.0:
-        return None
-    return value
+def _ef(var: str, default) -> str:
+    return os.environ.get(var, str(default))
 
 
 def _parse_max_tool_seconds(
@@ -158,8 +141,8 @@ def _parse_max_tool_seconds(
 class VLAConfig:
     action_scale: float = 0.05
     action_clip: float = 2.0
-    axis_remap: Optional[List[int]] = None
-    axis_signs: Optional[List[float]] = None
+    axis_remap: list[int] | None = None
+    axis_signs: list[float] | None = None
     steps_per_action: int = 5
     stagnation_chunks: int = 3
     gripper_threshold: float = 0.5
@@ -193,150 +176,46 @@ class VLAConfig:
     @classmethod
     def from_env(cls) -> "VLAConfig":
         """Construct a VLAConfig from environment variables."""
-        action_scale = float(
-            os.environ.get("VLA_ACTION_SCALE", str(cls.action_scale))
-        )
-        action_clip = float(os.environ.get("VLA_ACTION_CLIP", str(cls.action_clip)))
-        axis_remap = _parse_axis_remap()
-        axis_signs = _parse_axis_signs()
-        steps_per_action = int(
-            os.environ.get("VLA_STEPS_PER_ACTION", str(cls.steps_per_action))
-        )
-        stagnation_chunks = int(
-            os.environ.get(
-                "VLA_STAGNATION_CHUNKS",
-                str(cls.stagnation_chunks),
-            )
-        )
-        gripper_threshold = float(
-            os.environ.get(
-                "VLA_GRIPPER_THRESHOLD",
-                str(cls.gripper_threshold),
-            )
-        )
-        gripper_confidence = _parse_gripper_confidence(
-            default=cls.gripper_confidence
-        )
-        grasp_dist = float(
-            os.environ.get("VLA_GRASP_DIST", str(cls.grasp_dist))
-        )
-        request_timeout = float(
-            os.environ.get(
-                "VLA_REQUEST_TIMEOUT",
-                str(cls.request_timeout),
-            )
-        )
-        adaptive_scale = _parse_bool("VLA_ADAPTIVE_SCALE", cls.adaptive_scale)
-        adaptive_ref_dist = float(
-            os.environ.get(
-                "VLA_ADAPTIVE_REF_DIST",
-                str(cls.adaptive_ref_dist),
-            )
-        )
-        adaptive_min_factor = float(
-            os.environ.get(
-                "VLA_ADAPTIVE_MIN_FACTOR",
-                str(cls.adaptive_min_factor),
-            )
-        )
-        auto_calibrate = _parse_bool("VLA_AUTO_CALIBRATE", cls.auto_calibrate)
-        auto_calibrate_min_cosine = float(
-            os.environ.get(
-                "VLA_AUTO_CALIBRATE_MIN_COSINE",
-                str(cls.auto_calibrate_min_cosine),
-            )
-        )
-        ik_ratio_low = float(
-            os.environ.get("VLA_IK_RATIO_LOW", str(cls.ik_ratio_low))
-        )
-        ik_ratio_high = float(
-            os.environ.get("VLA_IK_RATIO_HIGH", str(cls.ik_ratio_high))
-        )
-        ik_ratio_warn_cooldown_steps = int(
-            os.environ.get(
-                "VLA_IK_RATIO_WARN_COOLDOWN_STEPS",
-                str(cls.ik_ratio_warn_cooldown_steps),
-            )
-        )
-        max_inner_steps = int(
-            os.environ.get("VLA_MAX_INNER_STEPS", str(cls.max_inner_steps))
-        )
-        max_tool_seconds = _parse_max_tool_seconds(
-            "VLA_MAX_TOOL_SECONDS",
-            cls.max_tool_seconds,
-        )
-        fail_dist_threshold = float(
-            os.environ.get("VLA_FAIL_DIST_THRESHOLD", str(cls.fail_dist_threshold))
-        )
-        fail_dist_consecutive_steps = int(
-            os.environ.get(
-                "VLA_FAIL_DIST_CONSECUTIVE_STEPS",
-                str(cls.fail_dist_consecutive_steps),
-            )
-        )
-        fail_worsening_steps = int(
-            os.environ.get(
-                "VLA_FAIL_WORSENING_STEPS",
-                str(cls.fail_worsening_steps),
-            )
-        )
-        fail_worsening_margin = float(
-            os.environ.get(
-                "VLA_FAIL_WORSENING_MARGIN",
-                str(cls.fail_worsening_margin),
-            )
-        )
-        fail_ik_saturation_steps = int(
-            os.environ.get(
-                "VLA_FAIL_IK_SATURATION_STEPS",
-                str(cls.fail_ik_saturation_steps),
-            )
-        )
-        sim_pickcube_gripper_profile = _parse_bool(
-            "VLA_SIM_PICKCUBE_GRIPPER_PROFILE",
-            cls.sim_pickcube_gripper_profile,
-        )
-        gripper_close_max_dist = float(
-            os.environ.get(
-                "VLA_GRIPPER_CLOSE_MAX_DIST",
-                str(cls.gripper_close_max_dist),
-            )
-        )
-        success_lift_delta = float(
-            os.environ.get("VLA_SUCCESS_LIFT_DELTA", str(cls.success_lift_delta))
-        )
-        fail_on_placeholder = _parse_bool(
-            "VLA_FAIL_ON_PLACEHOLDER", cls.fail_on_placeholder
-        )
-
+        f = _ef
+        b = _parse_bool
         return cls(
-            action_scale=action_scale,
-            action_clip=action_clip,
-            axis_remap=axis_remap,
-            axis_signs=axis_signs,
-            steps_per_action=steps_per_action,
-            stagnation_chunks=stagnation_chunks,
-            gripper_threshold=gripper_threshold,
-            gripper_confidence=gripper_confidence,
-            grasp_dist=grasp_dist,
-            request_timeout=request_timeout,
-            adaptive_scale=adaptive_scale,
-            adaptive_ref_dist=adaptive_ref_dist,
-            adaptive_min_factor=adaptive_min_factor,
-            auto_calibrate=auto_calibrate,
-            auto_calibrate_min_cosine=auto_calibrate_min_cosine,
-            ik_ratio_low=ik_ratio_low,
-            ik_ratio_high=ik_ratio_high,
-            ik_ratio_warn_cooldown_steps=ik_ratio_warn_cooldown_steps,
-            max_inner_steps=max_inner_steps,
-            max_tool_seconds=max_tool_seconds,
-            fail_dist_threshold=fail_dist_threshold,
-            fail_dist_consecutive_steps=fail_dist_consecutive_steps,
-            fail_worsening_steps=fail_worsening_steps,
-            fail_worsening_margin=fail_worsening_margin,
-            fail_ik_saturation_steps=fail_ik_saturation_steps,
-            sim_pickcube_gripper_profile=sim_pickcube_gripper_profile,
-            gripper_close_max_dist=gripper_close_max_dist,
-            success_lift_delta=success_lift_delta,
-            fail_on_placeholder=fail_on_placeholder,
+            action_scale=float(f("VLA_ACTION_SCALE", cls.action_scale)),
+            action_clip=float(f("VLA_ACTION_CLIP", cls.action_clip)),
+            axis_remap=_parse_axis_remap(),
+            axis_signs=_parse_axis_signs(),
+            steps_per_action=int(f("VLA_STEPS_PER_ACTION", cls.steps_per_action)),
+            stagnation_chunks=int(f("VLA_STAGNATION_CHUNKS", cls.stagnation_chunks)),
+            gripper_threshold=float(f("VLA_GRIPPER_THRESHOLD", cls.gripper_threshold)),
+            gripper_confidence=_parse_gripper_confidence(default=cls.gripper_confidence),
+            grasp_dist=float(f("VLA_GRASP_DIST", cls.grasp_dist)),
+            request_timeout=float(f("VLA_REQUEST_TIMEOUT", cls.request_timeout)),
+            adaptive_scale=b("VLA_ADAPTIVE_SCALE", cls.adaptive_scale),
+            adaptive_ref_dist=float(f("VLA_ADAPTIVE_REF_DIST", cls.adaptive_ref_dist)),
+            adaptive_min_factor=float(f("VLA_ADAPTIVE_MIN_FACTOR", cls.adaptive_min_factor)),
+            auto_calibrate=b("VLA_AUTO_CALIBRATE", cls.auto_calibrate),
+            auto_calibrate_min_cosine=float(
+                f("VLA_AUTO_CALIBRATE_MIN_COSINE", cls.auto_calibrate_min_cosine)
+            ),
+            ik_ratio_low=float(f("VLA_IK_RATIO_LOW", cls.ik_ratio_low)),
+            ik_ratio_high=float(f("VLA_IK_RATIO_HIGH", cls.ik_ratio_high)),
+            ik_ratio_warn_cooldown_steps=int(
+                f("VLA_IK_RATIO_WARN_COOLDOWN_STEPS", cls.ik_ratio_warn_cooldown_steps)
+            ),
+            max_inner_steps=int(f("VLA_MAX_INNER_STEPS", cls.max_inner_steps)),
+            max_tool_seconds=_parse_max_tool_seconds("VLA_MAX_TOOL_SECONDS", cls.max_tool_seconds),
+            fail_dist_threshold=float(f("VLA_FAIL_DIST_THRESHOLD", cls.fail_dist_threshold)),
+            fail_dist_consecutive_steps=int(
+                f("VLA_FAIL_DIST_CONSECUTIVE_STEPS", cls.fail_dist_consecutive_steps)
+            ),
+            fail_worsening_steps=int(f("VLA_FAIL_WORSENING_STEPS", cls.fail_worsening_steps)),
+            fail_worsening_margin=float(f("VLA_FAIL_WORSENING_MARGIN", cls.fail_worsening_margin)),
+            fail_ik_saturation_steps=int(
+                f("VLA_FAIL_IK_SATURATION_STEPS", cls.fail_ik_saturation_steps)
+            ),
+            sim_pickcube_gripper_profile=b("VLA_SIM_PICKCUBE_GRIPPER_PROFILE", cls.sim_pickcube_gripper_profile),
+            gripper_close_max_dist=float(
+                f("VLA_GRIPPER_CLOSE_MAX_DIST", cls.gripper_close_max_dist)
+            ),
+            success_lift_delta=float(f("VLA_SUCCESS_LIFT_DELTA", cls.success_lift_delta)),
+            fail_on_placeholder=b("VLA_FAIL_ON_PLACEHOLDER", cls.fail_on_placeholder),
         )

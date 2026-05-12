@@ -149,7 +149,7 @@ def create_vla_single_arm_manipulation(
         policy_name: str, 
         policy_type: str, 
         arm_port: str,
-        servo_controler, 
+        servo_controller, 
         camera_config: dict[str, dict], 
         main_camera_object,
         execution_time: int = 30,
@@ -222,7 +222,7 @@ def create_vla_single_arm_manipulation(
     def tool_name_to_override() -> str:
         """Tool description to override."""
         print("Manipulation tool activated")
-        servo_controler.turn_head_to_vla_position()
+        servo_controller.turn_head_to_vla_position()
         # release main camera from agent, so arm policy can use it
         main_camera_object.release()
         time.sleep(1)  # give some time to release camera
@@ -253,7 +253,7 @@ def create_vla_single_arm_manipulation(
             time.sleep(1)
             main_camera_object.reopen()
             # set head back to precize mode
-            servo_controler.turn_head_to_vla_position(50)
+            servo_controller.turn_head_to_vla_position(50)
         
         return "Arm manipulation done"
     

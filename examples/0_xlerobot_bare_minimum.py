@@ -11,19 +11,19 @@ if str(_src) not in sys.path:
 from core.camera import RobotCamera
 from robots.XLeRobot.xlerobot_LLM_agent import XLeRobotAgent
 from robots.XLeRobot.tools import create_move_forward, create_turn_right, create_turn_left
-from robots.XLeRobot.servo_controls import ServoControler
+from robots.XLeRobot.servo_controls import ServoController
 
 # set up main camera
 main_camera = RobotCamera("/dev/camera_center") # camera usb port Eg: /dev/video0
 
-#set up servo controler
+#set up servo controller
 right_arm_wheel_usb = "/dev/arm_right"    # provide your right arm usb port. Eg: /dev/ttyACM1
-servo_controler = ServoControler(right_arm_wheel_usb=right_arm_wheel_usb)
+servo_controller = ServoController(right_arm_wheel_usb=right_arm_wheel_usb)
 
 #set up tools
-move_forward = create_move_forward(servo_controler)
-turn_left = create_turn_left(servo_controler)
-turn_right = create_turn_right(servo_controler)
+move_forward = create_move_forward(servo_controller)
+turn_left = create_turn_left(servo_controller)
+turn_right = create_turn_right(servo_controller)
 
 # init agent
 agent = XLeRobotAgent(
@@ -34,7 +34,7 @@ agent = XLeRobotAgent(
         turn_right,
     ],
     main_camera=main_camera,
-    servo_controler=servo_controler,
+    servo_controller=servo_controller,
 )
 
 agent.task = "Approach a human."

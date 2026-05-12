@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import queue
 from dataclasses import dataclass
-from typing import Any, Optional, Tuple
+from typing import Any
 
 from core.tools import create_say, remember_thing, recall_thing
 
@@ -17,7 +17,7 @@ class PeripheralHandles:
     """Runtime handles for optional hardware / IO."""
 
     sound_receiver: Any = None
-    task_queue: Optional[queue.Queue] = None
+    task_queue: queue.Queue | None = None
     lidar: Any = None
     lidar_bg: Any = None
     lidar_scale: Any = None
@@ -59,7 +59,7 @@ def apply_tts_tool(
 def init_sound_receiver(
     sounddevice_index_or_alias: Any,
     wakeword: str,
-) -> Tuple[Optional[Any], Optional[queue.Queue]]:
+) -> tuple[Any | None, queue.Queue | None]:
     if sounddevice_index_or_alias is None:
         return None, None
     from core.sound_receiver import SoundReceiver
@@ -69,7 +69,7 @@ def init_sound_receiver(
     return receiver, q
 
 
-def init_lidar(lidar_usb_port: Optional[str]) -> Tuple[Any, Any, Any]:
+def init_lidar(lidar_usb_port: str | None) -> tuple[Any, Any, Any]:
     if not lidar_usb_port:
         return None, None, None
     try:
@@ -84,14 +84,14 @@ def init_lidar(lidar_usb_port: Optional[str]) -> Tuple[Any, Any, Any]:
 
 def build_peripherals(
     *,
-    tools: List,
+    tools: list,
     system_prompt: str,
     use_memory: bool,
     sounddevice_index_or_alias: Any,
     wakeword: str,
     tts: bool,
-    lidar_usb_port: Optional[str],
-) -> Tuple[str, PeripheralHandles]:
+    lidar_usb_port: str | None,
+) -> tuple[str, PeripheralHandles]:
     """Apply memory + TTS prompt/tool changes; construct sound + lidar handles."""
     sp = apply_memory_tools(tools, system_prompt, use_memory=use_memory)
 

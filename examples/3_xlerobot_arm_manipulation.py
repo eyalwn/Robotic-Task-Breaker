@@ -30,7 +30,7 @@ from robots.XLeRobot.tools import \
     create_look_around, \
     create_turn_right, \
     create_turn_left
-from robots.XLeRobot.servo_controls import ServoControler
+from robots.XLeRobot.servo_controls import ServoController
 
 
 prompt_path = Path(__file__).parent.parent.resolve() / "src/robots/XLeRobot/xlerobot.prompt"
@@ -40,22 +40,22 @@ with open(prompt_path, "r") as f:
 # set up main camera
 main_camera = RobotCamera(os.environ.get("ROBOCREW_CAMERA", "/dev/camera_center"))
 
-#set up servo controler
+#set up servo controller
 right_arm_wheel_usb = os.environ.get("ROBOCREW_USB_RIGHT", "/dev/arm_right")
 left_arm_head_usb = os.environ.get("ROBOCREW_USB_LEFT", "/dev/arm_left")
-servo_controler = ServoControler(right_arm_wheel_usb, left_arm_head_usb)
+servo_controller = ServoController(right_arm_wheel_usb, left_arm_head_usb)
 
 #set up tools
-move_forward = create_move_forward(servo_controler)
-move_backward = create_move_backward(servo_controler)
-turn_left = create_turn_left(servo_controler)
-turn_right = create_turn_right(servo_controler)
-strafe_left = create_strafe_left(servo_controler)
-strafe_right = create_strafe_right(servo_controler)
+move_forward = create_move_forward(servo_controller)
+move_backward = create_move_backward(servo_controller)
+turn_left = create_turn_left(servo_controller)
+turn_right = create_turn_right(servo_controller)
+strafe_left = create_strafe_left(servo_controller)
+strafe_right = create_strafe_right(servo_controller)
 
-look_around = create_look_around(servo_controler, main_camera)
-go_to_precision_mode = create_go_to_precision_mode(servo_controler)
-go_to_normal_mode = create_go_to_normal_mode(servo_controler)
+look_around = create_look_around(servo_controller, main_camera)
+go_to_precision_mode = create_go_to_precision_mode(servo_controller)
+go_to_normal_mode = create_go_to_normal_mode(servo_controller)
 
 
 #   Remember to run the VLA server before using manipulation tools:
@@ -70,7 +70,7 @@ pick_up_notebook = create_vla_single_arm_manipulation(
     policy_name="Grigorij/act_right-arm-grab-notebook-2",
     policy_type="act",
     arm_port=right_arm_wheel_usb,
-    servo_controler=servo_controler,
+    servo_controller=servo_controller,
     camera_config={"main": {"index_or_path": os.environ.get("ROBOCREW_CAMERA", "/dev/camera_center")}, "right_arm": {"index_or_path": os.environ.get("ROBOCREW_CAMERA_RIGHT", "/dev/camera_right")}},
     main_camera_object=main_camera,
     policy_device="cpu",
@@ -84,7 +84,7 @@ give_notebook = create_vla_single_arm_manipulation(
     policy_name="Grigorij/act_right_arm_give_notebook",
     policy_type="act",
     arm_port=right_arm_wheel_usb,
-    servo_controler=servo_controler,
+    servo_controller=servo_controller,
     camera_config={"main": {"index_or_path": os.environ.get("ROBOCREW_CAMERA", "/dev/camera_center")}, "right_arm": {"index_or_path": os.environ.get("ROBOCREW_CAMERA_RIGHT", "/dev/camera_right")}},
     main_camera_object=main_camera,
     policy_device="cpu",
@@ -112,7 +112,7 @@ agent = XLeRobotAgent(
     history_len=8,
     main_camera=main_camera,
     camera_fov=90,
-    servo_controler=servo_controler,
+    servo_controller=servo_controller,
 )
 
 agent.task = "Approach blue notebook, grab it from the table and give it to human. Do not approach human until you grabbed a notebook."

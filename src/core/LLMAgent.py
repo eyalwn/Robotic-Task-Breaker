@@ -1,5 +1,4 @@
 """Vision-language agent loop: captures camera/lidar input, calls an LLM, and executes tool responses."""
-from os import getenv
 from core.capture_compat import capture_main_view
 from core.peripherals import build_peripherals
 from dotenv import find_dotenv, load_dotenv
@@ -12,19 +11,11 @@ load_dotenv(find_dotenv())
 
 logger = logging.getLogger(__name__)
 
+_TOOL_FINISH_TASK = "finish_task"
+_TOOL_SAVE_CHECKPOINT = "save_checkpoint"
+_TOOL_PRECISION_MODE = "go_to_precision_mode"
+_TOOL_NORMAL_MODE = "go_to_normal_mode"
 
-base_system_prompt = """
-## ROBOT SPECS
-- Mobile household robot with two arms
-
-## NAVIGATION RULES
-- Check angle grid at top of image - target must be within ±15° of center before moving forward
-- Watch for obstacles in your path - if obstacle blocks the way, navigate around it first
-- Never call move_forward 3+ times if nothing changes
-- If target is off-center: use turn_left or turn_right to align BEFORE moving forward
-- Reference floor meters only if floor visible and scale not on objects
-- Watch for obstacles between you and target - plan path to avoid them
-"""
 
 class LLMAgent():
     """Robot agent that drives a perception-action loop using a bound LLM and a set of LangChain tools."""
@@ -37,7 +28,7 @@ class LLMAgent():
             system_prompt=None,
             camera_fov=90,
             sounddevice_index_or_alias=None,
-            servo_controler=None,
+            servo_controller=None,
             wakeword="robot",
             tts=False,
             history_len=None,
@@ -57,7 +48,7 @@ class LLMAgent():
         tts: set to True to enable text-to-speech (robot can speak).
         lidar_usb_port: provide usb port of your lidar if you want robot to support your navigation with lidar.
         """
-        system_prompt = system_prompt or base_system_prompt
+        system_prompt = system_prompt or ""
 
         self.tts = tts
         self.task = None
@@ -81,7 +72,6 @@ class LLMAgent():
 
         logger.info("Connecting to LLM: %s", model)
         llm = init_chat_model(model)
-        #llm = init_chat_model(model="google/gemini-3-flash-preview", model_provider="openai", base_url="https://openrouter.ai/api/v1", api_key=getenv("OPENROUTER_API_KEY"))
         self.llm = llm.bind_tools(tools, parallel_tool_calls=False)
         self._model_name = model
         self.tools = tools
@@ -92,17 +82,17 @@ class LLMAgent():
         # cameras
         self.main_camera = main_camera
         self.camera_fov = camera_fov
-        self.servo_controler = servo_controler
+        self.servo_controller = servo_controller
 
-        if self.servo_controler and self.servo_controler.left_arm_head_usb:
-            self.servo_controler.reset_head_position()
+        if self.servo_controller and self.servo_controller.left_arm_head_usb:
+            self.servo_controller.reset_head_position()
 
     def invoke_tool(self, tool_call):
         # convert string to real function
         requested_tool = self.tool_name_to_tool[tool_call["name"]]
         args = tool_call["args"]
         tool_output = requested_tool.invoke(args)
-        # f aitional output is present
+        # if additional output is present
         if isinstance(tool_output, tuple) and len(tool_output) == 2:
             additional_output = HumanMessage(content=tool_output[1])
             tool_output = tool_output[0]
@@ -114,9 +104,9 @@ class LLMAgent():
         """
         Trims the message history in the state to keep only the most recent context for the agent.
         """        
-        ai_indices = [i for i, msg in enumerate(self.message_history) if msg.type == "human"]
-        if len(ai_indices) >= nr_of_loops:
-            start_index = ai_indices[-nr_of_loops]
+        human_indices = [i for i, msg in enumerate(self.message_history) if msg.type == "human"]
+        if len(human_indices) >= nr_of_loops:
+            start_index = human_indices[-nr_of_loops]
             self.message_history = [self.system_message] + self.message_history[start_index:]
 
     def check_for_new_task(self):
@@ -192,14 +182,14 @@ Remember that lidar scans only in one horizontal plane (0.5m high), so obstacles
             if additional_response:
                 self.message_history.append(additional_response)
             # Special handling for special tools
-            if tool_call["name"] == "save_checkpoint":
+            if tool_call["name"] == _TOOL_SAVE_CHECKPOINT:
                 checkpoint_info = tool_call["args"].get("checkpont_query")
                 self.system_message.content += f"\n[CHECKPOINT DONE] {checkpoint_info}"
-            if tool_call["name"] == "go_to_precision_mode":
+            if tool_call["name"] == _TOOL_PRECISION_MODE:
                 self.navigation_mode = "precision"
-            elif tool_call["name"] == "go_to_normal_mode":
+            elif tool_call["name"] == _TOOL_NORMAL_MODE:
                 self.navigation_mode = "normal"
-            if tool_call["name"] == "finish_task":
+            if tool_call["name"] == _TOOL_FINISH_TASK:
                 self.task = None
                 logger.info("Task finished, going idle.")
                 return "Task finished, going idle."
@@ -220,6 +210,6 @@ Remember that lidar scans only in one horizontal plane (0.5m high), so obstacles
             logger.info("Interrupted by user, shutting down.")
 
         finally:
-            if self.servo_controler:
+            if self.servo_controller:
                 logger.info("Disconnecting servo controller...")
-                self.servo_controler.disconnect()
+                self.servo_controller.disconnect()

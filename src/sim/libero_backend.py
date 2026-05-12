@@ -8,12 +8,9 @@ import logging
 import os
 from typing import Any
 
-from .vision_health import VisionHealth
+from .camera_base import SimCameraBase, _frame_to_uint8, _make_placeholder_jpeg
 
 logger = logging.getLogger(__name__)
-
-_PLACEHOLDER_JPEG: bytes | None = None
-_PLACEHOLDER_WARNED = False
 
 _STEPS_PER_CALL_DEFAULT = 5
 
@@ -66,21 +63,6 @@ def _first_env_info(info: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-def _frame_to_uint8(frame: Any):
-    import numpy as np
-
-    arr = np.asarray(frame)
-    if arr.ndim == 4:
-        arr = arr[0]
-    if arr.dtype != np.uint8:
-        arr = (
-            (arr * 255).clip(0, 255).astype(np.uint8)
-            if arr.size and float(arr.max()) <= 1.0
-            else arr.astype(np.uint8)
-        )
-    return arr
-
-
 def _agentview_rgb_from_obs(obs: Any):
     import numpy as np
 
@@ -92,10 +74,9 @@ def _agentview_rgb_from_obs(obs: Any):
             img = pixels.get(key)
             if img is not None:
                 return _frame_to_uint8(img)
-    for key in ("agentview_image",):
-        img = obs.get(key)
-        if img is not None:
-            return _frame_to_uint8(img)
+    img = obs.get("agentview_image")
+    if img is not None:
+        return _frame_to_uint8(img)
     return None
 
 
@@ -115,29 +96,6 @@ def _eef_pos_from_obs(obs: Any) -> list[float] | None:
 
     flat = np.asarray(pos).astype(np.float64).flatten()
     return flat[:3].tolist() if flat.size >= 3 else None
-
-
-def _placeholder_jpeg() -> bytes:
-    global _PLACEHOLDER_JPEG
-    if _PLACEHOLDER_JPEG is not None:
-        return _PLACEHOLDER_JPEG
-    import cv2
-    import numpy as np
-
-    img = np.zeros((120, 400, 3), dtype=np.uint8)
-    cv2.putText(
-        img,
-        "libero — no rgb in obs",
-        (10, 65),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.55,
-        (200, 200, 200),
-        1,
-        cv2.LINE_AA,
-    )
-    ok, buf = cv2.imencode(".jpg", img)
-    _PLACEHOLDER_JPEG = buf.tobytes() if ok else b""
-    return _PLACEHOLDER_JPEG
 
 
 def create_env(
@@ -210,42 +168,22 @@ def create_env(
     return vec
 
 
-class LiberoCamera:
+class LiberoCamera(SimCameraBase):
     """RGB from ``pixels['image']`` (agentview); JPEG bytes for VLA."""
 
+    _PLACEHOLDER_TEXT = "libero — no rgb in obs"
+
     def __init__(self, env, arm=None) -> None:
-        self._env = env
-        self._arm = arm
-        self._first_capture_path_logged = False
-        self.vision_health = VisionHealth()
-        self.vision_degraded = False
-        self.session_unusable_for_vla = False
-        self.last_capture_was_placeholder = False
-        self._degraded_reason: str | None = None
-        self._degraded_error_logged = False
+        super().__init__(env, arm)
+        self._placeholder_warned = False
 
-    def set_arm(self, arm) -> None:
-        self._arm = arm
-
-    def is_placeholder_jpeg(self, image_bytes: bytes) -> bool:
-        return image_bytes == _placeholder_jpeg()
-
-    def _mark_vision_degraded(self, reason: str) -> None:
-        self.vision_health.mark_unavailable(reason)
-        self.vision_degraded = True
-        self.session_unusable_for_vla = True
-        if self._degraded_reason is None:
-            self._degraded_reason = reason
-        if self._degraded_error_logged:
-            return
-        self._degraded_error_logged = True
+    def _log_vision_degraded(self, reason: str) -> None:
         logger.error(
             "Vision degraded for LIBERO (%s). VLA images may be unavailable.",
             reason,
         )
 
     def capture_image(self) -> bytes:
-        global _PLACEHOLDER_WARNED
         import cv2
         import numpy as np
 
@@ -268,12 +206,12 @@ class LiberoCamera:
                 frame = None
 
         if frame is None:
-            if not _PLACEHOLDER_WARNED:
+            if not self._placeholder_warned:
                 logger.error("LiberoCamera: no RGB — placeholder JPEG")
-                _PLACEHOLDER_WARNED = True
+                self._placeholder_warned = True
             self.last_capture_was_placeholder = True
             self._mark_vision_degraded("placeholder_capture")
-            return _placeholder_jpeg()
+            return _make_placeholder_jpeg(self._PLACEHOLDER_TEXT)
 
         if not self._first_capture_path_logged:
             logger.info("LiberoCamera: capture path=%s", capture_path)
@@ -286,13 +224,6 @@ class LiberoCamera:
             raise RuntimeError("cv2.imencode failed")
         self.vision_health.mark_real(capture_path)
         return buf.tobytes()
-
-    def release(self) -> None:
-        pass
-
-    def reopen(self) -> None:
-        pass
-
 
 class LiberoArm:
     """OSC pose deltas: 3 position + 3 orientation + gripper (LeRobot Box 7)."""

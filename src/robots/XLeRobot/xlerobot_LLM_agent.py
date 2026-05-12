@@ -1,7 +1,8 @@
 """XLeRobot-specific agent entry point; delegates all behaviour to the base LLMAgent."""
+from pathlib import Path
+
 from core.LLMAgent import LLMAgent
-from langchain_core.messages import HumanMessage, SystemMessage
-import os
+
 
 class XLeRobotAgent(LLMAgent):
 	"""XLeRobot specific LLM agent that inherits from base LLMAgent."""
@@ -15,11 +16,15 @@ class XLeRobotAgent(LLMAgent):
 		use_memory=False,
 		main_camera=None,
 		sounddevice_index_or_alias=None,
-		servo_controler=None,
+		servo_controller=None,
 		wakeword=None,
 		tts=False,
 		lidar_usb_port=None,
 	):
+		if system_prompt is None:
+			prompt_path = Path(__file__).parent / "xlerobot.prompt"
+			with open(prompt_path, "r") as f:
+				system_prompt = f.read()
 
 		super().__init__(
 			model=model,
@@ -28,7 +33,7 @@ class XLeRobotAgent(LLMAgent):
 			system_prompt=system_prompt,
 			camera_fov=camera_fov,
 			sounddevice_index_or_alias=sounddevice_index_or_alias,
-			servo_controler=servo_controler,
+			servo_controller=servo_controller,
 			wakeword=wakeword,
 			tts=tts,
 			history_len=history_len,

@@ -25,7 +25,7 @@ ACTION_MAP = {
 HEAD_SERVO_MAP = {"yaw": 7, "pitch": 8}
 
 
-class ServoControler:
+class ServoController:
     """Minimal wheel controller that keeps only basic movement helpers."""
 
     def __init__(

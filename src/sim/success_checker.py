@@ -42,9 +42,9 @@ def _obs_debug_summary(obs, max_depth: int = 3, _depth: int = 0) -> str:
         return "{\n" + "\n".join(lines) + f"\n{'  ' * (_depth - 1)}}}" if lines else "{}"
     try:
         import torch
-        if isinstance(v := obs, torch.Tensor):
-            return f"Tensor{list(v.shape)} dtype={v.dtype}"
-    except (ImportError, UnboundLocalError):
+        if isinstance(obs, torch.Tensor):
+            return f"Tensor{list(obs.shape)} dtype={obs.dtype}"
+    except ImportError:
         pass
     try:
         import numpy as np
