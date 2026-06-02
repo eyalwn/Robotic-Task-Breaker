@@ -1,6 +1,8 @@
 from .executor import ExecutionResult, Executor
 from .feedback import FeedbackDecision, FeedbackEvaluator
 from .interpreter import Interpreter, ReplanSignal, ReturnSignal, StepBudgetExceeded, StopSignal
+from .llm_feedback import LLMFeedbackEvaluator
+from .llm_planner import LLMPlanner
 from .planner import Planner
 from .schema import (
     BinOpExpr,
@@ -18,6 +20,7 @@ from .schema import (
     WhileNode,
     validate_plan,
 )
+from .trace import TraceWriter
 
 __all__ = [
     "Plan",
@@ -37,6 +40,8 @@ __all__ = [
     "FeedbackDecision",
     "FeedbackEvaluator",
     "Planner",
+    "LLMPlanner",
+    "LLMFeedbackEvaluator",
     "Interpreter",
     "ReplanSignal",
     "ReturnSignal",
@@ -44,4 +49,5 @@ __all__ = [
     "StepBudgetExceeded",
     "Executor",
     "ExecutionResult",
+    "TraceWriter",
 ]

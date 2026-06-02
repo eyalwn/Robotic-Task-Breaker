@@ -134,7 +134,7 @@ Enable robots to perform **long-horizon** tasks by separating **planning** (LLM)
 
 - Real perception (and the `PerceptionBackend` abstraction it motivates), LLM-emitted plans, LIBERO-Long.
 
-### M6
+### M6 (implemented — Linux validation pending)
 
 **LLM-emitted plans, full E2E on LIBERO-Long.**
 
@@ -151,14 +151,29 @@ Enable robots to perform **long-horizon** tasks by separating **planning** (LLM)
 **Acceptance**
 
 - [ ] On **Linux + LIBERO-Long**: LLM emits a valid plan from the task language goal, the executor runs it with the VLA in the loop, and the run reaches at least one happy-path completion of the chosen task.
-- [ ] Schema-violating LLM output triggers a bounded retry with the validation error injected into the next prompt.
-- [ ] Replan and step-budget caps are enforced.
-- [ ] On **Windows**: `pytest` passes (unit tests mock the LLM and sim).
-- [ ] Per-run trace file written to `traces/` and contains all expected event types.
+- [x] Schema-violating LLM output triggers a bounded retry with the validation error injected into the next prompt.
+- [x] Replan and step-budget caps are enforced.
+- [x] On **Windows**: `pytest` passes (160 passed, 5 skipped).
+- [x] Per-run trace file written to `traces/` and contains all expected event types.
 
 **Out of scope for M6**
 
 - Real perception, success across all LIBERO-10 tasks (one task is enough), recursive sub-planning.
+
+### Post-Linux-validation cleanup (planned)
+
+Retire the legacy flat-loop agent path once Linux validation of M1–M6 is confirmed.
+
+**Scope**
+
+- Delete `src/core/llm_agent.py` and `src/sim/runner.py`.
+- Update `examples/libero_object.py` and `examples/maniskill_pickcube.py` to use the M5/M6 executor path (or remove them if the M5 handcrafted examples fully cover their acceptance criteria).
+- Delete/rewrite any tests that exclusively exercise `LLMAgent` or `run_sim_agent` (e.g. `tests/test_e2e_sim_loop.py`, `tests/test_sim_runner.py`).
+- Update M1–M3 acceptance criteria to reference the new examples.
+
+**Precondition:** Linux validation of M1–M6 complete.
+
+---
 
 ### M7 (optional, later)
 

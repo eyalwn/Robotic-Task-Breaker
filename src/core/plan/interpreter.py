@@ -54,6 +54,7 @@ class Interpreter:
         image_fn: Callable[[], bytes],
         goal: str,
         step_budget: int = 30,
+        trace: "TraceWriter | None" = None,
     ) -> None:
         self._registry = registry
         self._feedback_evaluator = feedback_evaluator
@@ -61,6 +62,7 @@ class Interpreter:
         self._goal = goal
         self._step_budget = step_budget
         self._steps = 0
+        self._trace = trace
 
     def run(self, plan: Plan) -> Any:
         """Execute *plan*. Returns the value from a ReturnNode, or None."""
@@ -100,11 +102,30 @@ class Interpreter:
             self._steps += 1
             if node.assign_to is not None:
                 ctx[node.assign_to] = result
+            if self._trace:
+                self._trace.write(
+                    {
+                        "event": "skill_call",
+                        "skill": node.skill,
+                        "args": {k: str(v) for k, v in evaluated_args.items()},
+                        "result": str(result),
+                        "step": self._steps,
+                    }
+                )
             return result
 
         if isinstance(node, FeedbackNode):
             image_bytes = self._image_fn()
             decision = self._feedback_evaluator.evaluate(image_bytes, node.description, self._goal)
+            if self._trace:
+                self._trace.write(
+                    {
+                        "event": "feedback",
+                        "description": node.description,
+                        "decision": decision.value,
+                        "step": self._steps,
+                    }
+                )
             if decision == FeedbackDecision.CONTINUE:
                 return None
             if decision == FeedbackDecision.STOP:
