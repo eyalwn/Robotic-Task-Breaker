@@ -4,20 +4,20 @@ Private codebase: dependencies in `requirements.txt`. Source packages live under
 
 ## Goal
 
-Enable **long-horizon** robot tasks by running an **LLM in a closed loop**:
+Enable robots to perform **long-horizon** tasks by separating **planning** (LLM) from **execution** (interpreter), so the agent reasons over the *structure* of the work, not just an ordered step list.
 
-1. The LLM **plans** and maintains an ordered list of **subtasks** (Python `list`).
-2. For each subtask it selects and invokes **tools** only through the LLM (no separate programmatic executor). Arm manipulation uses **VLAs**: behavior is exposed via **parameterized tool factories** (e.g. a factory that builds a LangChain tool bound to a policy id, timeouts, and prompts)—not arbitrary codegen or `exec` of user Python.
-3. **Feedback** is **RGB only** (sim renderer or real camera): capture → LLM / VLA as needed, then continue until the top-level task is done.
-4. **Subtask success or failure** is judged by the **LLM** when a subtask ends. Finer replanning vs retry policy is **out of scope** for this document.
+1. The **planner** (LLM) emits a **plan**: a structured algorithm with control flow (sequencing, conditionals, loops, feedback points) — not a flat list of subtasks.
+2. The **executor** walks the plan and invokes **skills** — parameterized callable capabilities the planner composes. Skills include perception / state queries (returning structured data) and arm manipulation (wrapping VLAs).
+3. **Feedback points** in the plan capture an RGB snapshot, let the LLM evaluate progress against the goal, and route the run to continue, stop, or replan. Replanning is bounded.
+4. Plans are **declarative data, not executable Python**: arbitrary code execution is out of scope on purpose.
 
-**Platforms (non-exhaustive):** the codebase stays **platform-generic**; near-term targets are **ManiSkill** and **LIBERO** simulation. The **Linux** reference setup assumes **NVIDIA + CUDA** (see `README.md`). **Windows (Git Bash)** supports the **app** venv and, for Octo **`octo-small-1.5`**, a dedicated Windows inference requirements file that **avoids** upstream `tensorflow_text` (no PyPI wheels for common Windows/Python combos) — see `README.md` §3 and `services/requirements-vla-octo-small-1.5-windows.txt`.
+**Platforms.** The codebase stays **platform-generic**. The **primary E2E target** is **LIBERO** on **Linux + NVIDIA + CUDA**, where serious VLA evaluation happens. **ManiSkill on Windows (Git Bash)** is a **cross-platform smoke test** only: it verifies the planner / executor / skill code path stays alive on the dev host; it is not a target for VLA task success. Recursive sub-planning (a "composite" skill that re-invokes the planner) is a possible future extension, **not in current scope**.
 
-**Arm control:** manipulation policies are **VLAs only**, behind a **single VLA HTTP server** at a time (see below). Other stacks (navigation, grippers without VLA) are ordinary tools/backends as the codebase evolves.
+**Arm control:** manipulation skills are **VLAs only**, behind a **single VLA HTTP server** at a time (see below). Other capabilities (navigation, simple grippers) are ordinary skills as the codebase evolves.
 
 ## Milestones (first)
 
-### M1 (implemented — Linux validation pending, Michael)
+### M1 (implemented — Linux validation pending)
 
 **Linux** support for the existing sim + VLA + agent stack (**parity** with Windows for dev/CI).
 
@@ -38,7 +38,7 @@ Enable **long-horizon** robot tasks by running an **LLM in a closed loop**:
 - CI matrix on Linux (optional follow-up).
 - New backends or changing the VLA HTTP contract.
 
-### M2 (implemented — Linux validation pending, Michael)
+### M2 (implemented — Linux validation pending)
 
 **Additional VLA backend** — **π₀.5** (Pi0.5) via Physical Intelligence's [OpenPI](https://github.com/Physical-Intelligence/openpi) — proving the VLA HTTP contract is model-agnostic.
 
@@ -63,7 +63,7 @@ Enable **long-horizon** robot tasks by running an **LLM in a closed loop**:
 - Pi0.5 on Windows (OpenPI requires Linux + NVIDIA GPU).
 - Fine-tuning or model adaptation.
 
-### M3 (implemented — Linux validation pending, Michael)
+### M3 (implemented — Linux validation pending)
 
 **LIBERO** simulation backend via [LeRobot](https://huggingface.co/docs/lerobot/main/libero) — same agent/VLA contract, env-specific adapters. Initial target: **LIBERO-Object** suite.
 
@@ -90,9 +90,78 @@ Enable **long-horizon** robot tasks by running an **LLM in a closed loop**:
 
 ### M4
 
-**Multi-tool long-horizon loop** on **simulation** (**ManiSkill** first, **Windows** reference host): LLM + ordered **subtasks** + **more than one** distinct **tool** used across the run (not a single fixed manipulation tool only), **RGB** feedback, **VLA** manipulation via parameterized factories and **one** VLA HTTP server at a time.
+**Plan AST + executor + skill registry** — pure software layer; no sim, no real LLM.
 
-**M1–M3** widen OS, sim, and policy options; **M4** is the integrated loop milestone on the reference stack.
+**Scope**
+
+- `src/core/skills.py`: `Skill` base, `SkillRegistry`, shared typed values (e.g. `Pose`, `DetectedObject`). Interfaces only; concrete implementations live in backend packages.
+- `src/core/plan/`: `schema.py` (AST schema), `interpreter.py` (walker + restricted expression evaluator over a small typed value space; **no `eval` / `exec`**), `planner.py` (LLM-facing interface; concrete LLM call deferred to M6), `feedback.py`.
+- Skill adapters wrapping the existing `arm_tools` + VLA flow as `arm.grab` / `arm.place` (in `src/vla/arm_skills.py` or equivalent). Perception / state skills are stubs at this milestone.
+- Cross-platform; no sim or VLA contract changes.
+
+**Acceptance**
+
+- [ ] Schema validation accepts well-formed plans and rejects malformed ones with usable errors.
+- [ ] Interpreter handles every node type (`seq`, `if`, `while`, `call`, `feedback`, `return`) on hand-crafted plans.
+- [ ] Restricted expression evaluator rejects unsafe input (no attribute access on arbitrary objects, no name lookup outside bound vars, no calls).
+- [ ] Handcrafted-plan E2E test runs against fully mocked sim + mocked LLM evaluator, exercising both `continue` and `replan` feedback decisions.
+- [ ] No changes to the VLA HTTP contract.
+
+**Out of scope for M4**
+
+- Real perception, real LLM-emitted plans, real sim integration, recursive sub-planning.
+
+### M5
+
+**Sim-GT skills + handcrafted E2E** on **LIBERO** (Linux primary) and **ManiSkill** (Windows smoke test).
+
+**Scope**
+
+- `src/sim/libero_skills.py`: registers `perception.detect` / `perception.locate` / `state.list_objects` against LIBERO's MuJoCo scene (object names + body poses).
+- `src/sim/maniskill_skills.py`: same against ManiSkill segmentation + scene state.
+- Sim selection determines which skill module is imported (each example imports its own sim's skill module); no separate perception-backend config knob at this milestone.
+- `examples/long_horizon_handcrafted_libero.py`: handcrafted plan AST that completes a chosen simple LIBERO task (LIBERO-Goal or LIBERO-Object). Implementing agent picks the simplest task that exercises the milestone.
+- `examples/long_horizon_handcrafted_maniskill.py`: same pattern, ManiSkill PickCube or equivalent — Windows smoke test only.
+
+**Acceptance**
+
+- [ ] On **Linux**: handcrafted plan completes the chosen LIBERO task end-to-end against LIBERO + a running VLA server.
+- [ ] On **Windows**: ManiSkill version starts and executes ≥1 skill call without crashing (task success not required; arm calls may fail if no VLA is running).
+- [ ] `arm.grab` / `arm.place` operate over the unchanged VLA HTTP contract.
+
+**Out of scope for M5**
+
+- Real perception (and the `PerceptionBackend` abstraction it motivates), LLM-emitted plans, LIBERO-Long.
+
+### M6
+
+**LLM-emitted plans, full E2E on LIBERO-Long.**
+
+**Scope**
+
+- `planner.py` issues a real LLM call via **tool-calling** with a single tool `emit_plan`, schema-enforced.
+- The LLM prompt's skill catalog is auto-rendered from `SkillRegistry` (name, signature, doc, return schema) — single source of truth.
+- Validator rejects malformed plans; planner retries with the validation error fed back to the LLM, capped attempts.
+- Replan path on `feedback → replan`: defaults ≤3 replans per top-level run; soft step budget on plan execution (~30 skill calls).
+- Plan + execution trace persisted to disk per run for inspection.
+- Target: one **LIBERO-Long / LIBERO-10** task with clear multi-step structure (e.g. *"put both the alphabet soup and the cream cheese box in the basket"*). Implementing agent confirms task choice during scoping.
+
+**Acceptance**
+
+- [ ] On **Linux + LIBERO-Long**: LLM emits a valid plan from the task language goal, the executor runs it with the VLA in the loop, and the run reaches at least one happy-path completion of the chosen task.
+- [ ] Schema-violating LLM output triggers a bounded retry with the validation error injected into the next prompt.
+- [ ] Replan and step-budget caps are enforced.
+- [ ] On **Windows**: `pytest` passes (unit tests mock the LLM and sim).
+
+**Out of scope for M6**
+
+- Real perception, success across all LIBERO-10 tasks (one task is enough), recursive sub-planning.
+
+### M7 (optional, later)
+
+**Real perception backend.** Open-vocab detector (e.g. Grounding DINO or OWL-ViT + SAM2) implementing the same `perception.*` skill set as the sim-GT versions, but against rendered RGB instead of sim ground truth — so a single sim can be paired with either sim-GT or real perception. Introduces a `PerceptionBackend` interface in `src/core/skills.py` and a config knob (e.g. `PERCEPTION_BACKEND=sim_gt | openvocab`). Linux + GPU. Out of current planning scope; recorded so the option is on file.
+
+**M1–M3** widen OS, sim, and policy options; **M4–M6** add the planner architecture on top, with **LIBERO** as the primary E2E target and **ManiSkill on Windows** as the cross-platform smoke test.
 
 ## VLA integration — architecture
 
@@ -120,7 +189,10 @@ Implementation details (ports, batching, chunking, inner-step limits) live in co
 - **`core/**`** stays **OS- and backend-agnostic** (no device paths, no sim imports, no robot SDKs).
 - **Simulation and hardware** live in **`sim/**`, `robots/**`,** or dedicated backend modules; select backend via **config/env**.
 - **Optional** heavy or HW-only dependencies: **lazy imports** and/or `requirements-optional.txt` so minimal sim dev does not install everything.
-- Adding a new sim or robot: **adapters + tool factories**; avoid changing the LLM loop unless necessary.
+- **Plan representation:** structured JSON AST (schema in `src/core/plan/schema.py`); the executor walks it with a restricted expression evaluator. **No `exec`** of generated code; **no `eval`** of arbitrary expressions.
+- **Skills:** `Skill` base + `SkillRegistry` live in `src/core/skills.py` (interfaces only). Concrete skill implementations live in their backend packages (`src/sim/*_skills.py`, `src/vla/arm_skills.py`, future `src/robots/*_skills.py`) and self-register at import time.
+- Adding a new sim, robot, or capability: add a backend adapter and skill implementations in the relevant backend package; the planner / executor stay unchanged.
+- **Legacy `core/llm_agent.py`** — the pre-planner monolithic agent loop. Stays in place during M4–M6 as the older code path; its retirement or rewrite on top of the new planner is out of current scope.
 
 ## Configuration
 
@@ -129,6 +201,7 @@ Use **`.env`** at the repository root (see `.env.example`). Typical families of 
 - **Backend / env:** which sim or robot, task name, display/render flags.
 - **LLM:** model id, API keys (never committed).
 - **VLA:** `VLA_POLICY` (which server implementation), `VLA_PORT`, timeouts, and calibration env vars consumed by `vla` (see `vla/config.py`).
+- **Planner:** replan and step-budget caps (defaults ≤3 replans per run, ~30 skill calls per plan).
 
 Exact names evolve in code; the SRD only requires **config-driven** selection, not hard-coded paths.
 
