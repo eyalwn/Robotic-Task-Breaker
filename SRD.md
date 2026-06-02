@@ -112,17 +112,17 @@ Enable robots to perform **long-horizon** tasks by separating **planning** (LLM)
 
 - Real perception, real LLM-emitted plans, real sim integration, recursive sub-planning.
 
-### M5
+### M5 (implemented — Linux validation pending)
 
 **Sim-GT skills + handcrafted E2E** on **LIBERO** (Linux primary) and **ManiSkill** (Windows smoke test).
 
 **Scope**
 
-- `src/sim/libero_skills.py`: registers `perception.detect` / `perception.locate` / `state.list_objects` against LIBERO's MuJoCo scene (object names + body poses).
-- `src/sim/maniskill_skills.py`: same against ManiSkill segmentation + scene state.
-- Sim selection determines which skill module is imported (each example imports its own sim's skill module); no separate perception-backend config knob at this milestone.
-- `examples/long_horizon_handcrafted_libero.py`: handcrafted plan AST that completes a chosen simple LIBERO task (LIBERO-Goal or LIBERO-Object). Implementing agent picks the simplest task that exercises the milestone.
-- `examples/long_horizon_handcrafted_maniskill.py`: same pattern, ManiSkill PickCube or equivalent — Windows smoke test only.
+- `src/sim/libero_skills.py`: `perception.detect` / `perception.locate` / `state.list_objects` against LIBERO's MuJoCo scene. `_unwrap_to_sim` walks the LeRobot SyncVectorEnv wrapper chain; skills return `None`/`[]` gracefully if sim is unreachable.
+- `src/sim/maniskill_skills.py`: same three skills against ManiSkill scene via `_find_actors` reflection on `env.unwrapped`.
+- Sim selection by example import; no config knob.
+- `examples/long_horizon_handcrafted_libero.py`: handcrafted plan + `_AlwaysContinue` feedback stub + `_NoReplan` planner, wired to `Executor`.
+- `examples/long_horizon_handcrafted_maniskill.py`: same, ManiSkill PickCube — Windows smoke test.
 
 **Acceptance**
 
@@ -140,12 +140,13 @@ Enable robots to perform **long-horizon** tasks by separating **planning** (LLM)
 
 **Scope**
 
-- `planner.py` issues a real LLM call via **tool-calling** with a single tool `emit_plan`, schema-enforced.
-- The LLM prompt's skill catalog is auto-rendered from `SkillRegistry` (name, signature, doc, return schema) — single source of truth.
-- Validator rejects malformed plans; planner retries with the validation error fed back to the LLM, capped attempts.
-- Replan path on `feedback → replan`: defaults ≤3 replans per top-level run; soft step budget on plan execution (~30 skill calls).
-- Plan + execution trace persisted to disk per run for inspection.
-- Target: one **LIBERO-Long / LIBERO-10** task with clear multi-step structure (e.g. *"put both the alphabet soup and the cream cheese box in the basket"*). Implementing agent confirms task choice during scoping.
+- `src/core/plan/llm_planner.py`: `LLMPlanner(model, max_plan_retries=3)` — real LLM call via tool-calling with a single tool `emit_plan(plan_json: str)`; validates with `validate_plan`; retries on `ValidationError` with the error fed back, capped at `max_plan_retries`.
+- `src/core/plan/llm_feedback.py`: `LLMFeedbackEvaluator(model)` — sends RGB snapshot + description to LLM via `emit_decision(decision, reason?)` tool-call; returns `FeedbackDecision`.
+- `src/core/plan/trace.py`: `TraceWriter(trace_dir, goal)` — appends JSONL events (`plan_start`, `skill_call`, `skill_result`, `feedback`, `replan`, `plan_end`) to a per-run file named `{timestamp}_{goal_slug}.jsonl` in `trace_dir`.
+- `src/core/plan/interpreter.py` *(minimal change)*: add optional `trace: TraceWriter | None` param; emit `skill_call`/`skill_result`/`feedback` events when set.
+- `src/core/plan/executor.py` *(minimal change)*: add optional `trace_dir: str | None` param; create/pass `TraceWriter` per run; emit `plan_start`/`replan`/`plan_end` events.
+- Skill catalog in LLM prompt auto-rendered from `SkillRegistry.render_catalog()` — single source of truth.
+- `examples/long_horizon_llm_libero.py`: full E2E on **LIBERO-Long / LIBERO-10** with `LLMPlanner` + `LLMFeedbackEvaluator` + LIBERO sim-GT skills + arm skills + `Executor`. Target task: LIBERO-10 task 0 (implementing agent confirms exact task name at scoping). Trace written to `traces/` by default.
 
 **Acceptance**
 
@@ -153,6 +154,7 @@ Enable robots to perform **long-horizon** tasks by separating **planning** (LLM)
 - [ ] Schema-violating LLM output triggers a bounded retry with the validation error injected into the next prompt.
 - [ ] Replan and step-budget caps are enforced.
 - [ ] On **Windows**: `pytest` passes (unit tests mock the LLM and sim).
+- [ ] Per-run trace file written to `traces/` and contains all expected event types.
 
 **Out of scope for M6**
 
