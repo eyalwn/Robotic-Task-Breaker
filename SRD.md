@@ -88,24 +88,25 @@ Enable robots to perform **long-horizon** tasks by separating **planning** (LLM)
 - LIBERO-Long or other suites beyond LIBERO-Object.
 - Centralized backend dispatcher (examples import their backend directly).
 
-### M4
+### M4 (implemented)
 
 **Plan AST + executor + skill registry** — pure software layer; no sim, no real LLM.
 
 **Scope**
 
 - `src/core/skills.py`: `Skill` base, `SkillRegistry`, shared typed values (e.g. `Pose`, `DetectedObject`). Interfaces only; concrete implementations live in backend packages.
-- `src/core/plan/`: `schema.py` (AST schema), `interpreter.py` (walker + restricted expression evaluator over a small typed value space; **no `eval` / `exec`**), `planner.py` (LLM-facing interface; concrete LLM call deferred to M6), `feedback.py`.
-- Skill adapters wrapping the existing `arm_tools` + VLA flow as `arm.grab` / `arm.place` (in `src/vla/arm_skills.py` or equivalent). Perception / state skills are stubs at this milestone.
+- `src/core/plan/`: `schema.py` (AST schema), `interpreter.py` (walker + restricted expression evaluator over a small typed value space; **no `eval` / `exec`**), `planner.py` (LLM-facing interface; concrete LLM call deferred to M6), `feedback.py`, `executor.py`.
+- Signals: `ReturnSignal(value)` from `return` nodes → `status="done"`; `StopSignal()` from `feedback → STOP` → `status="stopped"`.
+- Skill adapters: `arm.grab` / `arm.place` in `src/vla/arm_skills.py`; `vla_tool` injected as a callable accepting `task` kwarg.
 - Cross-platform; no sim or VLA contract changes.
 
 **Acceptance**
 
-- [ ] Schema validation accepts well-formed plans and rejects malformed ones with usable errors.
-- [ ] Interpreter handles every node type (`seq`, `if`, `while`, `call`, `feedback`, `return`) on hand-crafted plans.
-- [ ] Restricted expression evaluator rejects unsafe input (no attribute access on arbitrary objects, no name lookup outside bound vars, no calls).
-- [ ] Handcrafted-plan E2E test runs against fully mocked sim + mocked LLM evaluator, exercising both `continue` and `replan` feedback decisions.
-- [ ] No changes to the VLA HTTP contract.
+- [x] Schema validation accepts well-formed plans and rejects malformed ones with usable errors.
+- [x] Interpreter handles every node type (`seq`, `if`, `while`, `call`, `feedback`, `return`) on hand-crafted plans.
+- [x] Restricted expression evaluator rejects unsafe input (no attribute access on arbitrary objects, no name lookup outside bound vars, no calls).
+- [x] Handcrafted-plan E2E test runs against fully mocked sim + mocked LLM evaluator, exercising both `continue` and `replan` feedback decisions.
+- [x] No changes to the VLA HTTP contract.
 
 **Out of scope for M4**
 
