@@ -17,21 +17,26 @@ Enable robots to perform **long-horizon** tasks by separating **planning** (LLM)
 
 ## Milestones (first)
 
-### M1 (implemented — Linux validation pending)
+### M1 (implemented — Linux partially validated)
 
 **Linux** support for the existing sim + VLA + agent stack (**parity** with Windows for dev/CI).
 
 **Scope**
 
 - Documented setup paths for **Linux (with CUDA)** (POSIX venv, ManiSkill, JAX+VLA on **NVIDIA**) without breaking the **Windows (Git Bash)** flow on the reference machine.
-- A fresh clone + `README.md` steps should get a developer to: **two venvs**, **Octo HTTP service** running, **`examples/maniskill_pickcube.py`** against ManiSkill + VLA, and **`pytest`** (same expectations as Windows; **integration** tests are marked — see `pytest.ini` / `pytest -m integration`).
+- A fresh clone + `README.md` steps should get a developer to: **two venvs**, **Octo HTTP service** running, `**examples/maniskill_pickcube.py`** against ManiSkill + VLA, and `**pytest**` (same expectations as Windows; **integration** tests are marked — see `pytest.ini` / `pytest -m integration`).
 
 **Acceptance (manual, on Linux host)**
 
-- [ ] `.venv`: `pip install -r requirements.txt` (+ sim deps), ManiSkill for PickCube per `README.md` / [ManiSkill installation](https://maniskill.readthedocs.io/en/latest/user_guide/getting_started/installation.html), run `pytest` from repo root.
-- [ ] `.vla-venv`: Octo per `README.md` §3 — **Linux:** Octo `requirements.txt` + `services/requirements-vla-octo-small-1.5-linux.txt`; **Windows:** `services/requirements-vla-octo-small-1.5-windows.txt` + `pip install -e ~/octo --no-deps` (no upstream `requirements.txt`); **`VLA_POLICY`** set; weights from Hugging Face in `services/octo_service.py`; `python services/run_vla_server.py` serves `/health` on `VLA_PORT`.
-- [ ] With both terminals up and `.env` filled, `python examples/maniskill_pickcube.py` completes a run (success/failure per sim/policy is fine; wiring must work).
-- [ ] `README.md` remains valid for **Windows (Git Bash)** and **Linux (with CUDA)** including Octo VLA venv paths in §3.
+- `.venv`: `pip install -r requirements.txt` (+ sim deps), ManiSkill for PickCube per `README.md` / [ManiSkill installation](https://maniskill.readthedocs.io/en/latest/user_guide/getting_started/installation.html), run `pytest` from repo root.
+- `.vla-venv`: Octo per `README.md` §3 — **Linux:** Octo `requirements.txt` + `services/requirements-vla-octo-small-1.5-linux.txt`; **Windows:** `services/requirements-vla-octo-small-1.5-windows.txt` + `pip install -e ~/octo --no-deps` (no upstream `requirements.txt`); `**VLA_POLICY`** set; weights from Hugging Face in `services/octo_service.py`; `python services/run_vla_server.py` serves `/health` on `VLA_PORT`.
+- With both terminals up and `.env` filled, `python examples/maniskill_pickcube.py` completes a run (success/failure per sim/policy is fine; wiring must work).
+- `README.md` remains valid for **Windows (Git Bash)** and **Linux (with CUDA)** including Octo VLA venv paths in §3.
+
+**Colab validation results (Python 3.12, GPU — June 2026)**
+
+- [x] `pytest` (non-integration, Linux): **160 passed, 2 skipped, 3 deselected** — Linux parity with Windows confirmed.
+- [ ] Octo VLA E2E on ManiSkill: **deferred**. Octo's pinned deps are incompatible with Python 3.12 (`numpy==1.24.3` / `ml_dtypes==0.2.0` have no Py3.12 wheels; `jax.random.KeyArray` removed in JAX 0.4.24). Working Colab recipe in `colab/m1_maniskill_octo.ipynb`. Skipped in favour of M2 (Pi0.5) which covers the VLA HTTP contract on Linux.
 
 **Out of scope for M1**
 
@@ -52,10 +57,10 @@ Enable robots to perform **long-horizon** tasks by separating **planning** (LLM)
 
 **Acceptance (manual, on Linux + NVIDIA host)**
 
-- [ ] `.vla-venv` with OpenPI + service deps installed per `README.md`; `python services/run_vla_server.py` with `VLA_POLICY=pi05` starts and `GET /health` returns OK.
-- [ ] `POST /predict` with a JPEG + task text returns a valid `{"actions": [[dx,dy,dz,gripper], ...]}` response.
-- [ ] On **Windows**: `pytest` passes (unit tests mock the VLA service; no real Pi0.5 required).
-- [ ] No Octo-specific references remain in `src/vla/`.
+- `.vla-venv` with OpenPI + service deps installed per `README.md`; `python services/run_vla_server.py` with `VLA_POLICY=pi05` starts and `GET /health` returns OK.
+- `POST /predict` with a JPEG + task text returns a valid `{"actions": [[dx,dy,dz,gripper], ...]}` response.
+- On **Windows**: `pytest` passes (unit tests mock the VLA service; no real Pi0.5 required).
+- No Octo-specific references remain in `src/vla/`.
 
 **Out of scope for M2**
 
@@ -77,10 +82,10 @@ Enable robots to perform **long-horizon** tasks by separating **planning** (LLM)
 
 **Acceptance (manual, on Linux host)**
 
-- [ ] `.venv` with LeRobot + LIBERO deps from `requirements-libero.txt`; `export MUJOCO_GL=egl`.
-- [ ] `python examples/libero_object.py` with a running VLA server starts a LIBERO-Object task, drives the arm via VLA, and runs to completion (wiring correctness; task success not required).
-- [ ] On **Windows**: `pytest` passes (LIBERO backend unit tests mock the env; no real LIBERO required).
-- [ ] `arm_tools.py` works unchanged with `LiberoArm`.
+- `.venv` with LeRobot + LIBERO deps from `requirements-libero.txt`; `export MUJOCO_GL=egl`.
+- `python examples/libero_object.py` with a running VLA server starts a LIBERO-Object task, drives the arm via VLA, and runs to completion (wiring correctness; task success not required).
+- On **Windows**: `pytest` passes (LIBERO backend unit tests mock the env; no real LIBERO required).
+- `arm_tools.py` works unchanged with `LiberoArm`.
 
 **Out of scope for M3**
 
@@ -102,11 +107,11 @@ Enable robots to perform **long-horizon** tasks by separating **planning** (LLM)
 
 **Acceptance**
 
-- [x] Schema validation accepts well-formed plans and rejects malformed ones with usable errors.
-- [x] Interpreter handles every node type (`seq`, `if`, `while`, `call`, `feedback`, `return`) on hand-crafted plans.
-- [x] Restricted expression evaluator rejects unsafe input (no attribute access on arbitrary objects, no name lookup outside bound vars, no calls).
-- [x] Handcrafted-plan E2E test runs against fully mocked sim + mocked LLM evaluator, exercising both `continue` and `replan` feedback decisions.
-- [x] No changes to the VLA HTTP contract.
+- Schema validation accepts well-formed plans and rejects malformed ones with usable errors.
+- Interpreter handles every node type (`seq`, `if`, `while`, `call`, `feedback`, `return`) on hand-crafted plans.
+- Restricted expression evaluator rejects unsafe input (no attribute access on arbitrary objects, no name lookup outside bound vars, no calls).
+- Handcrafted-plan E2E test runs against fully mocked sim + mocked LLM evaluator, exercising both `continue` and `replan` feedback decisions.
+- No changes to the VLA HTTP contract.
 
 **Out of scope for M4**
 
@@ -126,9 +131,9 @@ Enable robots to perform **long-horizon** tasks by separating **planning** (LLM)
 
 **Acceptance**
 
-- [ ] On **Linux**: handcrafted plan completes the chosen LIBERO task end-to-end against LIBERO + a running VLA server.
-- [ ] On **Windows**: ManiSkill version starts and executes ≥1 skill call without crashing (task success not required; arm calls may fail if no VLA is running).
-- [ ] `arm.grab` / `arm.place` operate over the unchanged VLA HTTP contract.
+- On **Linux**: handcrafted plan completes the chosen LIBERO task end-to-end against LIBERO + a running VLA server.
+- On **Windows**: ManiSkill version starts and executes ≥1 skill call without crashing (task success not required; arm calls may fail if no VLA is running).
+- `arm.grab` / `arm.place` operate over the unchanged VLA HTTP contract.
 
 **Out of scope for M5**
 
@@ -150,11 +155,11 @@ Enable robots to perform **long-horizon** tasks by separating **planning** (LLM)
 
 **Acceptance**
 
-- [ ] On **Linux + LIBERO-Long**: LLM emits a valid plan from the task language goal, the executor runs it with the VLA in the loop, and the run reaches at least one happy-path completion of the chosen task.
-- [x] Schema-violating LLM output triggers a bounded retry with the validation error injected into the next prompt.
-- [x] Replan and step-budget caps are enforced.
-- [x] On **Windows**: `pytest` passes (160 passed, 5 skipped).
-- [x] Per-run trace file written to `traces/` and contains all expected event types.
+- On **Linux + LIBERO-Long**: LLM emits a valid plan from the task language goal, the executor runs it with the VLA in the loop, and the run reaches at least one happy-path completion of the chosen task.
+- Schema-violating LLM output triggers a bounded retry with the validation error injected into the next prompt.
+- Replan and step-budget caps are enforced.
+- On **Windows**: `pytest` passes (160 passed, 5 skipped).
+- Per-run trace file written to `traces/` and contains all expected event types.
 
 **Out of scope for M6**
 
@@ -177,9 +182,13 @@ Retire the legacy flat-loop agent path once Linux validation of M1–M6 is confi
 
 ### M7 (optional, later)
 
-**Real perception backend.** Open-vocab detector (e.g. Grounding DINO or OWL-ViT + SAM2) implementing the same `perception.*` skill set as the sim-GT versions, but against rendered RGB instead of sim ground truth — so a single sim can be paired with either sim-GT or real perception. Introduces a `PerceptionBackend` interface in `src/core/skills.py` and a config knob (e.g. `PERCEPTION_BACKEND=sim_gt | openvocab`). Linux + GPU. Out of current planning scope; recorded so the option is on file.
+**Real perception backend.** Open-vocab detector (e.g. Grounding DINO or OWL-ViT + SAM2) implementing the same `perception.`* skill set as the sim-GT versions, but against rendered RGB instead of sim ground truth — so a single sim can be paired with either sim-GT or real perception. Introduces a `PerceptionBackend` interface in `src/core/skills.py` and a config knob (e.g. `PERCEPTION_BACKEND=sim_gt | openvocab`). Linux + GPU. Out of current planning scope; recorded so the option is on file.
 
 **M1–M3** widen OS, sim, and policy options; **M4–M6** add the planner architecture on top, with **LIBERO** as the primary E2E target and **ManiSkill on Windows** as the cross-platform smoke test.
+
+## Validation tooling (Colab)
+
+Linux milestone acceptance runs via notebooks in `colab/`, one per milestone (`colab/mN_validate.ipynb`). Each notebook is self-contained and ephemeral-safe: no Google Drive dependency; the repo is cloned and deps installed into the Colab VM's local disk on each session. The GitHub PAT and any API keys are read from Colab Secrets (never embedded in notebook cells). `.venv` is created with `--system-site-packages` to inherit Colab's pre-installed CUDA PyTorch; `.vla-venv` is fully isolated. The VLA server runs as a background subprocess; the notebook polls `/health` before proceeding.
 
 ## VLA integration — architecture
 
@@ -204,8 +213,8 @@ Implementation details (ports, batching, chunking, inner-step limits) live in co
 
 ## Architecture constraints
 
-- **`core/**`** stays **OS- and backend-agnostic** (no device paths, no sim imports, no robot SDKs).
-- **Simulation and hardware** live in **`sim/**`, `robots/**`,** or dedicated backend modules; select backend via **config/env**.
+- `**core/**`** stays **OS- and backend-agnostic** (no device paths, no sim imports, no robot SDKs).
+- **Simulation and hardware** live in `**sim/`**, `robots/**`,** or dedicated backend modules; select backend via **config/env**.
 - **Optional** heavy or HW-only dependencies: **lazy imports** and/or `requirements-optional.txt` so minimal sim dev does not install everything.
 - **Plan representation:** structured JSON AST (schema in `src/core/plan/schema.py`); the executor walks it with a restricted expression evaluator. **No `exec`** of generated code; **no `eval`** of arbitrary expressions.
 - **Skills:** `Skill` base + `SkillRegistry` live in `src/core/skills.py` (interfaces only). Concrete skill implementations live in their backend packages (`src/sim/*_skills.py`, `src/vla/arm_skills.py`, future `src/robots/*_skills.py`) and self-register at import time.
@@ -214,7 +223,7 @@ Implementation details (ports, batching, chunking, inner-step limits) live in co
 
 ## Configuration
 
-Use **`.env`** at the repository root (see `.env.example`). Typical families of variables:
+Use `**.env**` at the repository root (see `.env.example`). Typical families of variables:
 
 - **Backend / env:** which sim or robot, task name, display/render flags.
 - **LLM:** model id, API keys (never committed).
@@ -227,4 +236,5 @@ Exact names evolve in code; the SRD only requires **config-driven** selection, n
 
 - **Unit tests** hermetic where possible (no live sim, no network); use fakes/mocks for backends and VLA HTTP.
 - Shared fixtures: `tests/conftest.py`.
-- **`pytest.ini`** sets `pythonpath = src`.
+- `**pytest.ini`** sets `pythonpath = src`.
+

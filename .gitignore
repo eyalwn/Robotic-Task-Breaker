@@ -4,6 +4,7 @@ notes.txt
 .cursorignore
 *.db
 *.log
+temp.*
 
 __pycache__/
 examples/_out/
