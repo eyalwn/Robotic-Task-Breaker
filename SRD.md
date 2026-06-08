@@ -43,7 +43,7 @@ Enable robots to perform **long-horizon** tasks by separating **planning** (LLM)
 - CI matrix on Linux (optional follow-up).
 - New backends or changing the VLA HTTP contract.
 
-### M2 (implemented — Linux validation pending)
+### M2 (implemented — Linux validated ✓)
 
 **Additional VLA backend** — **π₀.5** (Pi0.5) via Physical Intelligence's [OpenPI](https://github.com/Physical-Intelligence/openpi) — proving the VLA HTTP contract is model-agnostic.
 
@@ -61,6 +61,13 @@ Enable robots to perform **long-horizon** tasks by separating **planning** (LLM)
 - `POST /predict` with a JPEG + task text returns a valid `{"actions": [[dx,dy,dz,gripper], ...]}` response.
 - On **Windows**: `pytest` passes (unit tests mock the VLA service; no real Pi0.5 required).
 - No Octo-specific references remain in `src/vla/`.
+
+**Colab validation results (Python 3.12, A100 GPU — June 2026)**
+
+- [x] Pi0.5 VLA service `/health` + `POST /predict`: **passed** — 15 action steps, `[dx,dy,dz,gripper]` format confirmed.
+- [x] `pytest` (non-integration, Linux): **160 passed, 2 skipped, 3 deselected**.
+
+Notes: requires A100 (free T4 OOM-kills during 11.6 GiB checkpoint load). Dep patches baked into `colab/m2_pi05_vla.ipynb`: pinned lerobot to OpenPI's git rev (`0cf8648`), upgraded `transformers`, set `timeout=180` for JIT warmup on first `/predict`.
 
 **Out of scope for M2**
 
@@ -86,6 +93,11 @@ Enable robots to perform **long-horizon** tasks by separating **planning** (LLM)
 - `python examples/libero_object.py` with a running VLA server starts a LIBERO-Object task, drives the arm via VLA, and runs to completion (wiring correctness; task success not required).
 - On **Windows**: `pytest` passes (LIBERO backend unit tests mock the env; no real LIBERO required).
 - `arm_tools.py` works unchanged with `LiberoArm`.
+
+**Colab validation results (Python 3.x, GPU — pending)**
+
+- [ ] `examples/libero_object.py` wiring (LIBERO-Object task 0 + Pi0.5 VLA): pending (`colab/m3_libero_object.ipynb`).
+- [ ] `pytest` (non-integration, Linux): pending.
 
 **Out of scope for M3**
 
