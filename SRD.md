@@ -75,7 +75,7 @@ Notes: requires A100 (free T4 OOM-kills during 11.6 GiB checkpoint load). Dep pa
 - Pi0.5 on Windows (OpenPI requires Linux + NVIDIA GPU).
 - Fine-tuning or model adaptation.
 
-### M3 (implemented — Linux validation pending)
+### M3 (implemented — Linux validated ✓)
 
 **LIBERO** simulation backend via [LeRobot](https://huggingface.co/docs/lerobot/main/libero) — same agent/VLA contract, env-specific adapters. Initial target: **LIBERO-Object** suite.
 
@@ -94,10 +94,12 @@ Notes: requires A100 (free T4 OOM-kills during 11.6 GiB checkpoint load). Dep pa
 - On **Windows**: `pytest` passes (LIBERO backend unit tests mock the env; no real LIBERO required).
 - `arm_tools.py` works unchanged with `LiberoArm`.
 
-**Colab validation results (Python 3.x, GPU — pending)**
+**Colab validation results (Python 3.12, A100 GPU — June 2026)**
 
-- [ ] `examples/libero_object.py` wiring (LIBERO-Object task 0 + Pi0.5 VLA): pending (`colab/m3_libero_object.ipynb`).
-- [ ] `pytest` (non-integration, Linux): pending.
+- [x] `examples/libero_object.py` wiring (LIBERO-Object task 0 + Pi0.5 VLA): **passed** — 60 arm steps applied, exit 0.
+- [x] `pytest` (non-integration, Linux): **160 passed, 2 skipped, 3 deselected**.
+
+Notes: requires A100 (same Pi0.5 weight size as M2). Patches baked into `colab/m3_libero_object.ipynb`: apt `cmake` for `egl_probe` build, lerobot git rev (`0cf8648`), upgraded `transformers`, pre-create `~/.libero/config.yaml` to bypass interactive prompt, `VLA_MAX_TOOL_SECONDS=120` (Pi0.5 JIT warmup on first call), `pi05_droid` checkpoint (pi05_libero GCS transfer fails).
 
 **Out of scope for M3**
 

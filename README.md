@@ -45,11 +45,11 @@ python -m venv .venv
 ```
 
 **Note:** Rationale for `requirements-maniskill.txt` vs CUDA is in the header of `requirements-maniskill.txt`.
-**Note:** keep `MANISKILL_ENV=PickCube-v1` in `.env` (until M3).
+**Note:** keep `MANISKILL_ENV=PickCube-v1` in `.env` for ManiSkill examples.
 
 #### LIBERO (Linux only)
 
-LIBERO requires **Linux** + MuJoCo. Install after the base `.venv`:
+LIBERO requires **Linux** + MuJoCo. `requirements-libero.txt` is self-contained (`-r requirements.txt` included), so it works as a standalone install or on top of an existing `.venv`:
 
 ```bash
 .venv/bin/python -m pip install -r requirements-libero.txt
