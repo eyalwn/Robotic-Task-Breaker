@@ -10,6 +10,7 @@ import os
 from typing import Any
 
 from .camera_base import SimCameraBase, _frame_to_uint8, _make_placeholder_jpeg
+from .video_recorder import VideoRecorder
 
 logger = logging.getLogger(__name__)
 
@@ -411,6 +412,10 @@ class LiberoArm:
         self.last_obs: Any = None
         self.episode_done = False
         self.env_step_count = 0
+        video_path = os.environ.get("LONGOR_VIDEO_OUT", "").strip()
+        self._video: VideoRecorder | None = (
+            VideoRecorder(video_path) if video_path else None
+        )
         obs, _r, _t, _tr, info = env.step(self._zero_act)
         self.env_step_count += 1
         self.last_obs = _unbatch_obs(obs)
@@ -422,6 +427,18 @@ class LiberoArm:
             dummy[0, 6] = -1.0
             self._rollout(dummy, steps=settle_steps)
         logger.debug("LiberoArm: pos_scale=%.3f settle_steps=%d", self._pos_scale, settle_steps)
+
+    def _record(self, obs: Any) -> None:
+        if self._video is None:
+            return
+        try:
+            frame = _agentview_rgb_from_obs(_unbatch_obs(obs))
+            if frame is None:
+                return
+            self._video.add_frame(frame)
+        except Exception as exc:
+            logger.warning("LIBERO video recording disabled: %s", exc)
+            self._video = None
 
     def _update_positions_from_obs(self, obs: Any) -> None:
         u = _unbatch_obs(obs)
@@ -535,6 +552,7 @@ class LiberoArm:
                 _first_env_info(info) if isinstance(info, dict) else {}
             )
             self._update_positions_from_obs(self.last_obs)
+            self._record(obs)
             terminated = bool(np.any(_t))
             truncated = bool(np.any(_tr))
             self.episode_done = terminated or truncated
