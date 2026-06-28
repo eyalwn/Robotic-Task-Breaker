@@ -4,6 +4,7 @@ import pytest
 
 from core.plan import (
     FeedbackDecision,
+    FeedbackOutcome,
     Interpreter,
     Plan,
     ReplanSignal,
@@ -30,11 +31,14 @@ class MockSkill(Skill):
 
 
 class MockFeedbackEvaluator:
-    def __init__(self, decision: FeedbackDecision) -> None:
+    def __init__(self, decision: FeedbackDecision, reason: str = "") -> None:
         self.decision = decision
+        self.reason = reason
+        self.last_description: str | None = None
 
-    def evaluate(self, image_bytes: bytes, description: str, goal: str) -> FeedbackDecision:
-        return self.decision
+    def evaluate(self, image_bytes: bytes, description: str, goal: str) -> FeedbackOutcome:
+        self.last_description = description
+        return FeedbackOutcome(decision=self.decision, reason=self.reason)
 
 
 def mock_image_fn() -> bytes:
@@ -288,6 +292,90 @@ def test_binop_and_short_circuit() -> None:
     assert sig.value.value is False
 
 
+def test_binop_in_true() -> None:
+    skill = MockSkill(["apple", "banana"])
+    interp = build_interpreter(skill)
+    plan = Plan.model_validate(
+        {
+            "goal": "g",
+            "body": {
+                "kind": "seq",
+                "steps": [
+                    {"kind": "call", "skill": "mock.skill", "args": {}, "assign_to": "objects"},
+                    {
+                        "kind": "if",
+                        "condition": {
+                            "kind": "binop",
+                            "op": "in",
+                            "left": {"kind": "literal", "value": "apple"},
+                            "right": {"kind": "var", "name": "objects"},
+                        },
+                        "then_branch": {"kind": "call", "skill": "mock.skill", "args": {}},
+                    },
+                ],
+            },
+        }
+    )
+    interp.run(plan)
+    assert len(skill.calls) == 2
+
+
+def test_binop_in_false() -> None:
+    skill = MockSkill(["apple", "banana"])
+    interp = build_interpreter(skill)
+    plan = Plan.model_validate(
+        {
+            "goal": "g",
+            "body": {
+                "kind": "seq",
+                "steps": [
+                    {"kind": "call", "skill": "mock.skill", "args": {}, "assign_to": "objects"},
+                    {
+                        "kind": "if",
+                        "condition": {
+                            "kind": "binop",
+                            "op": "in",
+                            "left": {"kind": "literal", "value": "grape"},
+                            "right": {"kind": "var", "name": "objects"},
+                        },
+                        "then_branch": {"kind": "call", "skill": "mock.skill", "args": {}},
+                    },
+                ],
+            },
+        }
+    )
+    interp.run(plan)
+    assert len(skill.calls) == 1
+
+
+def test_binop_in_none_right_returns_false() -> None:
+    skill = MockSkill(None)
+    interp = build_interpreter(skill)
+    plan = Plan.model_validate(
+        {
+            "goal": "g",
+            "body": {
+                "kind": "seq",
+                "steps": [
+                    {"kind": "call", "skill": "mock.skill", "args": {}, "assign_to": "objects"},
+                    {
+                        "kind": "if",
+                        "condition": {
+                            "kind": "binop",
+                            "op": "in",
+                            "left": {"kind": "literal", "value": "apple"},
+                            "right": {"kind": "var", "name": "objects"},
+                        },
+                        "then_branch": {"kind": "call", "skill": "mock.skill", "args": {}},
+                    },
+                ],
+            },
+        }
+    )
+    interp.run(plan)
+    assert len(skill.calls) == 1
+
+
 def test_not_expr() -> None:
     skill = MockSkill("ok")
     interp = build_interpreter(skill)
@@ -303,3 +391,111 @@ def test_not_expr() -> None:
     with pytest.raises(ReturnSignal) as sig:
         interp.run(plan)
     assert sig.value.value is False
+
+
+def test_feedback_continue_then_return() -> None:
+    skill = MockSkill("ok")
+    interp = build_interpreter(skill, decision=FeedbackDecision.CONTINUE)
+    plan = Plan.model_validate(
+        {
+            "goal": "g",
+            "body": {
+                "kind": "seq",
+                "steps": [
+                    {"kind": "feedback", "description": "all good"},
+                    {"kind": "return", "value": {"kind": "literal", "value": "x"}},
+                ],
+            },
+        }
+    )
+    with pytest.raises(ReturnSignal) as exc_info:
+        interp.run(plan)
+    assert exc_info.value.value == "x"
+
+
+def test_feedback_trace_includes_reason(tmp_path) -> None:
+    import json
+
+    from core.plan.trace import TraceWriter
+
+    skill = MockSkill("ok")
+    registry = SkillRegistry()
+    registry.register(skill)
+    trace = TraceWriter(tmp_path, "trace-reason")
+    interp = Interpreter(
+        registry=registry,
+        feedback_evaluator=MockFeedbackEvaluator(
+            FeedbackDecision.CONTINUE, reason="object held"
+        ),
+        image_fn=mock_image_fn,
+        goal="test-goal",
+        trace=trace,
+    )
+    plan = Plan.model_validate(
+        {"goal": "g", "body": {"kind": "feedback", "description": "grasp check"}}
+    )
+    interp.run(plan)
+    trace.close()
+    event = json.loads(trace.path.read_text(encoding="utf-8").strip().splitlines()[0])
+    assert event["event"] == "feedback"
+    assert event["decision"] == "continue"
+    assert event["reason"] == "object held"
+
+
+def test_feedback_appends_prior_skill_result() -> None:
+    skill = MockSkill('{"status":"stopped","grasp_confirmed":false}')
+    feedback = MockFeedbackEvaluator(FeedbackDecision.CONTINUE)
+    registry = SkillRegistry()
+    registry.register(skill)
+    interp = Interpreter(
+        registry=registry,
+        feedback_evaluator=feedback,
+        image_fn=mock_image_fn,
+        goal="test-goal",
+    )
+    plan = Plan.model_validate(
+        {
+            "goal": "g",
+            "body": {
+                "kind": "seq",
+                "steps": [
+                    {
+                        "kind": "call",
+                        "skill": "mock.skill",
+                        "args": {},
+                    },
+                    {"kind": "feedback", "description": "Is the object grasped?"},
+                ],
+            },
+        }
+    )
+    interp.run(plan)
+    assert feedback.last_description is not None
+    assert "Prior skill result:" in feedback.last_description
+    assert "grasp_confirmed" in feedback.last_description
+
+
+def test_interpreter_resolves_skill_alias() -> None:
+    target = MockSkill(["obj_a"])
+    registry = SkillRegistry()
+    registry.register(target)
+    registry.register_alias("list_objects", target.name)
+    interp = Interpreter(
+        registry=registry,
+        feedback_evaluator=MockFeedbackEvaluator(FeedbackDecision.CONTINUE),
+        image_fn=mock_image_fn,
+        goal="test-goal",
+    )
+    plan = Plan.model_validate(
+        {
+            "goal": "g",
+            "body": {
+                "kind": "call",
+                "skill": "list_objects",
+                "assign_to": "objects",
+                "args": {},
+            },
+        }
+    )
+    interp.run(plan)
+    assert target.calls == [{}]

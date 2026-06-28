@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+import json as _json
 import logging
 import os
 import sys
@@ -43,19 +44,26 @@ def decode_image(raw_bytes: bytes) -> np.ndarray:
     return np.array(img, dtype=np.uint8)
 
 
-def build_openpi_observation(config_name: str, img_rgb: np.ndarray, task: str) -> dict:
-    """Map one RGB frame + task into OpenPI dataset-style keys for the given config."""
+def build_openpi_observation(
+    config_name: str,
+    img_rgb: np.ndarray,
+    task: str,
+    state: np.ndarray,
+    wrist_img_rgb: np.ndarray | None = None,
+) -> dict:
+    """Map RGB frame(s) + task into OpenPI dataset-style keys for the given config."""
+    wrist = wrist_img_rgb if wrist_img_rgb is not None else np.zeros_like(img_rgb)
     key = config_name.lower()
     if "libero" in key:
         return {
-            "observation/state": np.zeros(8, dtype=np.float32),
+            "observation/state": state,
             "observation/image": img_rgb,
-            "observation/wrist_image": np.zeros_like(img_rgb),
+            "observation/wrist_image": wrist,
             "prompt": task,
         }
     return {
         "observation/exterior_image_1_left": img_rgb,
-        "observation/wrist_image_left": np.zeros_like(img_rgb),
+        "observation/wrist_image_left": wrist,
         "observation/joint_position": np.zeros(7, dtype=np.float32),
         "observation/gripper_position": np.zeros(1, dtype=np.float32),
         "prompt": task,
@@ -63,15 +71,13 @@ def build_openpi_observation(config_name: str, img_rgb: np.ndarray, task: str) -
 
 
 def actions_to_wire_format(chunk: np.ndarray) -> list[list[float]]:
-    """Pi0.5 DROID/LIBERO-style vectors → [dx, dy, dz, gripper] per timestep."""
+    """Pi0.5 DROID/LIBERO-style vectors → [dx,dy,dz,drx,dry,drz,grip] per timestep."""
     if chunk.ndim != 2:
         raise ValueError(f"expected 2D actions, got shape {chunk.shape}")
     _t, dim = chunk.shape
     if dim < 7:
         raise ValueError(f"need action dim >= 7 for gripper index 6, got {dim}")
-    xyz = chunk[:, :3].astype(np.float32, copy=False)
-    grip = chunk[:, 6:7].astype(np.float32, copy=False)
-    merged = np.concatenate([xyz, grip], axis=1)
+    merged = chunk[:, :7].astype(np.float32, copy=False)
     clipped = np.clip(merged, -VLA_ACTION_CLIP, VLA_ACTION_CLIP)
     return clipped.tolist()
 
@@ -138,7 +144,9 @@ def health():
 @app.post("/predict")
 async def predict(
     image: UploadFile = File(...),
+    image_wrist: UploadFile | None = File(None),
     task: str = Form("pick up the cube"),
+    state: str = Form(""),
 ):
     if _policy is None:
         raise HTTPException(status_code=503, detail="Model not loaded")
@@ -149,7 +157,29 @@ async def predict(
     except Exception as exc:
         raise HTTPException(status_code=400, detail=f"Image decode error: {exc}") from exc
 
-    obs = build_openpi_observation(OPENPI_CONFIG, img_np, task)
+    wrist_np = None
+    if image_wrist is not None:
+        try:
+            raw_wrist = await image_wrist.read()
+            if raw_wrist:
+                wrist_np = decode_image(raw_wrist)
+        except Exception as exc:
+            raise HTTPException(
+                status_code=400, detail=f"Wrist image decode error: {exc}"
+            ) from exc
+
+    if state:
+        try:
+            state_arr = np.array(_json.loads(state), dtype=np.float32)
+        except (ValueError, TypeError):
+            log.warning("Invalid state field; using zeros")
+            state_arr = np.zeros(8, dtype=np.float32)
+    else:
+        state_arr = np.zeros(8, dtype=np.float32)
+
+    obs = build_openpi_observation(
+        OPENPI_CONFIG, img_np, task, state_arr, wrist_img_rgb=wrist_np
+    )
 
     try:
         result = await asyncio.to_thread(_policy.infer, obs)

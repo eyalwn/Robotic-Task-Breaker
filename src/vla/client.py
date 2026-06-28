@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import math
+import json
 from typing import List
 
 import requests
@@ -24,9 +25,9 @@ class VLAClient:
 
     @staticmethod
     def _normalise_action(action: list[float], idx: int) -> list[float]:
-        if len(action) != 4:
+        if len(action) not in (4, 7):
             raise VLAServiceError(
-                f"VLA action at index {idx} must have 4 elements, got {len(action)}"
+                f"VLA action at index {idx} must have 4 or 7 elements, got {len(action)}"
             )
         try:
             values = [float(v) for v in action]
@@ -50,13 +51,25 @@ class VLAClient:
             )
         return clipped
 
-    def predict(self, image_bytes: bytes, task: str) -> List[List[float]]:
-        """POST image to /predict, return action chunk (list of [dx,dy,dz,gripper])."""
+    def predict(
+        self,
+        image_bytes: bytes,
+        task: str,
+        state: list[float] | None = None,
+        wrist_image_bytes: bytes | None = None,
+    ) -> List[List[float]]:
+        """POST image (+ optional wrist image, robot state) to /predict."""
+        data: dict = {"task": task}
+        if state is not None:
+            data["state"] = json.dumps(state)
+        files = {"image": ("frame.jpg", image_bytes, "image/jpeg")}
+        if wrist_image_bytes is not None:
+            files["image_wrist"] = ("wrist.jpg", wrist_image_bytes, "image/jpeg")
         try:
             response = requests.post(
                 f"{self._service_url}/predict",
-                files={"image": ("frame.jpg", image_bytes, "image/jpeg")},
-                data={"task": task},
+                files=files,
+                data=data,
                 timeout=self._timeout,
             )
             response.raise_for_status()

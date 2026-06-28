@@ -12,7 +12,7 @@ from dotenv import find_dotenv, load_dotenv
 import logging
 
 from core.plan import Executor, validate_plan
-from core.plan.feedback import FeedbackDecision
+from core.plan.feedback import FeedbackDecision, FeedbackOutcome
 from core.skills import SkillRegistry
 from sim.maniskill_backend import ManiSkillArm, ManiSkillCamera, create_env
 from sim.maniskill_skills import register_maniskill_skills
@@ -45,9 +45,9 @@ os.environ.setdefault("VLA_SIM_PICKCUBE_GRIPPER_PROFILE", "true")
 
 
 class _AlwaysContinue:
-    def evaluate(self, image_bytes: bytes, description: str, goal: str) -> FeedbackDecision:
+    def evaluate(self, image_bytes: bytes, description: str, goal: str) -> FeedbackOutcome:
         logging.info("Feedback [%s] → CONTINUE (handcrafted stub)", description)
-        return FeedbackDecision.CONTINUE
+        return FeedbackOutcome(decision=FeedbackDecision.CONTINUE)
 
 
 class _NoReplan:

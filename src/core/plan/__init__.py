@@ -1,5 +1,5 @@
 from .executor import ExecutionResult, Executor
-from .feedback import FeedbackDecision, FeedbackEvaluator
+from .feedback import FeedbackDecision, FeedbackEvaluator, FeedbackOutcome
 from .interpreter import Interpreter, ReplanSignal, ReturnSignal, StepBudgetExceeded, StopSignal
 from .llm_feedback import LLMFeedbackEvaluator
 from .llm_planner import LLMPlanner
@@ -38,6 +38,7 @@ __all__ = [
     "FeedbackNode",
     "ReturnNode",
     "FeedbackDecision",
+    "FeedbackOutcome",
     "FeedbackEvaluator",
     "Planner",
     "LLMPlanner",

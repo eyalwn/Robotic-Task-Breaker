@@ -33,19 +33,40 @@ def process_raw_action(
     return scaled[0], scaled[1], scaled[2]
 
 
+def _normalize_gripper_absolute(clipped: float) -> float:
+    """Map raw gripper to [0, 1] for absolute_open_close (0=open, 1=close)."""
+    if -1.0 <= clipped <= 1.0:
+        return (clipped + 1.0) / 2.0
+    return max(0.0, min(1.0, clipped))
+
+
+def requested_gripper_state(raw_gripper: float, cfg: VLAConfig) -> str:
+    """Map a raw gripper channel to the requested open/close state."""
+    clipped = max(-cfg.action_clip, min(cfg.action_clip, raw_gripper))
+    if cfg.gripper_mode == "absolute_open_close":
+        normalized = _normalize_gripper_absolute(clipped)
+        return "close" if normalized >= cfg.gripper_threshold else "open"
+    return "open" if clipped > 0 else "close"
+
+
 def should_flip_gripper(raw_gripper: float, current_state: str, cfg: VLAConfig) -> bool:
     """Return True when raw gripper signal is strong enough to flip state.
 
-    A flip is allowed only when:
-    - the requested state differs from `current_state`
-    - `abs(raw_gripper)` exceeds `gripper_threshold`
-    - `abs(raw_gripper)` also exceeds `gripper_confidence`, which is a minimum
-      raw-signal magnitude gate (not a 0-1 ML confidence score)
+  In ``delta_sign`` mode a flip requires:
+    - requested state differs from ``current_state``
+    - ``abs(raw_gripper)`` exceeds ``gripper_threshold``
+    - ``abs(raw_gripper)`` also exceeds ``gripper_confidence``
+
+  In ``absolute_open_close`` mode (LIBERO pi05: 0=open, 1=close) the requested
+  state follows ``gripper_threshold`` and flips whenever it differs from current.
     """
     clipped_gripper = max(-cfg.action_clip, min(cfg.action_clip, raw_gripper))
-    requested_state = "open" if clipped_gripper > 0 else "close"
+    requested_state = requested_gripper_state(clipped_gripper, cfg)
     if requested_state == current_state:
         return False
+
+    if cfg.gripper_mode == "absolute_open_close":
+        return True
 
     magnitude = abs(clipped_gripper)
     if magnitude < cfg.gripper_threshold:

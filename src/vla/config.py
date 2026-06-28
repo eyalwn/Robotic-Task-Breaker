@@ -84,6 +84,22 @@ def _parse_axis_signs(env_var: str = "VLA_AXIS_SIGNS") -> Optional[List[float]]:
         return None
 
 
+def _parse_gripper_mode(env_var: str = "VLA_GRIPPER_MODE", default: str = "delta_sign") -> str:
+    raw = os.environ.get(env_var)
+    if raw is None:
+        return default
+    value = raw.strip().lower()
+    if value in {"delta_sign", "absolute_open_close"}:
+        return value
+    logger.warning(
+        "%s=%r is invalid; expected 'delta_sign' or 'absolute_open_close'. Using default=%r.",
+        env_var,
+        raw,
+        default,
+    )
+    return default
+
+
 def _parse_bool(env_var: str, default: bool) -> bool:
     raw = os.environ.get(env_var)
     if raw is None:
@@ -104,6 +120,35 @@ def _parse_bool(env_var: str, default: bool) -> bool:
 
 def _ef(var: str, default) -> str:
     return os.environ.get(var, str(default))
+
+
+def _parse_chunk_steps(env_var: str = "VLA_CHUNK_STEPS", default: int = 0) -> int:
+    """Actions to execute per VLA predict before re-querying (0 = full chunk)."""
+    raw = os.environ.get(env_var)
+    if raw is None:
+        return default
+    text = raw.strip()
+    if not text:
+        return default
+    try:
+        value = int(text)
+    except ValueError:
+        logger.warning(
+            "%s=%r is invalid; expected an int. Using default=%d.",
+            env_var,
+            raw,
+            default,
+        )
+        return default
+    if value < 0:
+        logger.warning(
+            "%s=%d is negative; using default=%d.",
+            env_var,
+            value,
+            default,
+        )
+        return default
+    return value
 
 
 def _parse_max_tool_seconds(
@@ -144,12 +189,16 @@ class VLAConfig:
     axis_remap: list[int] | None = None
     axis_signs: list[float] | None = None
     steps_per_action: int = 5
+    # 0 = execute full predicted chunk before next predict (PickCube default).
+    chunk_steps: int = 0
     stagnation_chunks: int = 3
     gripper_threshold: float = 0.5
     # Minimum |raw_gripper| required to allow open/close state changes.
     # This is a raw action-magnitude gate, not a 0-1 model confidence.
     gripper_confidence: float = 1.5
     grasp_dist: float = 0.03
+    # When false, or on OpenPI LIBERO raw-action path, skip proximity-based early exit.
+    proximity_grasp: bool = True
     request_timeout: float = 60.0
     adaptive_scale: bool = True
     adaptive_ref_dist: float = 0.15
@@ -169,8 +218,14 @@ class VLAConfig:
     fail_worsening_margin: float = 0.03
     fail_ik_saturation_steps: int = 25
     sim_pickcube_gripper_profile: bool = True
+    # delta_sign: positive raw → open, negative → close (ManiSkill/Octo).
+    # absolute_open_close: raw in [0, 1] with 0=open, 1=close (LIBERO pi05_libero).
+    gripper_mode: str = "delta_sign"
     gripper_close_max_dist: float = 0.09
     success_lift_delta: float = 0.02
+    # When true, per-skill VLA may exit on env.evaluate() / last_info success flags
+    # (ManiSkill full-task). LIBERO multi-step plans should set false.
+    use_env_task_success: bool = True
     fail_on_placeholder: bool = True
 
     @classmethod
@@ -184,10 +239,12 @@ class VLAConfig:
             axis_remap=_parse_axis_remap(),
             axis_signs=_parse_axis_signs(),
             steps_per_action=int(f("VLA_STEPS_PER_ACTION", cls.steps_per_action)),
+            chunk_steps=_parse_chunk_steps(),
             stagnation_chunks=int(f("VLA_STAGNATION_CHUNKS", cls.stagnation_chunks)),
             gripper_threshold=float(f("VLA_GRIPPER_THRESHOLD", cls.gripper_threshold)),
             gripper_confidence=_parse_gripper_confidence(default=cls.gripper_confidence),
             grasp_dist=float(f("VLA_GRASP_DIST", cls.grasp_dist)),
+            proximity_grasp=b("VLA_PROXIMITY_GRASP", cls.proximity_grasp),
             request_timeout=float(f("VLA_REQUEST_TIMEOUT", cls.request_timeout)),
             adaptive_scale=b("VLA_ADAPTIVE_SCALE", cls.adaptive_scale),
             adaptive_ref_dist=float(f("VLA_ADAPTIVE_REF_DIST", cls.adaptive_ref_dist)),
@@ -213,9 +270,13 @@ class VLAConfig:
                 f("VLA_FAIL_IK_SATURATION_STEPS", cls.fail_ik_saturation_steps)
             ),
             sim_pickcube_gripper_profile=b("VLA_SIM_PICKCUBE_GRIPPER_PROFILE", cls.sim_pickcube_gripper_profile),
+            gripper_mode=_parse_gripper_mode(),
             gripper_close_max_dist=float(
                 f("VLA_GRIPPER_CLOSE_MAX_DIST", cls.gripper_close_max_dist)
             ),
             success_lift_delta=float(f("VLA_SUCCESS_LIFT_DELTA", cls.success_lift_delta)),
+            use_env_task_success=b(
+                "VLA_USE_ENV_TASK_SUCCESS", cls.use_env_task_success
+            ),
             fail_on_placeholder=b("VLA_FAIL_ON_PLACEHOLDER", cls.fail_on_placeholder),
         )

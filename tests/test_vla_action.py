@@ -5,9 +5,10 @@ import logging
 import os
 from unittest.mock import MagicMock, patch
 
+import pytest
 from vla import VLAConfig, create_vla_manipulation
-from vla.action import process_raw_action, should_flip_gripper
-from vla.tools import _axis_calibration_hint
+from vla.action import process_raw_action, requested_gripper_state, should_flip_gripper
+from vla.tools import _axis_calibration_hint, _use_raw_openpi_action_path
 
 
 class _FakeCamera:
@@ -37,6 +38,46 @@ def _make_response(actions):
     resp.json.return_value = {"actions": actions}
     resp.raise_for_status.return_value = None
     return resp
+
+
+def test_unset_axis_signs_enables_raw_openpi_action_path():
+    for env_value in (None, ""):
+        original_signs = os.environ.get("VLA_AXIS_SIGNS")
+        original_remap = os.environ.get("VLA_AXIS_REMAP")
+        try:
+            if env_value is None:
+                os.environ.pop("VLA_AXIS_SIGNS", None)
+            else:
+                os.environ["VLA_AXIS_SIGNS"] = env_value
+            os.environ.pop("VLA_AXIS_REMAP", None)
+            os.environ["VLA_ADAPTIVE_SCALE"] = "false"
+            cfg = VLAConfig.from_env()
+        finally:
+            if original_signs is None:
+                os.environ.pop("VLA_AXIS_SIGNS", None)
+            else:
+                os.environ["VLA_AXIS_SIGNS"] = original_signs
+            if original_remap is None:
+                os.environ.pop("VLA_AXIS_REMAP", None)
+            else:
+                os.environ["VLA_AXIS_REMAP"] = original_remap
+            os.environ.pop("VLA_ADAPTIVE_SCALE", None)
+
+        assert cfg.axis_signs is None
+        assert cfg.axis_remap is None
+        assert _use_raw_openpi_action_path(cfg)
+
+
+def test_process_raw_action_libero_axis_signs_flip_positive_dz():
+    """LIBERO pi05_libero: VLA_AXIS_SIGNS=1,1,-1 negates positive raw dz."""
+    cfg = VLAConfig(
+        action_scale=1.0,
+        action_clip=2.0,
+        axis_remap=None,
+        axis_signs=[1, 1, -1],
+    )
+    dx, dy, dz = process_raw_action([0.0, 0.0, 0.9], cfg)
+    assert (dx, dy, dz) == (0.0, 0.0, -0.9)
 
 
 def test_process_raw_action_order_clip_remap_signs_scale():
@@ -222,4 +263,509 @@ def test_vla_gripper_confidence_env_above_range_clamps_to_default(caplog):
 
     assert cfg.gripper_confidence == VLAConfig.gripper_confidence
     assert "out of expected range" in caplog.text
+
+
+def test_requested_gripper_state_absolute_denorms_minus_one_to_open():
+    cfg = VLAConfig(gripper_mode="absolute_open_close", gripper_threshold=0.5)
+    assert requested_gripper_state(-1.0, cfg) == "open"
+
+
+def test_requested_gripper_state_absolute_denorms_plus_one_to_close():
+    cfg = VLAConfig(gripper_mode="absolute_open_close", gripper_threshold=0.5)
+    assert requested_gripper_state(1.0, cfg) == "close"
+
+
+def test_requested_gripper_state_absolute_denorms_high_positive_to_close():
+    cfg = VLAConfig(gripper_mode="absolute_open_close", gripper_threshold=0.5)
+    assert requested_gripper_state(0.99, cfg) == "close"
+
+
+def test_should_flip_gripper_absolute_mode_closes_on_high_raw():
+    cfg = VLAConfig(
+        gripper_mode="absolute_open_close",
+        gripper_threshold=0.5,
+        gripper_confidence=0.5,
+    )
+    assert should_flip_gripper(raw_gripper=0.99, current_state="open", cfg=cfg)
+    assert not should_flip_gripper(raw_gripper=0.99, current_state="close", cfg=cfg)
+    assert should_flip_gripper(raw_gripper=-0.8, current_state="close", cfg=cfg)
+
+
+def test_maybe_apply_gripper_absolute_mode_applies_close():
+    from vla.tools import _ChunkState, _RunState, _maybe_apply_gripper
+
+    class _GripperArm(_FakeArm):
+        def __init__(self) -> None:
+            super().__init__(eef_xyz=[0.0, 0.0, 0.5], obj_xyz=[0.0, 0.0, 0.45])
+            self.gripper_calls: list[str] = []
+
+        def set_gripper(self, state: str, steps: int = 1) -> None:
+            self.gripper_calls.append(state)
+
+    cfg = VLAConfig(
+        gripper_mode="absolute_open_close",
+        gripper_threshold=0.5,
+        sim_pickcube_gripper_profile=False,
+        steps_per_action=1,
+    )
+    arm = _GripperArm()
+    state = _RunState(gripper_state="open")
+    _maybe_apply_gripper(arm, cfg, state, _ChunkState(), raw_gripper=0.99, dist=0.05)
+    assert arm.gripper_calls == ["close"]
+    assert state.gripper_state == "close"
+
+
+def test_tool_impl_uses_7dim_apply_vla_action_with_rotation():
+    class _LiberoArm(_FakeArm):
+        def __init__(self) -> None:
+            super().__init__(eef_xyz=[0.0, 0.0, 0.0], obj_xyz=[0.1, 0.0, 0.0])
+            self.vla_calls: list[tuple] = []
+
+        def apply_vla_action(
+            self, dx, dy, dz, drx, dry, drz, grip, steps=1
+        ) -> None:
+            self.vla_calls.append((dx, dy, dz, drx, dry, drz, grip, steps))
+            self.move_ee(dx, dy, dz, steps=steps)
+
+    arm = _LiberoArm()
+    camera = _FakeCamera()
+    cfg = VLAConfig(
+        action_scale=1.0,
+        axis_remap=None,
+        axis_signs=None,
+        adaptive_scale=False,
+        grasp_dist=0.0,
+        max_inner_steps=1,
+        sim_pickcube_gripper_profile=False,
+    )
+    tool = create_vla_manipulation(
+        tool_name="pick_cube_with_policy",
+        tool_description="test",
+        task_prompt="pick the cube",
+        server_address="http://localhost:8765",
+        arm=arm,
+        camera=camera,
+        max_steps=1,
+        cfg=cfg,
+    )
+
+    with patch(
+        "vla.client.requests.post",
+        return_value=_make_response([[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, -0.7]]),
+    ):
+        tool.invoke({})
+
+    assert len(arm.vla_calls) == 1
+    dx, dy, dz, drx, dry, drz, grip, steps = arm.vla_calls[0]
+    assert (dx, dy, dz) == pytest.approx((0.1, 0.2, 0.3))
+    assert (drx, dry, drz) == pytest.approx((0.4, 0.5, 0.6))
+    assert grip == pytest.approx(-0.7)
+
+
+def test_chunk_steps_limits_actions_before_repredict():
+    class _LiberoArm(_FakeArm):
+        def __init__(self) -> None:
+            super().__init__(eef_xyz=[0.0, 0.0, 0.0], obj_xyz=[0.1, 0.0, 0.0])
+            self.vla_calls: list[tuple] = []
+
+        def apply_vla_action(
+            self, dx, dy, dz, drx, dry, drz, grip, steps=1
+        ) -> None:
+            self.vla_calls.append((dx, dy, dz, drx, dry, drz, grip, steps))
+            self.move_ee(dx, dy, dz, steps=steps)
+
+    arm = _LiberoArm()
+    camera = _FakeCamera()
+    cfg = VLAConfig(
+        action_scale=1.0,
+        action_clip=20.0,
+        axis_remap=None,
+        axis_signs=None,
+        adaptive_scale=False,
+        chunk_steps=5,
+        grasp_dist=0.0,
+        max_inner_steps=6,
+        sim_pickcube_gripper_profile=False,
+    )
+    tool = create_vla_manipulation(
+        tool_name="pick_cube_with_policy",
+        tool_description="test",
+        task_prompt="pick the cube",
+        server_address="http://localhost:8765",
+        arm=arm,
+        camera=camera,
+        max_steps=6,
+        cfg=cfg,
+    )
+
+    chunk_16 = [[float(i)] * 7 for i in range(16)]
+    predict_calls = 0
+
+    class _CountingClient:
+        def __init__(self, *_args, **_kwargs) -> None:
+            pass
+
+        def predict(self, _image, _task, **_kwargs):
+            nonlocal predict_calls
+            predict_calls += 1
+            return chunk_16
+
+    with patch("vla.tools.VLAClient", _CountingClient):
+        tool.invoke({})
+
+    assert len(arm.vla_calls) == 6
+    assert predict_calls == 2
+    assert arm.vla_calls[0][0] == pytest.approx(0.0)
+    assert arm.vla_calls[4][0] == pytest.approx(4.0)
+    assert arm.vla_calls[5][0] == pytest.approx(0.0)
+
+
+def test_tool_impl_uses_task_override():
+    arm = _FakeArm(eef_xyz=[0.0, 0.0, 0.0], obj_xyz=[0.1, 0.0, 0.0])
+    camera = _FakeCamera()
+    cfg = VLAConfig(max_inner_steps=1, grasp_dist=0.0, sim_pickcube_gripper_profile=False)
+    tool = create_vla_manipulation(
+        tool_name="pick_cube_with_policy",
+        tool_description="test",
+        task_prompt="default goal",
+        server_address="http://localhost:8765",
+        arm=arm,
+        camera=camera,
+        max_steps=1,
+        cfg=cfg,
+    )
+    tasks: list[str] = []
+
+    class _FakeClient:
+        def __init__(self, *_args, **_kwargs) -> None:
+            pass
+
+        def predict(self, _image, task, **_kwargs):
+            tasks.append(task)
+            return [[0.0, 0.0, 0.0, 0.0]]
+
+    with patch("vla.tools.VLAClient", _FakeClient):
+        tool.invoke({"task": "pick up the soup can"})
+
+    assert tasks == ["pick up the soup can"]
+
+
+def test_task_success_ignored_when_env_flag_false():
+    """LIBERO full-task is_success must not end a per-skill grab early."""
+    class _EnvSuccessArm(_FakeArm):
+        def __init__(self) -> None:
+            super().__init__(eef_xyz=[0.0, 0.0, 0.5], obj_xyz=[0.5, 0.0, 0.45])
+            self.last_info = {"is_success": True}
+            self.vla_calls: list[tuple] = []
+
+        def apply_vla_action(
+            self, dx, dy, dz, drx, dry, drz, grip, steps=1
+        ) -> None:
+            self.vla_calls.append((dx, dy, dz, drx, dry, drz, grip, steps))
+            self.move_ee(dx, dy, dz, steps=steps)
+
+    arm = _EnvSuccessArm()
+    camera = _FakeCamera()
+    cfg = VLAConfig(
+        action_scale=1.0,
+        axis_remap=None,
+        axis_signs=None,
+        adaptive_scale=False,
+        grasp_dist=0.0,
+        max_inner_steps=3,
+        use_env_task_success=False,
+        sim_pickcube_gripper_profile=False,
+    )
+    tool = create_vla_manipulation(
+        tool_name="pick_cube_with_policy",
+        tool_description="test",
+        task_prompt="pick the cube",
+        server_address="http://localhost:8765",
+        arm=arm,
+        camera=camera,
+        max_steps=3,
+        cfg=cfg,
+    )
+
+    with patch(
+        "vla.client.requests.post",
+        return_value=_make_response([[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]]),
+    ):
+        result = tool.invoke({})
+
+    payload = json.loads(result)
+    assert payload["reason"] != "task_success"
+    assert payload["steps_applied"] == 3
+    assert payload["min_dist"] is not None
+    assert payload["min_dist"] > 0.4  # arm never moved toward object
+
+
+def test_proximity_without_lift_returns_not_confirmed():
+    from vla.tools import _maybe_proximity_grasp, _RunState
+
+    class _ProxArm(_FakeArm):
+        def step(self, steps: int = 1) -> None:
+            return None
+
+    arm = _ProxArm(eef_xyz=[0.0, 0.0, 0.5], obj_xyz=[0.0, 0.0, 0.48])
+    cfg = VLAConfig(grasp_dist=0.05)
+    state = _RunState(steps_applied=10, min_dist=0.02)
+    result = _maybe_proximity_grasp(arm, cfg, state, dist=0.02, obj=[0.0, 0.0, 0.48])
+    assert result is not None
+    detail, lifted = result
+    assert not lifted
+    assert "grasp not confirmed" in detail
+
+
+def test_proximity_grasp_disabled_on_openpi_path():
+    from vla.tools import _proximity_grasp_enabled
+
+    cfg = VLAConfig(
+        proximity_grasp=True,
+        adaptive_scale=False,
+        axis_remap=None,
+        axis_signs=None,
+    )
+    assert not _proximity_grasp_enabled(cfg)
+
+
+def test_proximity_grasp_enabled_for_maniskill_profile():
+    from vla.tools import _proximity_grasp_enabled
+
+    cfg = VLAConfig(
+        proximity_grasp=True,
+        adaptive_scale=True,
+        axis_remap=None,
+        axis_signs=None,
+    )
+    assert _proximity_grasp_enabled(cfg)
+
+
+def test_proximity_grasp_disabled_when_env_false():
+    from vla.tools import _proximity_grasp_enabled
+
+    cfg = VLAConfig(proximity_grasp=False, adaptive_scale=True)
+    assert not _proximity_grasp_enabled(cfg)
+
+
+def test_openpi_loop_skips_proximity_when_close():
+    class _CloseArm(_FakeArm):
+        def __init__(self) -> None:
+            super().__init__(eef_xyz=[0.0, 0.0, 0.5], obj_xyz=[0.0, 0.0, 0.49])
+            self.vla_calls: list[tuple] = []
+
+        def apply_vla_action(
+            self, dx, dy, dz, drx, dry, drz, grip, steps=1
+        ) -> None:
+            self.vla_calls.append((dx, dy, dz, drx, dry, drz, grip, steps))
+
+    arm = _CloseArm()
+    camera = _FakeCamera()
+    cfg = VLAConfig(
+        action_scale=1.0,
+        axis_remap=None,
+        axis_signs=None,
+        adaptive_scale=False,
+        proximity_grasp=False,
+        grasp_dist=0.05,
+        max_inner_steps=2,
+        use_env_task_success=False,
+        sim_pickcube_gripper_profile=False,
+        chunk_steps=1,
+    )
+    tool = create_vla_manipulation(
+        tool_name="pick_cube_with_policy",
+        tool_description="test",
+        task_prompt="pick the cube",
+        server_address="http://localhost:8765",
+        arm=arm,
+        camera=camera,
+        max_steps=2,
+        cfg=cfg,
+    )
+
+    with patch(
+        "vla.client.requests.post",
+        return_value=_make_response([[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0]]),
+    ):
+        result = tool.invoke({})
+
+    payload = json.loads(result)
+    assert payload["reason"] != "proximity_no_lift"
+    assert payload["reason"] != "proximity_grasp"
+    assert payload["steps_applied"] == 2
+    assert len(arm.vla_calls) == 2
+
+
+def test_lift_delta_returns_grasp_lift_with_confirmed():
+    class _LiftArm(_FakeArm):
+        def __init__(self) -> None:
+            super().__init__(eef_xyz=[0.0, 0.0, 0.5], obj_xyz=[0.1, 0.0, 0.45])
+            self._obj_z = 0.45
+            self.vla_calls: list[tuple] = []
+
+        def apply_vla_action(
+            self, dx, dy, dz, drx, dry, drz, grip, steps=1
+        ) -> None:
+            self.vla_calls.append((dx, dy, dz, drx, dry, drz, grip, steps))
+            self._obj_z += 0.03
+            self.last_obj_pos = [0.1, 0.0, self._obj_z]
+
+    arm = _LiftArm()
+    camera = _FakeCamera()
+    cfg = VLAConfig(
+        action_scale=1.0,
+        axis_remap=None,
+        axis_signs=None,
+        adaptive_scale=False,
+        proximity_grasp=False,
+        success_lift_delta=0.02,
+        max_inner_steps=3,
+        use_env_task_success=False,
+        sim_pickcube_gripper_profile=False,
+        chunk_steps=1,
+    )
+    tool = create_vla_manipulation(
+        tool_name="pick_cube_with_policy",
+        tool_description="test",
+        task_prompt="pick the cube",
+        server_address="http://localhost:8765",
+        arm=arm,
+        camera=camera,
+        max_steps=3,
+        cfg=cfg,
+    )
+
+    with patch(
+        "vla.client.requests.post",
+        return_value=_make_response([[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, -1.0]]),
+    ):
+        result = tool.invoke({})
+
+    payload = json.loads(result)
+    assert payload["reason"] == "grasp_lift"
+    assert payload["grasp_confirmed"] is True
+    assert payload["status"] == "success"
+
+
+def test_maniskill_proximity_still_triggers_when_enabled():
+    class _ProxArm(_FakeArm):
+        gripper_calls: list[str] = []
+
+        def __init__(self) -> None:
+            super().__init__(eef_xyz=[0.0, 0.0, 0.5], obj_xyz=[0.0, 0.0, 0.48])
+            self._obj_z = 0.48
+
+        def set_gripper(self, state: str, steps: int = 1) -> None:
+            self.gripper_calls.append(state)
+
+        def step(self, steps: int = 1) -> None:
+            self._obj_z += 0.01
+            self.last_obj_pos = [0.0, 0.0, self._obj_z]
+
+    arm = _ProxArm()
+    camera = _FakeCamera()
+    cfg = VLAConfig(
+        action_scale=0.05,
+        axis_remap=[0, 1, 2],
+        adaptive_scale=True,
+        proximity_grasp=True,
+        grasp_dist=0.05,
+        max_inner_steps=1,
+        use_env_task_success=False,
+        sim_pickcube_gripper_profile=False,
+        chunk_steps=1,
+    )
+    tool = create_vla_manipulation(
+        tool_name="pick_cube_with_policy",
+        tool_description="test",
+        task_prompt="pick the cube",
+        server_address="http://localhost:8765",
+        arm=arm,
+        camera=camera,
+        max_steps=1,
+        cfg=cfg,
+    )
+
+    with patch(
+        "vla.client.requests.post",
+        return_value=_make_response([[0.0, 0.0, 0.0, 0.0]]),
+    ):
+        result = tool.invoke({})
+
+    payload = json.loads(result)
+    assert payload["reason"] == "proximity_grasp"
+    assert payload["grasp_confirmed"] is True
+
+
+def test_adaptive_scaling_factor_decreases_with_dist():
+    arm = _FakeArm(eef_xyz=[0.0, 0.0, 0.0], obj_xyz=[0.12, 0.0, 0.0])
+    camera = _FakeCamera()
+    cfg = VLAConfig(
+        action_scale=0.05,
+        adaptive_scale=True,
+        adaptive_ref_dist=0.15,
+        adaptive_min_factor=0.2,
+        grasp_dist=0.0,
+    )
+    tool = create_vla_manipulation(
+        tool_name="pick_cube_with_policy",
+        tool_description="test",
+        task_prompt="pick the cube",
+        server_address="http://localhost:8765",
+        arm=arm,
+        camera=camera,
+        max_steps=3,
+        cfg=cfg,
+    )
+
+    actions = [
+        [1.0, 0.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0, 0.0],
+    ]
+
+    with patch("vla.client.requests.post", return_value=_make_response(actions)):
+        tool.invoke({})
+
+    dxs = [dx for dx, _, _ in arm.moves]
+    assert len(dxs) == 3
+    assert dxs[0] > dxs[1] > dxs[2]
+    min_allowed = cfg.action_scale * cfg.adaptive_min_factor
+    assert all(dx >= min_allowed - 1e-12 for dx in dxs)
+
+
+def test_adaptive_scaling_can_be_disabled():
+    arm = _FakeArm(eef_xyz=[0.0, 0.0, 0.0], obj_xyz=[0.12, 0.0, 0.0])
+    camera = _FakeCamera()
+    cfg = VLAConfig(
+        action_scale=0.05,
+        adaptive_scale=False,
+        adaptive_ref_dist=0.15,
+        adaptive_min_factor=0.2,
+        grasp_dist=0.0,
+    )
+    tool = create_vla_manipulation(
+        tool_name="pick_cube_with_policy",
+        tool_description="test",
+        task_prompt="pick the cube",
+        server_address="http://localhost:8765",
+        arm=arm,
+        camera=camera,
+        max_steps=3,
+        cfg=cfg,
+    )
+
+    actions = [
+        [1.0, 0.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0, 0.0],
+        [1.0, 0.0, 0.0, 0.0],
+    ]
+
+    with patch("vla.client.requests.post", return_value=_make_response(actions)):
+        tool.invoke({})
+
+    dxs = [dx for dx, _, _ in arm.moves]
+    assert len(dxs) == 3
+    assert dxs[0] == dxs[1] == dxs[2] == cfg.action_scale
 

@@ -63,6 +63,7 @@ class Interpreter:
         self._step_budget = step_budget
         self._steps = 0
         self._trace = trace
+        self._last_skill_result: str | None = None
 
     def run(self, plan: Plan) -> Any:
         """Execute *plan*. Returns the value from a ReturnNode, or None."""
@@ -99,6 +100,7 @@ class Interpreter:
             skill = self._registry.get(node.skill)
             evaluated_args = {key: self._eval(value, ctx) for key, value in node.args.items()}
             result = skill(**evaluated_args)
+            self._last_skill_result = str(result)
             self._steps += 1
             if node.assign_to is not None:
                 ctx[node.assign_to] = result
@@ -116,23 +118,31 @@ class Interpreter:
 
         if isinstance(node, FeedbackNode):
             image_bytes = self._image_fn()
-            decision = self._feedback_evaluator.evaluate(image_bytes, node.description, self._goal)
-            if self._trace:
-                self._trace.write(
-                    {
-                        "event": "feedback",
-                        "description": node.description,
-                        "decision": decision.value,
-                        "step": self._steps,
-                    }
+            description = node.description
+            if self._last_skill_result:
+                description = (
+                    f"{description}\n\nPrior skill result: {self._last_skill_result}"
                 )
-            if decision == FeedbackDecision.CONTINUE:
+            outcome = self._feedback_evaluator.evaluate(
+                image_bytes, description, self._goal
+            )
+            if self._trace:
+                event: dict[str, Any] = {
+                    "event": "feedback",
+                    "description": node.description,
+                    "decision": outcome.decision.value,
+                    "step": self._steps,
+                }
+                if outcome.reason:
+                    event["reason"] = outcome.reason
+                self._trace.write(event)
+            if outcome.decision == FeedbackDecision.CONTINUE:
                 return None
-            if decision == FeedbackDecision.STOP:
+            if outcome.decision == FeedbackDecision.STOP:
                 raise StopSignal()
-            if decision == FeedbackDecision.REPLAN:
+            if outcome.decision == FeedbackDecision.REPLAN:
                 raise ReplanSignal(node.description)
-            raise ValueError(f"Unsupported feedback decision: {decision!r}")
+            raise ValueError(f"Unsupported feedback decision: {outcome.decision!r}")
 
         if isinstance(node, ReturnNode):
             value = self._eval(node.value, ctx) if node.value is not None else None
@@ -165,6 +175,13 @@ class Interpreter:
                 if left:
                     return left
                 return self._eval(expr.right, ctx)
+
+            if expr.op == "in":
+                left = self._eval(expr.left, ctx)
+                right = self._eval(expr.right, ctx)
+                if right is None:
+                    return False
+                return left in right
 
             left = self._eval(expr.left, ctx)
             right = self._eval(expr.right, ctx)

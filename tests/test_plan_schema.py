@@ -71,6 +71,48 @@ def test_call_assign_to_optional() -> None:
     assert node.assign_to is None
 
 
+def test_call_args_coerce_bare_primitives() -> None:
+    data = {
+        "goal": "place objects",
+        "body": {
+            "kind": "call",
+            "skill": "arm.place",
+            "args": {"object_name": "cup", "count": 2},
+        },
+    }
+    plan = validate_plan(data)
+    call = plan.body
+    assert isinstance(call, CallNode)
+    assert call.args["object_name"].kind == "literal"
+    assert call.args["object_name"].value == "cup"
+    assert call.args["count"].kind == "literal"
+    assert call.args["count"].value == 2
+
+
+def test_binop_in_valid() -> None:
+    expr = BinOpExpr.model_validate(
+        {
+            "kind": "binop",
+            "op": "in",
+            "left": {"kind": "literal", "value": "apple"},
+            "right": {"kind": "var", "name": "objects"},
+        }
+    )
+    assert expr.op == "in"
+
+
+def test_binop_bad_op_rejected() -> None:
+    with pytest.raises(ValidationError):
+        BinOpExpr.model_validate(
+            {
+                "kind": "binop",
+                "op": "not_an_op",
+                "left": {"kind": "literal", "value": 1},
+                "right": {"kind": "literal", "value": 2},
+            }
+        )
+
+
 def test_while_default_max_iterations() -> None:
     node = WhileNode.model_validate(
         {

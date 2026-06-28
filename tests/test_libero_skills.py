@@ -11,6 +11,7 @@ from sim.libero_skills import (
     LiberoListObjectsSkill,
     LiberoLocateSkill,
     _unwrap_to_sim,
+    libero_object_human_name,
     register_libero_skills,
 )
 
@@ -31,6 +32,14 @@ def _make_fake_vec_env(sim):
     inner = types.SimpleNamespace(sim=sim)
     outer = types.SimpleNamespace(env=inner)
     return types.SimpleNamespace(envs=[outer])
+
+
+def test_libero_object_human_name_alias():
+    assert libero_object_human_name("alphabet_soup_1_main") == "alphabet soup can"
+
+
+def test_libero_object_human_name_fallback_strip_main():
+    assert libero_object_human_name("butter_1_main") == "butter"
 
 
 def test_list_objects_filters_robot_bodies():
@@ -88,8 +97,38 @@ def test_register_libero_skills():
     assert registry.get("perception.locate")
 
 
+def test_list_objects_alias():
+    sim = _make_fake_sim(
+        ["akita_black_bowl_1"],
+        {"akita_black_bowl_1": [0.1, 0.2, 0.3]},
+    )
+    registry = SkillRegistry()
+    register_libero_skills(registry, _make_fake_vec_env(sim))
+    assert registry.get("list_objects") is registry.get("state.list_objects")
+    assert registry.get("list_objects")() == ["akita_black_bowl_1"]
+
+
 def test_list_objects_no_sim():
     vec_env = types.SimpleNamespace(envs=[types.SimpleNamespace(env=None)])
     skill = LiberoListObjectsSkill(vec_env)
     assert skill() == []
     assert _unwrap_to_sim(vec_env) is None
+
+
+def test_unwrap_to_sim_via_unwrapped():
+    """_unwrap_to_sim must find sim via .unwrapped (gymnasium-style chain)."""
+    from sim.libero_skills import _unwrap_to_sim
+
+    fake_sim = object()
+
+    class InnerEnv:
+        sim = fake_sim
+
+    class OuterEnv:
+        # no .env attribute — only gymnasium-style .unwrapped
+        unwrapped = InnerEnv()
+
+    class FakeVecEnv:
+        envs = [OuterEnv()]
+
+    assert _unwrap_to_sim(FakeVecEnv()) is fake_sim

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from core.plan.feedback import FeedbackDecision
+from core.plan.feedback import FeedbackDecision, FeedbackOutcome
 from core.plan.llm_feedback import LLMFeedbackEvaluator
 
 
@@ -48,7 +48,8 @@ def test_feedback_continue(monkeypatch) -> None:
     )
     evaluator = LLMFeedbackEvaluator(model="fake")
     result = evaluator.evaluate(b"img", "desc", "goal")
-    assert result == FeedbackDecision.CONTINUE
+    assert result.decision == FeedbackDecision.CONTINUE
+    assert result.reason == "test"
 
 
 def test_feedback_stop(monkeypatch) -> None:
@@ -58,7 +59,7 @@ def test_feedback_stop(monkeypatch) -> None:
     )
     evaluator = LLMFeedbackEvaluator(model="fake")
     result = evaluator.evaluate(b"img", "desc", "goal")
-    assert result == FeedbackDecision.STOP
+    assert result.decision == FeedbackDecision.STOP
 
 
 def test_feedback_replan(monkeypatch) -> None:
@@ -68,7 +69,7 @@ def test_feedback_replan(monkeypatch) -> None:
     )
     evaluator = LLMFeedbackEvaluator(model="fake")
     result = evaluator.evaluate(b"img", "desc", "goal")
-    assert result == FeedbackDecision.REPLAN
+    assert result.decision == FeedbackDecision.REPLAN
 
 
 def test_feedback_no_tool_call_defaults_continue(monkeypatch) -> None:
@@ -78,7 +79,7 @@ def test_feedback_no_tool_call_defaults_continue(monkeypatch) -> None:
     )
     evaluator = LLMFeedbackEvaluator(model="fake")
     result = evaluator.evaluate(b"img", "desc", "goal")
-    assert result == FeedbackDecision.CONTINUE
+    assert result.decision == FeedbackDecision.CONTINUE
 
 
 def test_feedback_unknown_decision_defaults_continue(monkeypatch) -> None:
@@ -88,4 +89,4 @@ def test_feedback_unknown_decision_defaults_continue(monkeypatch) -> None:
     )
     evaluator = LLMFeedbackEvaluator(model="fake")
     result = evaluator.evaluate(b"img", "desc", "goal")
-    assert result == FeedbackDecision.CONTINUE
+    assert result.decision == FeedbackDecision.CONTINUE

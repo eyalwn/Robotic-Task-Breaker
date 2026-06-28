@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Annotated, Literal, Union
 
-from pydantic import BaseModel, Field, ValidationError, field_validator
+from pydantic import BaseModel, Field, ValidationError, field_validator, model_validator
 
 
 class LiteralExpr(BaseModel):
@@ -24,7 +24,7 @@ class VarExpr(BaseModel):
 
 class BinOpExpr(BaseModel):
     kind: Literal["binop"] = "binop"
-    op: Literal["==", "!=", "<", "<=", ">", ">=", "and", "or"]
+    op: Literal["==", "!=", "<", "<=", ">", ">=", "and", "or", "in"]
     left: "Expr"
     right: "Expr"
 
@@ -64,6 +64,22 @@ class CallNode(BaseModel):
     skill: str
     args: dict[str, Expr] = Field(default_factory=dict)
     assign_to: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_args(cls, data: object) -> object:
+        if isinstance(data, dict):
+            args = data.get("args")
+            if isinstance(args, dict):
+                data["args"] = {
+                    k: (
+                        {"kind": "literal", "value": v}
+                        if isinstance(v, (str, int, float, bool))
+                        else v
+                    )
+                    for k, v in args.items()
+                }
+        return data
 
 
 class FeedbackNode(BaseModel):

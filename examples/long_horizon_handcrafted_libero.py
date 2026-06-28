@@ -12,7 +12,7 @@ from dotenv import find_dotenv, load_dotenv
 import logging
 
 from core.plan import Executor, validate_plan
-from core.plan.feedback import FeedbackDecision
+from core.plan.feedback import FeedbackDecision, FeedbackOutcome
 from core.skills import SkillRegistry
 from sim.libero_backend import LiberoArm, LiberoCamera, create_env
 from sim.libero_skills import register_libero_skills
@@ -42,9 +42,9 @@ _OBJECT_NAME = "alphabet_soup_1"
 
 
 class _AlwaysContinue:
-    def evaluate(self, image_bytes: bytes, description: str, goal: str) -> FeedbackDecision:
+    def evaluate(self, image_bytes: bytes, description: str, goal: str) -> FeedbackOutcome:
         logging.info("Feedback [%s] → CONTINUE (handcrafted stub)", description)
-        return FeedbackDecision.CONTINUE
+        return FeedbackOutcome(decision=FeedbackDecision.CONTINUE)
 
 
 class _NoReplan:
@@ -125,7 +125,7 @@ def main() -> None:
 
         registry = SkillRegistry()
         register_libero_skills(registry, env)
-        register_arm_skills(registry, vla_callable)
+        register_arm_skills(registry, vla_callable, arm=arm)
 
         list_skill = registry.get("state.list_objects")
         objects = list_skill()

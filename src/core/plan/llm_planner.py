@@ -1,13 +1,13 @@
-"""LLM-backed planner: emits plans via tool-calling with retry on ValidationError."""
+"""LLM-backed planner: emits plans via direct JSON response with retry on ValidationError."""
 from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any
 
 from langchain.chat_models import init_chat_model
-from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
-from langchain_core.tools import tool as lc_tool
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from pydantic import ValidationError
 
 from .schema import Plan, validate_plan
@@ -23,32 +23,141 @@ Statements — "kind" field is the discriminator:
   if:       {"kind":"if", "condition":<expr>, "then_branch":<stmt>, "else_branch":<stmt>?}
   while:    {"kind":"while", "condition":<expr>, "body":<stmt>, "max_iterations":<int>?}
   call:     {"kind":"call", "skill":"<name>", "args":{"<param>":<expr>,...}, "assign_to":"<var>"?}
+            WRONG: "args":{"location":"basket","count":2}
+            RIGHT: "args":{"location":{"kind":"literal","value":"basket"},"count":{"kind":"literal","value":2}}
   feedback: {"kind":"feedback", "description":"<what to evaluate>"}
   return:   {"kind":"return", "value":<expr>?}
 
 Expressions:
   {"kind":"literal", "value":<bool|int|float|str|null>}
   {"kind":"var",     "name":"<var_name>"}
-  {"kind":"binop",   "op":"=="|"!="|"<"|"<="|">"|">="|"and"|"or", "left":<expr>, "right":<expr>}
+  {"kind":"binop",   "op":"=="|"!="|"<"|"<="|">"|">="|"and"|"or"|"in", "left":<expr>, "right":<expr>}
   {"kind":"not",     "operand":<expr>}
 
 Rules:
+- Use "in" to test list membership: {"kind":"binop","op":"in","left":{"kind":"var","name":"obj"},"right":{"kind":"var","name":"objects"}}
 - Only call skills listed in the catalog.
+- For listing scene objects, use state.list_objects (not list_objects).
 - Insert "feedback" nodes after major actions (grabbing, placing) to evaluate progress.
 - Bind return values with "assign_to" to use in later conditions or the final return.
 - Keep plans concise (≤20 call nodes). The executor enforces a 30-step hard budget.
-- The plan must be valid JSON matching the schema above.\
+- The plan must be valid JSON matching the schema above.
+
+Feedback semantics (executor interprets these — not boolean checks):
+- CONTINUE: proceed with the current plan. Does NOT mean "the check passed".
+- REPLAN: the check or approach failed; executor will request a new plan.
+- STOP: goal achieved or irrecoverable failure; halt execution.
+
+After-action plan structure:
+- NEVER emit seq: [grab, feedback, return failure-string] without an if-branch.
+- After grab + feedback CONTINUE, continue toward place or the next object.
+- Return a failure string only in an explicit else branch or when feedback would STOP.
+
+Example (single object — grab → feedback → place → feedback):
+{"goal":"put items in basket","body":{"kind":"seq","steps":[
+  {"kind":"call","skill":"arm.grab","args":{"object_name":{"kind":"literal","value":"apple_1_main"}}},
+  {"kind":"feedback","description":"Is the apple grasped?"},
+  {"kind":"call","skill":"arm.place","args":{"object_name":{"kind":"literal","value":"apple_1_main"},"location":{"kind":"literal","value":"basket"}}},
+  {"kind":"feedback","description":"Is the apple in the basket?"}
+]}}
+
+Multi-object goals: cover every object before any terminal feedback/return.
+Example (soup then cream cheese — grab→place→feedback per object, then return):
+{"goal":"put the alphabet soup can and the cream cheese box in the basket","body":{"kind":"seq","steps":[
+  {"kind":"call","skill":"arm.grab","args":{"object_name":{"kind":"literal","value":"alphabet_soup_1_main"}}},
+  {"kind":"feedback","description":"Is the alphabet soup can grasped?"},
+  {"kind":"call","skill":"arm.place","args":{"object_name":{"kind":"literal","value":"alphabet_soup_1_main"},"location":{"kind":"literal","value":"basket"}}},
+  {"kind":"feedback","description":"Is the alphabet soup can in the basket?"},
+  {"kind":"call","skill":"arm.grab","args":{"object_name":{"kind":"literal","value":"cream_cheese_1_main"}}},
+  {"kind":"feedback","description":"Is the cream cheese box grasped?"},
+  {"kind":"call","skill":"arm.place","args":{"object_name":{"kind":"literal","value":"cream_cheese_1_main"},"location":{"kind":"literal","value":"basket"}}},
+  {"kind":"feedback","description":"Is the cream cheese box in the basket?"},
+  {"kind":"return","value":{"kind":"literal","value":"done"}}
+]}}\
 """
 
 _SYSTEM_TEMPLATE = """\
 You are a robot task planner. Given a natural-language goal and a skill catalog,
-emit a structured plan by calling the emit_plan tool with the plan JSON.
+emit a structured plan as JSON.
 
 SKILL CATALOG:
 {catalog}
 
 {ast_format}
+
+Respond with ONLY the plan JSON object — no markdown, no code fences, no explanation.\
 """
+
+_REPLAN_CONTEXT_HINT = """\
+Replanning notes:
+- The previous plan failed a feedback check (REPLAN). Fix the approach; do not repeat grab→feedback→return-failure sequences.
+- CONTINUE means "keep executing this plan", not "verification passed".
+- After a successful grab, proceed to place remaining objects — only return failure in an explicit else branch.\
+"""
+
+
+def _strip_code_fences(raw: str) -> str:
+    if raw.startswith("```"):
+        raw = re.sub(r"^```[^\n]*\n?", "", raw)
+        raw = raw.rstrip("`").strip()
+    return raw
+
+
+def _extract_json_object(raw: str) -> str:
+    """Return the best-effort JSON object substring from LLM text."""
+    text = _strip_code_fences(raw.strip())
+    if not text:
+        return text
+
+    try:
+        json.loads(text)
+        return text
+    except json.JSONDecodeError:
+        pass
+
+    start = text.find("{")
+    if start == -1:
+        return text
+
+    depth = 0
+    in_string = False
+    escape = False
+    for i in range(start, len(text)):
+        ch = text[i]
+        if in_string:
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_string = False
+            continue
+        if ch == '"':
+            in_string = True
+        elif ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start : i + 1]
+
+    return text[start:]
+
+
+def _model_supports_json_object(model: str) -> bool:
+    name = model.split(":", 1)[-1].lower()
+    return name.startswith(("gpt-", "chatgpt-", "o1", "o3"))
+
+
+def _init_planning_llm(model: str):
+    llm = init_chat_model(model)
+    if not _model_supports_json_object(model):
+        return llm
+    try:
+        return llm.bind(response_format={"type": "json_object"})
+    except (TypeError, ValueError, NotImplementedError) as exc:
+        logger.debug("LLMPlanner: json_object mode unavailable for %r: %s", model, exc)
+        return llm
 
 
 class LLMPlanner:
@@ -66,15 +175,9 @@ class LLMPlanner:
         )
         first_human = f"Goal: {goal}"
         if context:
-            first_human += f"\n\nReplan context: {context}"
+            first_human += f"\n\nReplan context: {context}\n\n{_REPLAN_CONTEXT_HINT}"
 
-        @lc_tool
-        def emit_plan(plan_json: str) -> str:
-            """Emit the robot task plan as a JSON string matching the Plan AST schema."""
-            return plan_json
-
-        llm = init_chat_model(self._model_name)
-        bound = llm.bind_tools([emit_plan], tool_choice="emit_plan")
+        llm = _init_planning_llm(self._model_name)
 
         messages: list[Any] = [
             SystemMessage(content=system_content),
@@ -88,20 +191,16 @@ class LLMPlanner:
                 self._max_plan_retries,
                 goal,
             )
-            response = bound.invoke(messages)
+            response = llm.invoke(messages)
             if response.usage_metadata:
                 logger.debug("LLMPlanner usage: %s", response.usage_metadata)
 
-            if not response.tool_calls:
-                raise RuntimeError(
-                    f"LLM did not call emit_plan (attempt {attempt + 1})"
-                )
-
-            plan_json: str = response.tool_calls[0]["args"].get("plan_json", "")
-            logger.debug("LLMPlanner raw plan_json: %s", plan_json[:500])
+            raw = response.content.strip()
+            raw = _extract_json_object(raw)
+            logger.debug("LLMPlanner raw plan_json: %s", raw[:500])
 
             try:
-                data = json.loads(plan_json)
+                data = json.loads(raw)
                 plan = validate_plan(data)
                 logger.info("LLMPlanner: valid plan on attempt %d", attempt + 1)
                 return plan
@@ -119,19 +218,12 @@ class LLMPlanner:
                         f"Last error: {error_msg}"
                     ) from exc
 
-                # Feed error back: append the AI response + tool result + correction request.
-                messages.append(response)
-                messages.append(
-                    ToolMessage(
-                        content=plan_json,
-                        tool_call_id=response.tool_calls[0]["id"],
-                    )
-                )
+                messages.append(AIMessage(content=response.content))
                 messages.append(
                     HumanMessage(
                         content=(
                             f"The plan you emitted is invalid. Error:\n{error_msg}\n\n"
-                            "Please fix the error and call emit_plan again with a corrected plan."
+                            "Please fix the error and respond with ONLY the corrected plan JSON."
                         )
                     )
                 )

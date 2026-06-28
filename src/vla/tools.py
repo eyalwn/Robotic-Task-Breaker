@@ -10,7 +10,7 @@ from typing import Any, Protocol
 
 from langchain_core.tools import tool
 
-from .action import process_raw_action, should_flip_gripper
+from .action import process_raw_action, requested_gripper_state, should_flip_gripper
 from .client import VLAClient, VLAServiceError
 from .config import VLAConfig
 
@@ -108,6 +108,103 @@ class _ArmLike(Protocol):
     def move_ee(self, dx: float, dy: float, dz: float, steps: int = 1) -> Any: ...
 
     def set_gripper(self, state: str, steps: int = 1) -> Any: ...
+
+
+def _clip_action(value: float, cfg: VLAConfig) -> float:
+    return max(-cfg.action_clip, min(cfg.action_clip, value))
+
+
+def _use_raw_openpi_action_path(cfg: VLAConfig) -> bool:
+    """OpenPI LIBERO eval: no axis remap/signs and no adaptive scaling."""
+    return (
+        not cfg.adaptive_scale
+        and cfg.axis_remap is None
+        and cfg.axis_signs is None
+    )
+
+
+def _proximity_grasp_enabled(cfg: VLAConfig) -> bool:
+    """Proximity early-exit is for ManiSkill/PickCube; disabled on OpenPI LIBERO."""
+    if not cfg.proximity_grasp:
+        return False
+    if _use_raw_openpi_action_path(cfg):
+        return False
+    return True
+
+
+def _apply_raw_action_to_arm(
+    arm: _ArmLike | Any,
+    cfg: VLAConfig,
+    state: _RunState,
+    chunk: _ChunkState,
+    raw_action: list[float],
+) -> tuple[float, float, float, float, list[float]]:
+    """Apply one raw VLA action; returns (dx, dy, dz, sf, raw_xyz_for_calibration)."""
+    if len(raw_action) == 7:
+        raw_dx, raw_dy, raw_dz, raw_drx, raw_dry, raw_drz, raw_grip = raw_action
+        raw_xyz = [raw_dx, raw_dy, raw_dz]
+        apply_vla = getattr(arm, "apply_vla_action", None)
+        if not callable(apply_vla):
+            raise RuntimeError(
+                "VLA returned 7-dim actions but arm has no apply_vla_action()"
+            )
+        if _use_raw_openpi_action_path(cfg):
+            dx, dy, dz = [_clip_action(v, cfg) for v in raw_xyz]
+            drx = _clip_action(raw_drx, cfg)
+            dry = _clip_action(raw_dry, cfg)
+            drz = _clip_action(raw_drz, cfg)
+            grip = _clip_action(raw_grip, cfg)
+            apply_vla(
+                dx,
+                dy,
+                dz,
+                drx,
+                dry,
+                drz,
+                grip,
+                steps=cfg.steps_per_action,
+            )
+            return dx, dy, dz, 1.0, raw_xyz
+
+        _maybe_autocalibrate_axes(state, cfg, raw_xyz)
+        dx, dy, dz = process_raw_action(
+            raw_xyz,
+            cfg,
+            axis_remap=state.active_axis_remap,
+            axis_signs=state.active_axis_signs,
+        )
+        dx, dy, dz, sf = _apply_adaptive_scaling(dx, dy, dz, cfg, state.pre_dist)
+        apply_vla(
+            dx,
+            dy,
+            dz,
+            raw_drx,
+            raw_dry,
+            raw_drz,
+            raw_grip,
+            steps=cfg.steps_per_action,
+        )
+        return dx, dy, dz, sf, raw_xyz
+
+    if len(raw_action) != 4:
+        raise ValueError(
+            f"VLA action must have 4 or 7 elements, got {len(raw_action)}"
+        )
+
+    raw_dx, raw_dy, raw_dz, raw_gripper = raw_action
+    raw_xyz = [raw_dx, raw_dy, raw_dz]
+    _maybe_autocalibrate_axes(state, cfg, raw_xyz)
+    dx, dy, dz = process_raw_action(
+        raw_xyz,
+        cfg,
+        axis_remap=state.active_axis_remap,
+        axis_signs=state.active_axis_signs,
+    )
+    dx, dy, dz, sf = _apply_adaptive_scaling(dx, dy, dz, cfg, state.pre_dist)
+    arm.move_ee(dx, dy, dz, steps=cfg.steps_per_action)
+    eef, obj, dist = _eef_obj_dist(arm)
+    _maybe_apply_gripper(arm, cfg, state, chunk, raw_gripper, dist)
+    return dx, dy, dz, sf, raw_xyz
 
 
 def _clamp(value: float, lo: float, hi: float) -> float:
@@ -288,7 +385,7 @@ def _maybe_apply_gripper(
     dist: float | None,
 ) -> None:
     clipped = max(-cfg.action_clip, min(cfg.action_clip, raw_gripper))
-    requested = "open" if clipped > 0 else "close"
+    requested = requested_gripper_state(clipped, cfg)
     wants_flip = requested != state.gripper_state
     if (
         cfg.sim_pickcube_gripper_profile
@@ -377,7 +474,7 @@ def _maybe_proximity_grasp(
     state: _RunState,
     dist: float | None,
     obj: list[float] | None,
-) -> str | None:
+) -> tuple[str, bool] | None:
     if dist is None or dist >= cfg.grasp_dist:
         return None
     logger.info(
@@ -414,15 +511,12 @@ def _maybe_proximity_grasp(
             base_msg
             + "proximity reached but grasp not confirmed (object did not lift). "
         )
-    return result_msg + "settle_steps=5, gripper_steps=10."
+    return result_msg + "settle_steps=5, gripper_steps=10.", lifted
 
 
-def _success_from_arm_state(
-    arm: _ArmLike | Any,
-    cfg: VLAConfig,
-    state: _RunState,
-) -> bool:
-    # Prefer backend-native success semantics when available.
+def _env_task_success(arm: _ArmLike | Any, cfg: VLAConfig) -> bool:
+    if not cfg.use_env_task_success:
+        return False
     try:
         env = getattr(arm, "_env", None)
         raw = getattr(env, "unwrapped", env)
@@ -444,13 +538,21 @@ def _success_from_arm_state(
     for key in ("success", "is_success", "task_success"):
         if bool(info.get(key)):
             return True
-    obj = getattr(arm, "last_obj_pos", None)
-    if obj and len(obj) >= 3:
-        if state.initial_obj_z is None:
-            state.initial_obj_z = obj[2]
-        elif obj[2] - state.initial_obj_z >= cfg.success_lift_delta:
-            return True
     return False
+
+
+def _object_lift_success(
+    arm: _ArmLike | Any,
+    cfg: VLAConfig,
+    state: _RunState,
+) -> bool:
+    obj = getattr(arm, "last_obj_pos", None)
+    if not obj or len(obj) < 3:
+        return False
+    if state.initial_obj_z is None:
+        state.initial_obj_z = obj[2]
+        return False
+    return obj[2] - state.initial_obj_z >= cfg.success_lift_delta
 
 
 def _result_payload(
@@ -459,6 +561,7 @@ def _result_payload(
     cfg: VLAConfig,
     detail: str | None = None,
     success: bool = False,
+    grasp_confirmed: bool | None = None,
 ) -> str:
     payload = {
         "status": "success" if success else "stopped",
@@ -473,6 +576,8 @@ def _result_payload(
         "grasp_triggered": success,
         "last_raw_action": state.last_raw_action,
     }
+    if grasp_confirmed is not None:
+        payload["grasp_confirmed"] = grasp_confirmed
     return json.dumps(payload, separators=(",", ":"))
 
 
@@ -624,8 +729,9 @@ def create_vla_manipulation(
     )
 
     @tool
-    def tool_impl() -> str:
+    def tool_impl(task: str | None = None) -> str:
         """Execute a VLA-driven manipulation sequence by querying the VLA service."""
+        effective_task = task or task_prompt
         if hasattr(arm, "reset_to_initial"):
             arm.reset_to_initial()
         client = VLAClient(server_address, timeout=cfg.request_timeout)
@@ -642,72 +748,90 @@ def create_vla_manipulation(
         state.pre_eef, state.pre_obj, state.pre_dist = _eef_obj_dist(arm)
         if state.pre_obj and len(state.pre_obj) >= 3:
             state.initial_obj_z = state.pre_obj[2]
+        _start_esc = getattr(arm, "env_step_count", None)
+        logger.info(
+            "VLA skill start: env_step_count=%s",
+            _start_esc if _start_esc is not None else "?",
+        )
+
+        def _finish(reason: str, **payload_kwargs: Any) -> str:
+            esc = getattr(arm, "env_step_count", None)
+            logger.info(
+                "VLA skill end: reason=%s steps_applied=%d env_step_count=%s",
+                reason,
+                state.steps_applied,
+                esc if esc is not None else "?",
+            )
+            return _result_payload(
+                reason=reason,
+                state=state,
+                cfg=cfg,
+                **payload_kwargs,
+            )
+
         started = time.monotonic()
         while state.steps_applied < effective_max_steps:
             if (
                 cfg.max_tool_seconds is not None
                 and time.monotonic() - started >= cfg.max_tool_seconds
             ):
-                return _result_payload(
+                return _finish(
                     reason="max_tool_seconds",
-                    state=state,
-                    cfg=cfg,
                     detail=f"tool wall-clock reached {cfg.max_tool_seconds:.2f}s",
                 )
             image_bytes = camera.capture_image()
             if cfg.fail_on_placeholder and _camera_vision_unavailable(camera, image_bytes):
                 health = getattr(camera, "vision_health", None)
                 reason = getattr(health, "degraded_reason", None) or "vision_unavailable"
-                return _result_payload(
+                return _finish(
                     reason="vision_unavailable",
-                    state=state,
-                    cfg=cfg,
                     detail=(
                         f"camera vision unavailable ({reason}); "
                         "abort before sending invalid image to VLA"
                     ),
                 )
+            wrist_image_bytes = None
+            capture_wrist = getattr(camera, "capture_wrist_image", None)
+            if callable(capture_wrist):
+                wrist_image_bytes = capture_wrist()
             try:
-                chunk = client.predict(image_bytes, task_prompt)
+                arm_state = getattr(arm, "agent_state", None)
+                state_list = arm_state.tolist() if arm_state is not None else None
+                chunk = client.predict(
+                    image_bytes,
+                    effective_task,
+                    state=state_list,
+                    wrist_image_bytes=wrist_image_bytes,
+                )
             except VLAServiceError as exc:
                 return str(exc)
 
             chunk_state = _ChunkState()
             best_min_before_chunk = state.best_min_dist
+            chunk_limit = min(len(chunk), cfg.chunk_steps or len(chunk))
 
-            for raw_action in chunk:
+            for raw_action in chunk[:chunk_limit]:
                 if state.steps_applied >= effective_max_steps:
                     break
                 if (
                     cfg.max_tool_seconds is not None
                     and time.monotonic() - started >= cfg.max_tool_seconds
                 ):
-                    return _result_payload(
+                    return _finish(
                         reason="max_tool_seconds",
-                        state=state,
-                        cfg=cfg,
                         detail=f"tool wall-clock reached {cfg.max_tool_seconds:.2f}s",
                     )
-                raw_dx, raw_dy, raw_dz, raw_gripper = raw_action
+                raw_action = list(raw_action)
                 state.last_raw_action = raw_action
-                raw_mag = math.sqrt(raw_dx**2 + raw_dy**2 + raw_dz**2)
+                raw_mag = math.sqrt(sum(v * v for v in raw_action[:3]))
                 if raw_mag > chunk_state.max_raw_mag:
                     chunk_state.max_raw_mag = raw_mag
 
-                _maybe_autocalibrate_axes(state, cfg, [raw_dx, raw_dy, raw_dz])
-
-                dx, dy, dz = process_raw_action(
-                    [raw_dx, raw_dy, raw_dz],
-                    cfg,
-                    axis_remap=state.active_axis_remap,
-                    axis_signs=state.active_axis_signs,
+                dx, dy, dz, sf, _raw_xyz = _apply_raw_action_to_arm(
+                    arm, cfg, state, chunk_state, raw_action
                 )
-                dx, dy, dz, sf = _apply_adaptive_scaling(dx, dy, dz, cfg, state.pre_dist)
-
-                arm.move_ee(dx, dy, dz, steps=cfg.steps_per_action)
 
                 eef, obj, dist = _eef_obj_dist(arm)
-                _maybe_apply_gripper(arm, cfg, state, chunk_state, raw_gripper, dist)
                 dist_str = f" dist={dist:.3f}m" if dist is not None else ""
                 actual_delta_str, chunk_ik_saturation = _actual_delta_and_ik_ratio(
                     state,
@@ -724,12 +848,13 @@ def create_vla_manipulation(
 
                 logger.debug(
                     "VLA step %3d | "
-                    "raw=[%+.3f,%+.3f,%+.3f,%+.3f] "
+                    "raw=%s "
                     "scaled=[%+.4f,%+.4f,%+.4f] "
                     "sf=%.2f "
                     "actual_delta=%s "
                     "eef=%s obj=%s%s",
-                    state.steps_applied, raw_dx, raw_dy, raw_dz, raw_gripper,
+                    state.steps_applied,
+                    [f"{v:+.3f}" for v in raw_action],
                     dx, dy, dz, sf, actual_delta_str,
                     [f"{value:.3f}" for value in eef] if eef else "?",
                     [f"{value:.3f}" for value in obj] if obj else "?", dist_str,
@@ -740,28 +865,78 @@ def create_vla_manipulation(
 
                 state.steps_applied += 1
 
+                if getattr(arm, "episode_done", False):
+                    info = getattr(arm, "last_info", {}) or {}
+                    raw_success = info.get("is_success")
+                    if raw_success is None:
+                        raw_success = info.get("success")
+                    is_success: bool | None = None
+                    if raw_success is not None:
+                        try:
+                            import numpy as np
+
+                            if isinstance(raw_success, np.ndarray):
+                                is_success = bool(raw_success.flat[0])
+                            else:
+                                is_success = bool(raw_success)
+                        except Exception:
+                            is_success = None
+                    if is_success is True:
+                        logger.info(
+                            "Early stop: episode ended with is_success=True "
+                            "(task complete); skill finished at step %d",
+                            state.steps_applied,
+                        )
+                        return _finish(
+                            reason="task_success",
+                            detail="LIBERO episode ended with is_success=True",
+                            success=True,
+                        )
+                    logger.info(
+                        "Early stop: episode ended (terminated/truncated); "
+                        "skill aborted at step %d",
+                        state.steps_applied,
+                    )
+                    return _finish(
+                        reason="episode_done",
+                        detail="LIBERO episode terminated or truncated",
+                    )
+
                 if dist is not None and (state.min_dist is None or dist < state.min_dist):
                     state.min_dist = dist
                 if state.best_min_dist is None or (
                     state.min_dist is not None and state.min_dist < state.best_min_dist
                 ):
                     state.best_min_dist = state.min_dist
-                proximity_result = _maybe_proximity_grasp(arm, cfg, state, dist, obj)
-                if proximity_result:
-                    return _result_payload(
-                        reason="proximity_grasp",
-                        state=state,
-                        cfg=cfg,
-                        detail=proximity_result,
+                if _proximity_grasp_enabled(cfg):
+                    proximity_result = _maybe_proximity_grasp(
+                        arm, cfg, state, dist, obj
+                    )
+                    if proximity_result:
+                        proximity_detail, proximity_lifted = proximity_result
+                        return _finish(
+                            reason=(
+                                "proximity_grasp" if proximity_lifted else "proximity_no_lift"
+                            ),
+                            detail=proximity_detail,
+                            success=proximity_lifted,
+                            grasp_confirmed=proximity_lifted,
+                        )
+                if _env_task_success(arm, cfg):
+                    return _finish(
+                        reason="task_success",
+                        detail="env task success flag from backend",
                         success=True,
                     )
-                if _success_from_arm_state(arm, cfg, state):
-                    return _result_payload(
-                        reason="task_success",
-                        state=state,
-                        cfg=cfg,
-                        detail="success flag/lift detected from backend state",
+                if _object_lift_success(arm, cfg, state):
+                    return _finish(
+                        reason="grasp_lift",
+                        detail=(
+                            f"object z lift >= {cfg.success_lift_delta:.3f}m "
+                            "from initial tracked position"
+                        ),
                         success=True,
+                        grasp_confirmed=True,
                     )
                 fail_reason = _check_failure_heuristics(
                     cfg=cfg,
@@ -770,10 +945,8 @@ def create_vla_manipulation(
                     chunk_ik_saturation=chunk_ik_saturation,
                 )
                 if fail_reason:
-                    return _result_payload(
+                    return _finish(
                         reason=fail_reason,
-                        state=state,
-                        cfg=cfg,
                         detail=(
                             f"dist={dist:.3f}m" if dist is not None else "distance unavailable"
                         ),
@@ -788,33 +961,20 @@ def create_vla_manipulation(
                 best_min_before_chunk,
             )
             if stagnation_result:
-                return _result_payload(
+                return _finish(
                     reason="stagnation",
-                    state=state,
-                    cfg=cfg,
                     detail=stagnation_result,
                 )
 
         min_dist_str = (
             f"{state.min_dist:.3f}" if state.min_dist is not None else "unknown"
         )
-        logger.info(
-            "VLA policy finished: %d steps applied, scale=%.4f, min_dist=%s, last_raw=%s",
-            state.steps_applied,
-            cfg.action_scale,
-            min_dist_str,
-            state.last_raw_action,
-        )
-        return (
-            _result_payload(
-                reason="max_inner_steps",
-                state=state,
-                cfg=cfg,
-                detail=(
-                    f"tool reached max inner steps={effective_max_steps} "
-                    f"(scale={cfg.action_scale}, min_dist={min_dist_str}m)"
-                ),
-            )
+        return _finish(
+            reason="max_inner_steps",
+            detail=(
+                f"tool reached max inner steps={effective_max_steps} "
+                f"(scale={cfg.action_scale}, min_dist={min_dist_str}m)"
+            ),
         )
 
     tool_impl.name = tool_name

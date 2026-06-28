@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -8,7 +9,50 @@ from core.skills import SkillRegistry
 from .feedback import FeedbackEvaluator
 from .interpreter import Interpreter, ReplanSignal, ReturnSignal, StepBudgetExceeded, StopSignal
 from .planner import Planner
-from .schema import Plan
+from .schema import CallNode, IfNode, Plan, SeqNode, StmtNode, WhileNode
+
+logger = logging.getLogger(__name__)
+
+
+def _collect_plan_skills(node: StmtNode) -> list[str]:
+    if isinstance(node, CallNode):
+        return [node.skill]
+    if isinstance(node, SeqNode):
+        skills: list[str] = []
+        for step in node.steps:
+            skills.extend(_collect_plan_skills(step))
+        return skills
+    if isinstance(node, IfNode):
+        skills = _collect_plan_skills(node.then_branch)
+        if node.else_branch is not None:
+            skills.extend(_collect_plan_skills(node.else_branch))
+        return skills
+    if isinstance(node, WhileNode):
+        return _collect_plan_skills(node.body)
+    return []
+
+
+def _write_plan_start(
+    trace,
+    goal: str,
+    plan: Plan,
+    *,
+    replan: int | None = None,
+) -> None:
+    skills = _collect_plan_skills(plan.body)
+    if skills:
+        logger.info("Plan skills: %s", " → ".join(skills))
+    event: dict[str, Any] = {
+        "event": "plan_start",
+        "goal": goal,
+        "plan": plan.model_dump(),
+    }
+    if skills:
+        event["skills"] = skills
+    if replan is not None:
+        event["replan"] = replan
+    if trace:
+        trace.write(event)
 
 
 @dataclass
@@ -59,7 +103,7 @@ class Executor:
         catalog = self._registry.render_catalog()
 
         if trace:
-            trace.write({"event": "plan_start", "goal": goal, "plan": current_plan.model_dump()})
+            _write_plan_start(trace, goal, current_plan)
 
         while True:
             interp = Interpreter(
@@ -106,16 +150,37 @@ class Executor:
                             {"event": "replan", "attempt": replans + 1, "reason": sig.description}
                         )
                     replans += 1
-                    current_plan = self._planner.plan(goal, catalog, context=sig.description)
-                    if trace:
-                        trace.write(
-                            {
-                                "event": "plan_start",
-                                "goal": goal,
-                                "plan": current_plan.model_dump(),
-                                "replan": replans,
-                            }
+                    try:
+                        current_plan = self._planner.plan(
+                            goal, catalog, context=sig.description
                         )
+                    except RuntimeError as exc:
+                        result = ExecutionResult(
+                            status="replan_failed",
+                            replans=replans,
+                            steps=total_steps,
+                            error=str(exc),
+                        )
+                        if trace:
+                            trace.write(
+                                {
+                                    "event": "replan_failed",
+                                    "attempt": replans,
+                                    "error": str(exc),
+                                }
+                            )
+                            trace.write(
+                                {
+                                    "event": "plan_end",
+                                    "status": result.status,
+                                    "replans": result.replans,
+                                    "steps": result.steps,
+                                    "value": str(result.value),
+                                }
+                            )
+                        return result
+                    if trace:
+                        _write_plan_start(trace, goal, current_plan, replan=replans)
                     continue
             except StepBudgetExceeded:
                 result = ExecutionResult(

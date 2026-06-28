@@ -5,6 +5,7 @@ notes.txt
 *.db
 *.log
 temp.*
+_*.txt
 
 __pycache__/
 examples/_out/

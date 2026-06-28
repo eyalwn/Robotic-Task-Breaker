@@ -41,15 +41,23 @@ class Skill(ABC):
 class SkillRegistry:
     def __init__(self) -> None:
         self._skills: dict[str, Skill] = {}
+        self._aliases: dict[str, str] = {}
 
     def register(self, skill: Skill) -> None:
         self._skills[skill.name] = skill
 
+    def register_alias(self, alias: str, target: str) -> None:
+        if target not in self._skills:
+            raise KeyError(f"Skill {target!r} not registered. Available: {sorted(self._skills)}")
+        self._aliases[alias] = target
+
     def get(self, name: str) -> Skill:
+        name = self._aliases.get(name, name)
         try:
             return self._skills[name]
         except KeyError:
-            raise KeyError(f"Skill {name!r} not registered. Available: {sorted(self._skills)}")
+            available = sorted(set(self._skills) | set(self._aliases))
+            raise KeyError(f"Skill {name!r} not registered. Available: {available}")
 
     def all(self) -> list[Skill]:
         return list(self._skills.values())

@@ -6,11 +6,26 @@ from pathlib import Path
 
 from dotenv import find_dotenv, load_dotenv
 
-_src = Path(__file__).resolve().parents[1] / "src"
-if str(_src) not in sys.path:
-    sys.path.insert(0, str(_src))
+_examples = Path(__file__).resolve().parent
+_src = _examples.parent / "src"
+for path in (_src, _examples):
+    if str(path) not in sys.path:
+        sys.path.insert(0, str(path))
 
 load_dotenv(find_dotenv())
+os.environ.pop("VLA_AXIS_SIGNS", None)
+os.environ.pop("VLA_AXIS_REMAP", None)
+os.environ.setdefault("VLA_USE_ENV_TASK_SUCCESS", "false")
+os.environ.setdefault("VLA_GRIPPER_MODE", "absolute_open_close")
+os.environ.setdefault("VLA_ACTION_SCALE", "1.0")
+os.environ.setdefault("LIBERO_EE_DELTA_SCALE", "1.0")
+os.environ.setdefault("VLA_STEPS_PER_ACTION", "1")
+os.environ.setdefault("VLA_ADAPTIVE_SCALE", "false")
+os.environ.setdefault("VLA_CHUNK_STEPS", "5")
+os.environ.setdefault("VLA_STAGNATION_CHUNKS", "20")
+os.environ.setdefault("LIBERO_SETTLE_STEPS", "10")
+os.environ.setdefault("VLA_FAIL_WORSENING_STEPS", "200")
+os.environ.setdefault("VLA_PROXIMITY_GRASP", "false")
 logging.basicConfig(
     level=os.environ.get("LOG_LEVEL", "INFO").upper(),
     format="%(levelname)s [%(name)s] %(message)s",
@@ -19,10 +34,19 @@ logging.basicConfig(
 for _noisy in ("openai", "httpcore", "httpx", "trimesh", "matplotlib"):
     logging.getLogger(_noisy).setLevel(logging.WARNING)
 
+from libero_vla_smoke_common import attach_run_log_file
+
+attach_run_log_file(extra_logger_names=(__name__,))
+
 from core.plan import Executor, LLMFeedbackEvaluator, LLMPlanner
 from core.skills import SkillRegistry
 from sim.libero_backend import LiberoArm, LiberoCamera, create_env
-from sim.libero_skills import register_libero_skills
+from sim.libero_skills import (
+    libero_body_position,
+    libero_horizontal_xy_dist,
+    register_libero_skills,
+)
+from sim.libero_success_checker import plan_return_indicates_failure
 from vla import VLAConfig, create_vla_manipulation
 from vla.arm_skills import register_arm_skills
 
@@ -36,6 +60,46 @@ STEP_BUDGET = int(os.environ.get("LONGOR_STEP_BUDGET", "30"))
 
 # LIBERO-10 task 0 canonical language instruction.
 GOAL = "put the alphabet soup can and the cream cheese box in the basket"
+
+_TASK_OBJECTS = ("alphabet_soup_1_main", "cream_cheese_1_main")
+
+
+def _log_final_scene(env, arm) -> bool:
+    step = getattr(arm, "step", None)
+    if callable(step):
+        step()
+    info = getattr(arm, "last_info", {}) or {}
+    raw = info.get("is_success")
+    if raw is None:
+        raw = info.get("success")
+    sim_success = False
+    if raw is not None:
+        try:
+            import numpy as np
+
+            if isinstance(raw, np.ndarray):
+                sim_success = bool(raw.flat[0])
+            else:
+                sim_success = bool(raw)
+        except Exception:
+            sim_success = False
+    basket_pos = libero_body_position(env, "basket_1_main")
+    xy_dists: dict[str, float | None] = {}
+    for name in _TASK_OBJECTS:
+        pos = libero_body_position(env, name)
+        xy = pos[:2] if pos is not None else None
+        logging.info("Final object %s xy=%s", name, xy)
+        if pos is not None and basket_pos is not None:
+            xy_dists[name] = libero_horizontal_xy_dist(pos, basket_pos)
+        else:
+            xy_dists[name] = None
+    logging.info(
+        "LIBERO task result: is_success=%s geometry_xy_dist=%s basket_pos=%s",
+        sim_success,
+        xy_dists,
+        basket_pos,
+    )
+    return sim_success
 
 
 def main() -> None:
@@ -51,16 +115,25 @@ def main() -> None:
         server_address=f"http://localhost:{VLA_PORT}",
         arm=arm,
         camera=camera,
+        max_steps=vla_cfg.max_inner_steps,
         cfg=vla_cfg,
     )
     vla_callable = lambda task: vla_lc_tool.invoke({"task": task})
 
     registry = SkillRegistry()
     register_libero_skills(registry, env)
-    register_arm_skills(registry, vla_callable)
+    register_arm_skills(registry, vla_callable, arm=arm)
 
     objects = registry.get("state.list_objects")()
     logging.info("Scene objects: %s", objects)
+
+    enriched_goal = GOAL
+    if objects:
+        enriched_goal += (
+            "\n\nAvailable scene objects "
+            "(use these exact names in all skill args): "
+            + ", ".join(str(o) for o in objects)
+        )
 
     planner = LLMPlanner(model=MODEL, max_plan_retries=3)
     feedback_eval = LLMFeedbackEvaluator(model=MODEL)
@@ -76,21 +149,68 @@ def main() -> None:
     )
 
     catalog = registry.render_catalog()
-    initial_plan = planner.plan(GOAL, catalog)
+    initial_plan = planner.plan(enriched_goal, catalog)
     logging.info("Initial plan received.")
 
     try:
-        result = executor.run(goal=GOAL, plan=initial_plan)
+        result = executor.run(goal=enriched_goal, plan=initial_plan)
     finally:
+        sim_success = _log_final_scene(env, arm)
         env.close()
 
-    logging.info(
-        "Run complete: status=%s replans=%d steps=%d value=%r",
-        result.status,
-        result.replans,
-        result.steps,
-        result.value,
-    )
+    exit_code = 0
+    if result.status == "replan_failed":
+        logging.error(
+            "Run stopped: replan failed after %d replan(s), %d steps — %s",
+            result.replans,
+            result.steps,
+            result.error,
+        )
+        exit_code = 1
+    elif result.status != "done":
+        logging.warning(
+            "Run finished with status=%s replans=%d steps=%d error=%r",
+            result.status,
+            result.replans,
+            result.steps,
+            result.error,
+        )
+        if sim_success:
+            logging.error(
+                "Executor status=%s but LIBERO sim success is true — stale or partial success",
+                result.status,
+            )
+        exit_code = 1
+    else:
+        if result.value is not None and isinstance(result.value, str):
+            logging.info(
+                "Run finished with return value=%r (status=%s replans=%d steps=%d)",
+                result.value,
+                result.status,
+                result.replans,
+                result.steps,
+            )
+        else:
+            logging.info(
+                "Run complete: status=%s replans=%d steps=%d value=%r",
+                result.status,
+                result.replans,
+                result.steps,
+                result.value,
+            )
+        if plan_return_indicates_failure(result.value):
+            logging.error(
+                "Executor status=done but return value indicates failure: %r",
+                result.value,
+            )
+            exit_code = 1
+        elif not sim_success:
+            logging.error(
+                "Executor status=done but LIBERO sim success is false — task not achieved"
+            )
+            exit_code = 1
+
+    raise SystemExit(exit_code)
 
 
 if __name__ == "__main__":

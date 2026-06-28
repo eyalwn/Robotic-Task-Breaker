@@ -9,7 +9,7 @@ from langchain.chat_models import init_chat_model
 from langchain_core.messages import HumanMessage, SystemMessage
 from langchain_core.tools import tool as lc_tool
 
-from .feedback import FeedbackDecision
+from .feedback import FeedbackDecision, FeedbackOutcome
 
 logger = logging.getLogger(__name__)
 
@@ -21,6 +21,17 @@ _SYSTEM = (
     "  'continue' — task is progressing; proceed with the current plan.\n"
     "  'stop'     — task is complete or irrecoverably failed; halt.\n"
     "  'replan'   — the current approach is not working; a new plan is needed.\n\n"
+    "STOP only when the overall goal is fully satisfied — every object mentioned "
+    "in the goal must be handled (grabbed and placed as required). "
+    "If the feedback question checks one object but the goal lists multiple objects, "
+    "a positive sub-check means CONTINUE (proceed to remaining objects), not STOP.\n\n"
+    "If the prior skill result is from arm.place with reason=stagnation, but the "
+    "image shows the object in or near the basket, prefer CONTINUE (placement adequate) "
+    "over STOP or REPLAN.\n\n"
+    "If the evaluation context mentions a prior arm.grab with status=stopped and "
+    "grasp_confirmed=false, prefer REPLAN (grab failed — do not proceed to place).\n"
+    "If the prior skill result mentions proximity_no_lift or grasp_confirmed=false "
+    "with close approach, prefer CONTINUE (retry grasp) over REPLAN.\n\n"
     "Also provide a brief reason."
 )
 
@@ -40,7 +51,7 @@ class LLMFeedbackEvaluator:
         image_bytes: bytes,
         description: str,
         goal: str,
-    ) -> FeedbackDecision:
+    ) -> FeedbackOutcome:
         image_b64 = base64.b64encode(image_bytes).decode("utf-8")
         human_content: list[Any] = [
             {
@@ -64,11 +75,11 @@ class LLMFeedbackEvaluator:
             logger.warning(
                 "LLMFeedbackEvaluator: no tool call — defaulting to CONTINUE"
             )
-            return FeedbackDecision.CONTINUE
+            return FeedbackOutcome(decision=FeedbackDecision.CONTINUE)
 
-        raw: str = (
-            response.tool_calls[0]["args"].get("decision", "continue").lower().strip()
-        )
+        args = response.tool_calls[0]["args"]
+        raw: str = args.get("decision", "continue").lower().strip()
+        reason = str(args.get("reason", "") or "")
         try:
             decision = FeedbackDecision(raw)
         except ValueError:
@@ -82,6 +93,6 @@ class LLMFeedbackEvaluator:
             "Feedback [%s] → %s (reason: %s)",
             description,
             decision.value,
-            response.tool_calls[0]["args"].get("reason", ""),
+            reason,
         )
-        return decision
+        return FeedbackOutcome(decision=decision, reason=reason)

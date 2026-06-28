@@ -140,12 +140,12 @@ python services/run_vla_server.py
 
 **Terminal B — sim example**
 
-*ManiSkill PickCube (Linux or Windows):*
+*ManiSkill — handcrafted plan (Linux or Windows):*
 
 ```bash
 cd /path/to/Longor
 source .venv/bin/activate
-python examples/maniskill_pickcube.py
+python examples/long_horizon_handcrafted_maniskill.py
 ```
 
 Windows (Git Bash):
@@ -153,18 +153,24 @@ Windows (Git Bash):
 ```bash
 cd /path/to/Longor
 source .venv/Scripts/activate
-python examples/maniskill_pickcube.py
+python examples/long_horizon_handcrafted_maniskill.py
 ```
 
 The client uses `http://localhost:${VLA_PORT}`. Examples add `src` to `sys.path` automatically.
 
-*LIBERO-Object (Linux only):*
+*LIBERO — handcrafted plan (Linux only):*
 
 ```bash
 cd /path/to/Longor
 source .venv/bin/activate
 export MUJOCO_GL=egl
-python examples/libero_object.py
+python examples/long_horizon_handcrafted_libero.py
+```
+
+*LIBERO — LLM-emitted plan (Linux only, requires `OPENAI_API_KEY` in `.env`):*
+
+```bash
+python examples/long_horizon_llm_libero.py
 ```
 
 ## Tests
