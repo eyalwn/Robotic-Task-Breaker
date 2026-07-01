@@ -184,13 +184,18 @@ Notes: `grasp_triggered=false` — Pi0.5 (DROID weights) does not reliably grasp
 
 **Colab validation results (Python 3.12, A100 GPU — June 2026)**
 
-- [x] LLM-emitted plan (gpt-4o-mini): valid plan generated, executor ran skills, VLA HTTP contract confirmed.
+- [x] LLM-emitted plan (gpt-4o): valid plan generated, executor ran skills, VLA HTTP contract confirmed.
 - [x] `LLMFeedbackEvaluator`: RGB snapshot + description sent to LLM, decision returned and respected.
 - [x] Trace file written to `traces/` with `plan_start`, `skill_call`, `plan_end` events confirmed.
 - [x] `pytest` (non-integration, Linux): **256 passed, 2 skipped, 3 deselected**.
 - [x] Happy-path task completion: **LIBERO-10 task 0 — PASS**. `examples/long_horizon_llm_libero.py` exit 0, LIBERO env `is_success=True`, `status=done`, 0 replans, 4 skill steps. Pi0.5 placed the soup can; LIBERO's physics contact detector confirmed task success. LIBERO's internal success gate (contact-based) is the authoritative criterion — the basket body-origin XY distance metric is not used for acceptance.
 
 Notes: bare-primitive args coercion added to `CallNode` schema (`src/core/plan/schema.py`) to handle LLM output where args are plain strings instead of `{"kind": "literal", "value": ...}` expressions. Episode-horizon observability (`env_step_count`, `episode_done` early-abort with `is_success` propagation as `reason=task_success`) added to `LiberoArm`/`vla/tools.py`; `LONGOR_RUN_LOG` scoped file logging added to smoke scripts for diagnostics.
+
+**Post-M6 fix (done ✓)**
+
+- Default `LLM_MODEL` updated from `gpt-4o-mini` → `gpt-4.1-mini` in `.env.example` and validation notebooks. `gpt-4o` and `gpt-4o-mini` are legacy as of 2026; `gpt-4.1-mini` has stronger instruction-following at a comparable price point.
+- `LLMFeedbackEvaluator` system prompt reordered to lead with the STOP-semantics constraint: STOP = entire goal done or permanently failed; a positive intermediate sub-goal check = CONTINUE. Root cause: `gpt-4o-mini` called STOP after placing only the first of two objects, terminating the plan early.
 
 **Out of scope for M6**
 

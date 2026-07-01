@@ -14,17 +14,17 @@ from .feedback import FeedbackDecision, FeedbackOutcome
 logger = logging.getLogger(__name__)
 
 _SYSTEM = (
+    "CRITICAL: 'stop' terminates the ENTIRE run immediately — no further skills execute. "
+    "Only emit 'stop' when the overall goal is completely done (every object placed/handled) "
+    "OR permanently failed. A positive sub-goal check (e.g. one of two objects placed) "
+    "means CONTINUE — proceed to the remaining objects.\n\n"
     "You are a robot task progress evaluator. "
     "Given a camera image and a description of what to check, "
     "decide whether the task is progressing well.\n\n"
     "Call emit_decision with one of:\n"
-    "  'continue' — task is progressing; proceed with the current plan.\n"
-    "  'stop'     — task is complete or irrecoverably failed; halt.\n"
+    "  'continue' — sub-goal met or progressing; proceed with remaining plan steps.\n"
+    "  'stop'     — ENTIRE goal complete or irrecoverably failed; halt ALL execution.\n"
     "  'replan'   — the current approach is not working; a new plan is needed.\n\n"
-    "STOP only when the overall goal is fully satisfied — every object mentioned "
-    "in the goal must be handled (grabbed and placed as required). "
-    "If the feedback question checks one object but the goal lists multiple objects, "
-    "a positive sub-check means CONTINUE (proceed to remaining objects), not STOP.\n\n"
     "If the prior skill result is from arm.place with reason=stagnation, but the "
     "image shows the object in or near the basket, prefer CONTINUE (placement adequate) "
     "over STOP or REPLAN.\n\n"
