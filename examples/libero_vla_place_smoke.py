@@ -71,81 +71,89 @@ def _object_near_basket(env, object_body: str, basket_body: str) -> tuple[bool, 
 
 
 def main() -> int:
-    env = create_env()
-    arm = LiberoArm(env)
-    camera = LiberoCamera(env, arm=arm)
-    vla_cfg = VLAConfig.from_env()
-    vla_tool = create_vla_manipulation(
-        tool_name="arm_vla_place_smoke",
-        tool_description="VLA place smoke test",
-        task_prompt=PLACE_PROMPT,
-        server_address=f"http://localhost:{VLA_PORT}",
-        arm=arm,
-        camera=camera,
-        cfg=vla_cfg,
-    )
+    env = None
+    try:
+        env = create_env()
+        arm = LiberoArm(env)
+        camera = LiberoCamera(env, arm=arm)
+        vla_cfg = VLAConfig.from_env()
+        vla_tool = create_vla_manipulation(
+            tool_name="arm_vla_place_smoke",
+            tool_description="VLA place smoke test",
+            task_prompt=PLACE_PROMPT,
+            server_address=f"http://localhost:{VLA_PORT}",
+            arm=arm,
+            camera=camera,
+            cfg=vla_cfg,
+        )
 
-    if not SKIP_GRAB:
-        if not arm.set_target_object(OBJECT_BODY):
-            logging.error("Could not set grab target %r", OBJECT_BODY)
+        if not SKIP_GRAB:
+            if not arm.set_target_object(OBJECT_BODY):
+                logging.error("Could not set grab target %r", OBJECT_BODY)
+                return 1
+            logging.info("Running grab phase: prompt=%r target=%r", GRAB_PROMPT, OBJECT_BODY)
+            grab_payload = parse_payload(vla_tool.invoke({"task": GRAB_PROMPT}))
+            if grab_payload is None:
+                return 1
+            log_payload("Grab result", grab_payload)
+            if not grasp_passed(grab_payload):
+                logging.error(
+                    "FAIL: grab did not confirm lift (reason=%s grasp_confirmed=%s)",
+                    grab_payload.get("reason"),
+                    grab_payload.get("grasp_confirmed"),
+                )
+                return 1
+            logging.info("Grab PASS — proceeding to place")
+        else:
+            logging.info("Skipping grab (LIBERO_SMOKE_SKIP_GRAB=1)")
+
+        if not arm.set_target_object(BASKET_BODY):
+            logging.error("Could not set place target %r", BASKET_BODY)
             return 1
-        logging.info("Running grab phase: prompt=%r target=%r", GRAB_PROMPT, OBJECT_BODY)
-        grab_payload = parse_payload(vla_tool.invoke({"task": GRAB_PROMPT}))
-        if grab_payload is None:
-            return 1
-        log_payload("Grab result", grab_payload)
-        if not grasp_passed(grab_payload):
-            logging.error(
-                "FAIL: grab did not confirm lift (reason=%s grasp_confirmed=%s)",
-                grab_payload.get("reason"),
-                grab_payload.get("grasp_confirmed"),
-            )
-            return 1
-        logging.info("Grab PASS — proceeding to place")
-    else:
-        logging.info("Skipping grab (LIBERO_SMOKE_SKIP_GRAB=1)")
 
-    if not arm.set_target_object(BASKET_BODY):
-        logging.error("Could not set place target %r", BASKET_BODY)
-        return 1
-
-    logging.info(
-        "Running place phase: prompt=%r target=%r",
-        PLACE_PROMPT,
-        BASKET_BODY,
-    )
-    place_payload = parse_payload(vla_tool.invoke({"task": PLACE_PROMPT}))
-    if place_payload is None:
-        return 1
-    log_payload("Place result", place_payload)
-
-    near, xy_dist = _object_near_basket(env, OBJECT_BODY, BASKET_BODY)
-    logging.info(
-        "Place geometry: object=%r basket=%r xy_dist=%s near=%s",
-        OBJECT_BODY,
-        BASKET_BODY,
-        f"{xy_dist:.4f}" if xy_dist is not None else None,
-        near,
-    )
-
-    if near:
         logging.info(
-            "PASS: %s near basket (xy_dist=%s min_dist=%s steps=%s)",
+            "Running place phase: prompt=%r target=%r",
+            PLACE_PROMPT,
+            BASKET_BODY,
+        )
+        place_payload = parse_payload(vla_tool.invoke({"task": PLACE_PROMPT}))
+        if place_payload is None:
+            return 1
+        log_payload("Place result", place_payload)
+
+        near, xy_dist = _object_near_basket(env, OBJECT_BODY, BASKET_BODY)
+        logging.info(
+            "Place geometry: object=%r basket=%r xy_dist=%s near=%s",
             OBJECT_BODY,
+            BASKET_BODY,
+            f"{xy_dist:.4f}" if xy_dist is not None else None,
+            near,
+        )
+
+        if near:
+            logging.info(
+                "PASS: %s near basket (xy_dist=%s min_dist=%s steps=%s)",
+                OBJECT_BODY,
+                f"{xy_dist:.4f}" if xy_dist is not None else None,
+                place_payload.get("min_dist"),
+                place_payload.get("steps_applied"),
+            )
+            return 0
+
+        logging.error(
+            "FAIL: object not in basket region (xy_dist=%s min_dist=%s steps=%s reason=%s)",
             f"{xy_dist:.4f}" if xy_dist is not None else None,
             place_payload.get("min_dist"),
             place_payload.get("steps_applied"),
+            place_payload.get("reason"),
         )
-        return 0
-
-    logging.error(
-        "FAIL: object not in basket region (xy_dist=%s min_dist=%s steps=%s reason=%s)",
-        f"{xy_dist:.4f}" if xy_dist is not None else None,
-        place_payload.get("min_dist"),
-        place_payload.get("steps_applied"),
-        place_payload.get("reason"),
-    )
-    return 1
+        return 1
+    finally:
+        if env is not None and hasattr(env, "close"):
+            try:
+                env.close()
+            except Exception as exc:
+                logging.debug("env.close() failed: %s", exc)
 
 
 if __name__ == "__main__":

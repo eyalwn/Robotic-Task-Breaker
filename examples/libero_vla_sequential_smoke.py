@@ -64,69 +64,77 @@ def _run_vla(vla_tool, prompt: str, target: str, arm: LiberoArm) -> dict | None:
 
 
 def main() -> int:
-    env = create_env()
-    arm = LiberoArm(env)
-    camera = LiberoCamera(env, arm=arm)
-    vla_cfg = VLAConfig.from_env()
-    vla_tool = create_vla_manipulation(
-        tool_name="arm_vla_sequential_smoke",
-        tool_description="VLA sequential grab-place-grab smoke",
-        task_prompt=SOUP_PLACE,
-        server_address=f"http://localhost:{VLA_PORT}",
-        arm=arm,
-        camera=camera,
-        cfg=vla_cfg,
-    )
-
-    soup_grab = _run_vla(vla_tool, SOUP_GRAB, SOUP_BODY, arm)
-    if soup_grab is None or not grasp_passed(soup_grab):
-        logging.error("FAIL: soup grab did not confirm lift")
-        return 1
-
-    soup_place = _run_vla(vla_tool, SOUP_PLACE, BASKET_BODY, arm)
-    if soup_place is None:
-        return 1
-
-    if not arm.set_target_object(CREAM_BODY):
-        logging.error("Could not set target %r before prepare", CREAM_BODY)
-        return 1
-
-    log_arm_state(arm, "before prepare_for_grab")
-    logging.info("Running prepare_for_grab between place and second grab")
-    arm.prepare_for_grab(next_object=CREAM_BODY)
-    log_arm_state(arm, "after prepare_for_grab")
-    cream_pos = libero_body_position(env, CREAM_BODY)
-    eef = arm.last_tcp_pos
-    if cream_pos and eef:
-        horiz = libero_horizontal_xy_dist(eef, cream_pos)
-        logging.info(
-            "cream VLA start: eef_xyz=%s object_xyz=%s horiz_dist=%.3f",
-            eef,
-            cream_pos,
-            horiz,
+    env = None
+    try:
+        env = create_env()
+        arm = LiberoArm(env)
+        camera = LiberoCamera(env, arm=arm)
+        vla_cfg = VLAConfig.from_env()
+        vla_tool = create_vla_manipulation(
+            tool_name="arm_vla_sequential_smoke",
+            tool_description="VLA sequential grab-place-grab smoke",
+            task_prompt=SOUP_PLACE,
+            server_address=f"http://localhost:{VLA_PORT}",
+            arm=arm,
+            camera=camera,
+            cfg=vla_cfg,
         )
-    log_arm_state(arm, "before cream VLA")
 
-    cream_grab = _run_vla(vla_tool, CREAM_GRAB, CREAM_BODY, arm)
-    if cream_grab is None:
-        return 1
+        soup_grab = _run_vla(vla_tool, SOUP_GRAB, SOUP_BODY, arm)
+        if soup_grab is None or not grasp_passed(soup_grab):
+            logging.error("FAIL: soup grab did not confirm lift")
+            return 1
 
-    if grasp_passed(cream_grab):
-        logging.info(
-            "PASS: cream cheese grasp confirmed (reason=%s grasp_confirmed=%s min_dist=%s)",
+        soup_place = _run_vla(vla_tool, SOUP_PLACE, BASKET_BODY, arm)
+        if soup_place is None:
+            return 1
+
+        if not arm.set_target_object(CREAM_BODY):
+            logging.error("Could not set target %r before prepare", CREAM_BODY)
+            return 1
+
+        log_arm_state(arm, "before prepare_for_grab")
+        logging.info("Running prepare_for_grab between place and second grab")
+        arm.prepare_for_grab(next_object=CREAM_BODY)
+        log_arm_state(arm, "after prepare_for_grab")
+        cream_pos = libero_body_position(env, CREAM_BODY)
+        eef = arm.last_tcp_pos
+        if cream_pos and eef:
+            horiz = libero_horizontal_xy_dist(eef, cream_pos)
+            logging.info(
+                "cream VLA start: eef_xyz=%s object_xyz=%s horiz_dist=%.3f",
+                eef,
+                cream_pos,
+                horiz,
+            )
+        log_arm_state(arm, "before cream VLA")
+
+        cream_grab = _run_vla(vla_tool, CREAM_GRAB, CREAM_BODY, arm)
+        if cream_grab is None:
+            return 1
+
+        if grasp_passed(cream_grab):
+            logging.info(
+                "PASS: cream cheese grasp confirmed (reason=%s grasp_confirmed=%s min_dist=%s)",
+                cream_grab.get("reason"),
+                cream_grab.get("grasp_confirmed"),
+                cream_grab.get("min_dist"),
+            )
+            return 0
+
+        logging.error(
+            "FAIL: cream grab not confirmed (reason=%s grasp_confirmed=%s min_dist=%s)",
             cream_grab.get("reason"),
             cream_grab.get("grasp_confirmed"),
             cream_grab.get("min_dist"),
         )
-        return 0
-
-    logging.error(
-        "FAIL: cream grab not confirmed (reason=%s grasp_confirmed=%s min_dist=%s)",
-        cream_grab.get("reason"),
-        cream_grab.get("grasp_confirmed"),
-        cream_grab.get("min_dist"),
-    )
-    return 1
+        return 1
+    finally:
+        if env is not None and hasattr(env, "close"):
+            try:
+                env.close()
+            except Exception as exc:
+                logging.debug("env.close() failed: %s", exc)
 
 
 if __name__ == "__main__":

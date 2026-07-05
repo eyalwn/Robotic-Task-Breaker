@@ -71,62 +71,70 @@ def _smoke_passed(payload: dict) -> bool:
 
 
 def main() -> int:
-    env = create_env()
-    arm = LiberoArm(env)
-    if not arm.set_target_object(TARGET_BODY):
-        logging.error("Could not set target object %r", TARGET_BODY)
-        return 1
-
-    camera = LiberoCamera(env, arm=arm)
-    vla_cfg = VLAConfig.from_env()
-    vla_tool = create_vla_manipulation(
-        tool_name="arm_vla_smoke",
-        tool_description="VLA grasp smoke test",
-        task_prompt=VLA_PROMPT,
-        server_address=f"http://localhost:{VLA_PORT}",
-        arm=arm,
-        camera=camera,
-        cfg=vla_cfg,
-    )
-
-    logging.info("Running VLA grasp smoke: prompt=%r target=%r", VLA_PROMPT, TARGET_BODY)
-    result = vla_tool.invoke({"task": VLA_PROMPT})
-
+    env = None
     try:
-        payload = json.loads(result)
-    except json.JSONDecodeError:
-        logging.error("VLA tool returned non-JSON: %s", result)
-        return 1
+        env = create_env()
+        arm = LiberoArm(env)
+        if not arm.set_target_object(TARGET_BODY):
+            logging.error("Could not set target object %r", TARGET_BODY)
+            return 1
 
-    min_dist = payload.get("min_dist")
-    steps = payload.get("steps_applied")
-    reason = payload.get("reason")
-    grasp_confirmed = payload.get("grasp_confirmed")
-    logging.info(
-        "Smoke result: reason=%s steps=%s min_dist=%s grasp_confirmed=%s payload=%s",
-        reason,
-        steps,
-        min_dist,
-        grasp_confirmed,
-        result,
-    )
+        camera = LiberoCamera(env, arm=arm)
+        vla_cfg = VLAConfig.from_env()
+        vla_tool = create_vla_manipulation(
+            tool_name="arm_vla_smoke",
+            tool_description="VLA grasp smoke test",
+            task_prompt=VLA_PROMPT,
+            server_address=f"http://localhost:{VLA_PORT}",
+            arm=arm,
+            camera=camera,
+            cfg=vla_cfg,
+        )
 
-    if _smoke_passed(payload):
+        logging.info("Running VLA grasp smoke: prompt=%r target=%r", VLA_PROMPT, TARGET_BODY)
+        result = vla_tool.invoke({"task": VLA_PROMPT})
+
+        try:
+            payload = json.loads(result)
+        except json.JSONDecodeError:
+            logging.error("VLA tool returned non-JSON: %s", result)
+            return 1
+
+        min_dist = payload.get("min_dist")
+        steps = payload.get("steps_applied")
+        reason = payload.get("reason")
+        grasp_confirmed = payload.get("grasp_confirmed")
         logging.info(
-            "PASS: grasp confirmed (reason=%s grasp_confirmed=%s min_dist=%s)",
+            "Smoke result: reason=%s steps=%s min_dist=%s grasp_confirmed=%s payload=%s",
+            reason,
+            steps,
+            min_dist,
+            grasp_confirmed,
+            result,
+        )
+
+        if _smoke_passed(payload):
+            logging.info(
+                "PASS: grasp confirmed (reason=%s grasp_confirmed=%s min_dist=%s)",
+                reason,
+                grasp_confirmed,
+                min_dist,
+            )
+            return 0
+
+        logging.error(
+            "FAIL: no confirmed lift (reason=%s grasp_confirmed=%s min_dist=%s)",
             reason,
             grasp_confirmed,
             min_dist,
         )
-        return 0
-
-    logging.error(
-        "FAIL: no confirmed lift (reason=%s grasp_confirmed=%s min_dist=%s)",
-        reason,
-        grasp_confirmed,
-        min_dist,
-    )
-    return 1
+        return 1
+    finally:
+        if env is not None and hasattr(env, "close"):
+            try:
+                env.close()
+            except Exception as exc:
+                logging.debug("env.close() failed: %s", exc)
 
 
 if __name__ == "__main__":

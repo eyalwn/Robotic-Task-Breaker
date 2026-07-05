@@ -51,6 +51,7 @@ def test_apply_vla_action_full_osc_with_rotation(monkeypatch):
     act = _flatten_act(env.step_calls[-1])
     assert act[:6] == pytest.approx([0.1, 0.2, 0.3, 0.4, 0.5, 0.6])
     assert act[6] == pytest.approx(-0.8)
+    assert arm.last_ik_debug == {"cause": "osc_direct"}
 
 
 def test_maybe_flip_libero_vla_frame_when_enabled(monkeypatch):
@@ -78,6 +79,7 @@ def test_move_ee_action_format_and_preserves_gripper(monkeypatch):
     assert act[2] == pytest.approx(0.3)
     assert np.allclose(act[3:6], 0.0)
     assert act[6] == pytest.approx(-1.0)
+    assert arm.last_ik_debug == {"cause": "osc_direct"}
 
 
 def test_set_gripper_open_close_gripper_dim(monkeypatch):

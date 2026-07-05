@@ -405,6 +405,7 @@ class LiberoArm:
         self._gripper_value: float = 0.0
         scale = float(os.environ.get("LIBERO_EE_DELTA_SCALE", "1.0"))
         self._pos_scale = scale
+        self.last_ik_debug: dict = {}
         self.last_info: dict[str, Any] = {}
         self.last_tcp_pos: list[float] | None = None
         self.last_obj_pos: list[float] | None = None
@@ -479,6 +480,7 @@ class LiberoArm:
     def move_ee(self, dx: float, dy: float, dz: float, steps: int | None = None) -> None:
         import numpy as np
 
+        self.last_ik_debug = {"cause": "osc_direct"}
         act = self._zero_act.copy()
         d = np.clip(
             self._pos_scale * np.array([dx, dy, dz], dtype=np.float32),
@@ -504,6 +506,7 @@ class LiberoArm:
         """Apply a full 7-DOF OSC delta action (OpenPI LIBERO eval path)."""
         import numpy as np
 
+        self.last_ik_debug = {"cause": "osc_direct"}
         act = self._zero_act.copy()
         deltas = np.clip(
             self._pos_scale
