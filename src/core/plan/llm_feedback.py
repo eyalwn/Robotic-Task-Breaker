@@ -89,10 +89,10 @@ class LLMFeedbackEvaluator:
             )
             decision = FeedbackDecision.CONTINUE
 
+        logger.debug("LLMFeedbackEvaluator full description: %s", description)
         logger.info(
-            "Feedback [%s] → %s (reason: %s)",
-            description,
-            decision.value,
-            reason,
+            "LLM feedback: %s — %s",
+            decision.value.upper(),
+            reason or "(no reason)",
         )
         return FeedbackOutcome(decision=decision, reason=reason)

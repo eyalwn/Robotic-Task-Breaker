@@ -12,6 +12,7 @@ from typing import Any
 _RUN_LOG_LOGGER_NAMES = ("vla.tools", "sim.libero_backend", "core.plan")
 _NOISY_LOGGERS = (
     "numba",
+    "numexpr",
     "OpenGL",
     "OpenGL.acceleratesupport",
     "robosuite",
@@ -98,6 +99,11 @@ def configure_smoke_logging() -> None:
         stream=sys.stdout,
         force=True,
     )
+    for _h in logging.root.handlers:
+        if isinstance(_h, logging.StreamHandler) and not isinstance(
+            _h, logging.FileHandler
+        ):
+            _h.setLevel(logging.INFO)
     for name in ("openai", "httpcore", "httpx", "trimesh", "matplotlib"):
         logging.getLogger(name).setLevel(logging.WARNING)
     caller_name = "__main__"

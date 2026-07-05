@@ -385,7 +385,7 @@ def test_camera_capture_wrist_image_jpeg_from_pixels():
 
 
 def test_log_episode_horizon_unknown_when_missing(caplog):
-    caplog.set_level(logging.INFO, logger="sim.libero_backend")
+    caplog.set_level(logging.DEBUG, logger="sim.libero_backend")
 
     class _BareEnv:
         pass
@@ -395,7 +395,7 @@ def test_log_episode_horizon_unknown_when_missing(caplog):
 
 
 def test_log_episode_horizon_reads_wrapper_chain(caplog):
-    caplog.set_level(logging.INFO, logger="sim.libero_backend")
+    caplog.set_level(logging.DEBUG, logger="sim.libero_backend")
 
     class _Inner:
         max_episode_steps = 280

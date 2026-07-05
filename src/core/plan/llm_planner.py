@@ -185,19 +185,33 @@ class LLMPlanner:
         ]
 
         for attempt in range(self._max_plan_retries):
-            logger.info(
+            logger.debug(
                 "LLMPlanner: attempt %d/%d for goal=%r",
                 attempt + 1,
                 self._max_plan_retries,
                 goal,
             )
+            logger.info(
+                "→ LLM (%s, attempt %d/%d): %s",
+                self._model_name,
+                attempt + 1,
+                self._max_plan_retries,
+                goal,
+            )
+            for i, msg in enumerate(messages):
+                logger.debug(
+                    "LLMPlanner message[%d] (%s): %s",
+                    i,
+                    type(msg).__name__,
+                    msg.content,
+                )
             response = llm.invoke(messages)
             if response.usage_metadata:
                 logger.debug("LLMPlanner usage: %s", response.usage_metadata)
 
             raw = response.content.strip()
             raw = _extract_json_object(raw)
-            logger.debug("LLMPlanner raw plan_json: %s", raw[:500])
+            logger.info("LLMPlanner raw plan_json: %s", raw[:500])
 
             try:
                 data = json.loads(raw)

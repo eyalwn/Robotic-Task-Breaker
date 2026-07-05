@@ -20,6 +20,16 @@ logger = logging.getLogger(__name__)
 _obs_keys_dumped = False
 
 
+def _round_floats(obj: Any, ndigits: int = 4) -> Any:
+    if isinstance(obj, float):
+        return round(obj, ndigits)
+    if isinstance(obj, list):
+        return [_round_floats(v, ndigits) for v in obj]
+    if isinstance(obj, dict):
+        return {k: _round_floats(v, ndigits) for k, v in obj.items()}
+    return obj
+
+
 def _dump_obs_keys(obs, prefix: str = "") -> None:
     """Recursively log all keys in a nested dict/mapping (one-time diagnostic)."""
     if not isinstance(obs, dict):
@@ -578,6 +588,7 @@ def _result_payload(
     }
     if grasp_confirmed is not None:
         payload["grasp_confirmed"] = grasp_confirmed
+    payload = _round_floats(payload)
     return json.dumps(payload, separators=(",", ":"))
 
 
@@ -749,7 +760,7 @@ def create_vla_manipulation(
         if state.pre_obj and len(state.pre_obj) >= 3:
             state.initial_obj_z = state.pre_obj[2]
         _start_esc = getattr(arm, "env_step_count", None)
-        logger.info(
+        logger.debug(
             "VLA skill start: env_step_count=%s",
             _start_esc if _start_esc is not None else "?",
         )

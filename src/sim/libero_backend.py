@@ -213,7 +213,7 @@ def _log_episode_horizon(vec: Any) -> None:
                     source = (
                         ".".join(path_parts + [attr]) if path_parts else attr
                     )
-                    logger.info(
+                    logger.debug(
                         "LIBERO episode horizon: %s (source=%s)",
                         value,
                         source,
@@ -233,7 +233,7 @@ def _log_episode_horizon(vec: Any) -> None:
             break
         env = inner
 
-    logger.info("LIBERO episode horizon: unknown (source=none)")
+    logger.debug("LIBERO episode horizon: unknown (source=none)")
 
 
 def create_env(
@@ -332,8 +332,6 @@ class LiberoCamera(SimCameraBase):
         if self._arm is not None:
             obs = getattr(self._arm, "last_obs", None)
             frame = _agentview_rgb_from_obs(_unbatch_obs(obs))
-            if frame is not None:
-                logger.debug("LiberoCamera: using obs agentview RGB")
 
         if frame is None:
             capture_path = "render"
@@ -353,7 +351,7 @@ class LiberoCamera(SimCameraBase):
             return _make_placeholder_jpeg(self._PLACEHOLDER_TEXT)
 
         if not self._first_capture_path_logged:
-            logger.info("LiberoCamera: capture path=%s", capture_path)
+            logger.debug("LiberoCamera: capture path=%s", capture_path)
             self._first_capture_path_logged = True
 
         rgb = _maybe_flip_libero_vla_frame(_frame_to_uint8(frame))
@@ -371,8 +369,6 @@ class LiberoCamera(SimCameraBase):
         if self._arm is not None:
             obs = getattr(self._arm, "last_obs", None)
             frame = _wrist_rgb_from_obs(_unbatch_obs(obs))
-            if frame is not None:
-                logger.debug("LiberoCamera: using obs wrist RGB")
 
         if frame is None:
             return _make_placeholder_jpeg("libero — no wrist rgb in obs")

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from typing import Any, Callable
 
 from core.skills import SkillRegistry
@@ -20,6 +21,9 @@ from .schema import (
     VarExpr,
     WhileNode,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 class ReplanSignal(Exception):
@@ -99,6 +103,8 @@ class Interpreter:
                 raise StepBudgetExceeded()
             skill = self._registry.get(node.skill)
             evaluated_args = {key: self._eval(value, ctx) for key, value in node.args.items()}
+            args_str = ", ".join(f"{k}={v!r}" for k, v in evaluated_args.items())
+            logger.info("Skill call: %s(%s)", node.skill, args_str)
             result = skill(**evaluated_args)
             self._last_skill_result = str(result)
             self._steps += 1
@@ -118,6 +124,7 @@ class Interpreter:
 
         if isinstance(node, FeedbackNode):
             image_bytes = self._image_fn()
+            logger.info("Feedback check: %r", node.description)
             description = node.description
             if self._last_skill_result:
                 description = (

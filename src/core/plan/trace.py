@@ -31,7 +31,7 @@ class TraceWriter:
         fname = f"{ts}_{_goal_slug(goal)}.jsonl"
         self._path = path / fname
         self._file = self._path.open("a", encoding="utf-8")
-        logger.info("TraceWriter: %s", self._path)
+        logger.debug("TraceWriter: %s", self._path)
 
     @property
     def path(self) -> Path:

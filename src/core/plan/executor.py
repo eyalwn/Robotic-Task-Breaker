@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass
 from typing import Any, Callable
 
@@ -10,8 +9,6 @@ from .feedback import FeedbackEvaluator
 from .interpreter import Interpreter, ReplanSignal, ReturnSignal, StepBudgetExceeded, StopSignal
 from .planner import Planner
 from .schema import CallNode, IfNode, Plan, SeqNode, StmtNode, WhileNode
-
-logger = logging.getLogger(__name__)
 
 
 def _collect_plan_skills(node: StmtNode) -> list[str]:
@@ -40,8 +37,6 @@ def _write_plan_start(
     replan: int | None = None,
 ) -> None:
     skills = _collect_plan_skills(plan.body)
-    if skills:
-        logger.info("Plan skills: %s", " → ".join(skills))
     event: dict[str, Any] = {
         "event": "plan_start",
         "goal": goal,

@@ -31,7 +31,12 @@ logging.basicConfig(
     format="%(levelname)s [%(name)s] %(message)s",
     force=True,
 )
-for _noisy in ("openai", "httpcore", "httpx", "trimesh", "matplotlib"):
+for _h in logging.root.handlers:
+    if isinstance(_h, logging.StreamHandler) and not isinstance(
+        _h, logging.FileHandler
+    ):
+        _h.setLevel(logging.INFO)
+for _noisy in ("openai", "httpcore", "httpx", "trimesh", "matplotlib", "numexpr"):
     logging.getLogger(_noisy).setLevel(logging.WARNING)
 
 from libero_vla_smoke_common import attach_run_log_file
@@ -93,7 +98,7 @@ def _log_final_scene(env, arm) -> bool:
             xy_dists[name] = libero_horizontal_xy_dist(pos, basket_pos)
         else:
             xy_dists[name] = None
-    logging.info(
+    logging.debug(
         "LIBERO task result: is_success=%s geometry_xy_dist=%s basket_pos=%s",
         sim_success,
         xy_dists,
@@ -103,6 +108,12 @@ def _log_final_scene(env, arm) -> bool:
 
 
 def main() -> None:
+    logging.info("LLM model: %s", MODEL)
+    logging.info(
+        "VLA: %s @ http://localhost:%s",
+        os.environ.get("VLA_POLICY", "?"),
+        VLA_PORT,
+    )
     env = create_env(task_suite=TASK_SUITE, task_idx=TASK_IDX)
     arm = LiberoArm(env)
     camera = LiberoCamera(env, arm=arm)
@@ -157,6 +168,15 @@ def main() -> None:
     finally:
         sim_success = _log_final_scene(env, arm)
         env.close()
+
+    if result.status == "done":
+        logging.info("Task COMPLETED: %r", enriched_goal.split("\n")[0])
+    else:
+        logging.warning(
+            "Task FAILED (status=%s): %r",
+            result.status,
+            enriched_goal.split("\n")[0],
+        )
 
     exit_code = 0
     if result.status == "replan_failed":
