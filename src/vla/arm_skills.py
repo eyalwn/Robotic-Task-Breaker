@@ -1,42 +1,10 @@
 from __future__ import annotations
 
-import json
 import os
+from collections.abc import Callable
 from typing import Any
 
 from core.skills import Skill, SkillParam, SkillRegistry
-from sim.libero_skills import libero_object_human_name, libero_object_near_basket
-
-
-def _object_near_basket(arm: Any, object_body: str) -> tuple[bool, float | None]:
-    env = getattr(arm, "_env", None)
-    if env is None:
-        return False, None
-    return libero_object_near_basket(env, object_body)
-
-
-def _upgrade_place_stagnation_result(
-    raw: str, arm: Any, object_name: str, location: str
-) -> str:
-    """Treat stagnation as place success when the object xy is near the basket."""
-    if "basket" not in location.lower() or not object_name:
-        return raw
-    try:
-        payload = json.loads(raw)
-    except json.JSONDecodeError:
-        return raw
-    if payload.get("status") == "success":
-        return raw
-    if payload.get("reason") not in ("stagnation", "max_inner_steps"):
-        return raw
-    near, xy_dist = _object_near_basket(arm, object_name)
-    if not near:
-        return raw
-    payload["status"] = "success"
-    payload["reason"] = "place_proximity"
-    payload["place_xy_dist"] = round(xy_dist, 4) if xy_dist is not None else None
-    payload["grasp_triggered"] = True
-    return json.dumps(payload, separators=(",", ":"))
 
 
 def _maybe_set_target(arm: Any, object_name: str) -> None:
@@ -80,9 +48,15 @@ class ArmGrabSkill(Skill):
     ]
     returns = "str: outcome message from the VLA sequence"
 
-    def __init__(self, vla_tool: Any, arm: Any = None) -> None:
+    def __init__(
+        self,
+        vla_tool: Any,
+        arm: Any = None,
+        name_mapper: Callable[[str], str] | None = None,
+    ) -> None:
         self._vla_tool = vla_tool
         self._arm = arm
+        self._name_mapper = name_mapper or (lambda n: n)
 
     def __call__(self, **kwargs: Any) -> str:
         object_name = str(kwargs.get("object_name", ""))
@@ -90,7 +64,7 @@ class ArmGrabSkill(Skill):
             _maybe_set_target(self._arm, object_name)
             _prepare_grab_after_place(self._arm)
             _mark_arm_skill(self._arm, "grab")
-        human_name = libero_object_human_name(object_name)
+        human_name = self._name_mapper(object_name)
         return self._vla_tool(task=f"pick up the {human_name}")
 
 
@@ -106,9 +80,17 @@ class ArmPlaceSkill(Skill):
     ]
     returns = "str: outcome message from the VLA sequence"
 
-    def __init__(self, vla_tool: Any, arm: Any = None) -> None:
+    def __init__(
+        self,
+        vla_tool: Any,
+        arm: Any = None,
+        name_mapper: Callable[[str], str] | None = None,
+        place_result_hook: Callable[[str, Any, str, str], str] | None = None,
+    ) -> None:
         self._vla_tool = vla_tool
         self._arm = arm
+        self._name_mapper = name_mapper or (lambda n: n)
+        self._place_result_hook = place_result_hook
 
     def __call__(self, **kwargs: Any) -> str:
         object_name = str(kwargs.get("object_name", ""))
@@ -119,20 +101,34 @@ class ArmPlaceSkill(Skill):
             else:
                 _maybe_set_target(self._arm, object_name)
             _mark_arm_skill(self._arm, "place")
-        human_name = libero_object_human_name(object_name)
+        human_name = self._name_mapper(object_name)
         raw = self._vla_tool(task=_place_task_prompt(human_name, location))
-        if self._arm is not None:
-            return _upgrade_place_stagnation_result(
-                raw, self._arm, object_name, location
-            )
+        if self._arm is not None and self._place_result_hook is not None:
+            return self._place_result_hook(raw, self._arm, object_name, location)
         return raw
 
 
-def register_arm_skills(registry: SkillRegistry, vla_tool: Any, arm: Any = None) -> None:
+def register_arm_skills(
+    registry: SkillRegistry,
+    vla_tool: Any,
+    arm: Any = None,
+    *,
+    name_mapper: Callable[[str], str] | None = None,
+    place_result_hook: Callable[[str, Any, str, str], str] | None = None,
+) -> None:
     """Register arm.grab and arm.place into *registry*.
 
     *vla_tool* must be a callable accepting keyword arg ``task`` (str).
-  Optional *arm* receives ``set_target_object`` before each grab/place.
+    Optional *arm* receives ``set_target_object`` before each grab/place.
     """
-    registry.register(ArmGrabSkill(vla_tool, arm=arm))
-    registry.register(ArmPlaceSkill(vla_tool, arm=arm))
+    registry.register(
+        ArmGrabSkill(vla_tool, arm=arm, name_mapper=name_mapper)
+    )
+    registry.register(
+        ArmPlaceSkill(
+            vla_tool,
+            arm=arm,
+            name_mapper=name_mapper,
+            place_result_hook=place_result_hook,
+        )
+    )

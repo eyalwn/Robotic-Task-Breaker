@@ -1,4 +1,5 @@
 """M5 — LIBERO-Object with handcrafted plan + sim-GT skills (Linux)."""
+import logging
 import os
 import sys
 import time
@@ -9,15 +10,10 @@ if str(_src) not in sys.path:
     sys.path.insert(0, str(_src))
 
 from dotenv import find_dotenv, load_dotenv
-import logging
 
-from core.plan import Executor, validate_plan
-from core.plan.feedback import FeedbackDecision, FeedbackOutcome
-from core.skills import SkillRegistry
-from sim.libero_backend import LiberoArm, LiberoCamera, create_env
-from sim.libero_skills import register_libero_skills
-from vla import VLAConfig, create_vla_manipulation
-from vla.arm_skills import register_arm_skills
+from core.plan import AlwaysContinueEvaluator, StaticPlanner, validate_plan
+from core.runner import Runner
+from sim.libero_backend import LiberoBackend
 
 load_dotenv(find_dotenv())
 logging.basicConfig(
@@ -34,22 +30,20 @@ logging.getLogger("matplotlib").setLevel(logging.WARNING)
 LIBERO_TASK_SUITE = os.environ.get("LIBERO_TASK_SUITE", "libero_object")
 LIBERO_TASK_IDX = int(os.environ.get("LIBERO_TASK_IDX", "0"))
 RENDER_HUMAN = os.environ.get("DISPLAY_ENV", "0") == "1"
-TASK = os.environ.get("ROBOT_TASK", "complete the manipulation task")
-VLA_PORT = int(os.environ.get("VLA_PORT", "8765"))
 
-# libero_object task 0: pick_up_the_alphabet_soup_and_place_it_in_the_basket
 _OBJECT_NAME = "alphabet_soup_1"
+_FIXTURE_PARTS = ("basket", "cabinet", "plate", "drawer", "bin")
 
 
-class _AlwaysContinue:
-    def evaluate(self, image_bytes: bytes, description: str, goal: str) -> FeedbackOutcome:
-        logging.info("Feedback [%s] → CONTINUE (handcrafted stub)", description)
-        return FeedbackOutcome(decision=FeedbackDecision.CONTINUE)
-
-
-class _NoReplan:
-    def plan(self, goal, catalog, context=""):
-        raise RuntimeError("Replanning not available in handcrafted-plan mode")
+def _resolve_object_name(default: str, objects: list[str]) -> str:
+    if default in objects or not objects:
+        return default
+    for name in sorted(objects):
+        low = name.lower()
+        if any(part in low for part in _FIXTURE_PARTS):
+            continue
+        return name
+    return default
 
 
 def _build_handcrafted_plan(object_name: str):
@@ -102,70 +96,27 @@ def _build_handcrafted_plan(object_name: str):
 
 
 def main() -> None:
-    env = None
-    try:
-        env = create_env(
-            task_suite=LIBERO_TASK_SUITE,
-            task_idx=LIBERO_TASK_IDX,
-        )
-        arm = LiberoArm(env)
-        camera = LiberoCamera(env, arm=arm)
-
-        vla_cfg = VLAConfig.from_env()
-        vla_lc_tool = create_vla_manipulation(
-            tool_name="arm_vla",
-            tool_description="VLA-driven arm manipulation",
-            task_prompt=TASK,
-            server_address=f"http://localhost:{VLA_PORT}",
-            arm=arm,
-            camera=camera,
-            cfg=vla_cfg,
-        )
-        vla_callable = lambda task: vla_lc_tool.invoke({"task": task})
-
-        registry = SkillRegistry()
-        register_libero_skills(registry, env)
-        register_arm_skills(registry, vla_callable, arm=arm)
-
-        list_skill = registry.get("state.list_objects")
-        objects = list_skill()
-        logging.info("LIBERO scene objects: %s", objects)
-
-        object_name = _OBJECT_NAME
-        if object_name not in objects and objects:
-            skip = ("basket", "cabinet", "plate", "drawer", "bin")
-            for name in sorted(objects):
-                low = name.lower()
-                if any(part in low for part in skip):
-                    continue
-                object_name = name
-                break
-            logging.info("Using discovered object name: %s", object_name)
-
-        plan = _build_handcrafted_plan(object_name)
-
-        executor = Executor(
-            registry=registry,
-            planner=_NoReplan(),
-            feedback_evaluator=_AlwaysContinue(),
-            image_fn=camera.capture_image,
-            max_replans=0,
-            step_budget=30,
-        )
-        result = executor.run(goal=plan.goal, plan=plan)
-        logging.info(
-            "Executor result: status=%s replans=%d steps=%d value=%r",
-            result.status,
-            result.replans,
-            result.steps,
-            result.value,
-        )
-    finally:
-        if env is not None and hasattr(env, "close"):
-            try:
-                env.close()
-            except Exception as exc:
-                logging.debug("env.close() failed: %s", exc)
+    backend = LiberoBackend(task_suite=LIBERO_TASK_SUITE, task_idx=LIBERO_TASK_IDX)
+    objects = backend.list_objects()
+    logging.info("LIBERO scene objects: %s", objects)
+    object_name = _resolve_object_name(_OBJECT_NAME, objects)
+    if object_name != _OBJECT_NAME:
+        logging.info("Using discovered object name: %s", object_name)
+    plan = _build_handcrafted_plan(object_name)
+    result = Runner(max_replans=0).run(
+        backend,
+        plan.goal,
+        planner=StaticPlanner(plan),
+        feedback=AlwaysContinueEvaluator(),
+    )
+    logging.info(
+        "Runner result: status=%s success=%s replans=%d steps=%d value=%r",
+        result.status,
+        result.success,
+        result.replans,
+        result.steps,
+        result.value,
+    )
 
     if RENDER_HUMAN:
         logging.info("Task finished — keeping window open for 1 s...")

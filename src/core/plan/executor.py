@@ -1,53 +1,54 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import Any, Callable
 
 from core.skills import SkillRegistry
 
-from .feedback import FeedbackEvaluator
-from .interpreter import Interpreter, ReplanSignal, ReturnSignal, StepBudgetExceeded, StopSignal
-from .planner import Planner
-from .schema import CallNode, IfNode, Plan, SeqNode, StmtNode, WhileNode
+from .feedback import FeedbackDecision, FeedbackEvaluator
+from .schema import (
+    BinOpExpr,
+    CallNode,
+    Expr,
+    FeedbackNode,
+    IfNode,
+    LiteralExpr,
+    NotExpr,
+    Plan,
+    ReturnNode,
+    SeqNode,
+    StmtNode,
+    VarExpr,
+    WhileNode,
+)
 
 
-def _collect_plan_skills(node: StmtNode) -> list[str]:
-    if isinstance(node, CallNode):
-        return [node.skill]
-    if isinstance(node, SeqNode):
-        skills: list[str] = []
-        for step in node.steps:
-            skills.extend(_collect_plan_skills(step))
-        return skills
-    if isinstance(node, IfNode):
-        skills = _collect_plan_skills(node.then_branch)
-        if node.else_branch is not None:
-            skills.extend(_collect_plan_skills(node.else_branch))
-        return skills
-    if isinstance(node, WhileNode):
-        return _collect_plan_skills(node.body)
-    return []
+logger = logging.getLogger(__name__)
 
 
-def _write_plan_start(
-    trace,
-    goal: str,
-    plan: Plan,
-    *,
-    replan: int | None = None,
-) -> None:
-    skills = _collect_plan_skills(plan.body)
-    event: dict[str, Any] = {
-        "event": "plan_start",
-        "goal": goal,
-        "plan": plan.model_dump(),
-    }
-    if skills:
-        event["skills"] = skills
-    if replan is not None:
-        event["replan"] = replan
-    if trace:
-        trace.write(event)
+class ReplanSignal(Exception):
+    """Raised by a feedback node when the LLM evaluator returns REPLAN."""
+
+    def __init__(self, description: str) -> None:
+        super().__init__(description)
+        self.description = description
+
+
+class ReturnSignal(Exception):
+    """Raised by a return node to unwind the call stack and deliver a value."""
+
+    def __init__(self, value: Any = None) -> None:
+        super().__init__()
+        self.value = value
+
+
+class StopSignal(Exception):
+    """Raised by a feedback node when the LLM evaluator returns STOP."""
+
+
+class StepBudgetExceeded(Exception):
+    """Raised when the step budget is exhausted."""
 
 
 @dataclass
@@ -63,135 +64,175 @@ class Executor:
     def __init__(
         self,
         registry: SkillRegistry,
-        planner: Planner,
         feedback_evaluator: FeedbackEvaluator,
         image_fn: Callable[[], bytes],
-        max_replans: int = 3,
+        goal: str,
         step_budget: int = 30,
-        trace_dir: str | None = None,
+        trace: "TraceWriter | None" = None,
     ) -> None:
         self._registry = registry
-        self._planner = planner
         self._feedback_evaluator = feedback_evaluator
         self._image_fn = image_fn
-        self._max_replans = max_replans
+        self._goal = goal
         self._step_budget = step_budget
-        self._trace_dir = trace_dir
+        self._steps = 0
+        self._trace = trace
+        self._last_skill_result: str | None = None
 
-    def run(self, goal: str, plan: Plan) -> ExecutionResult:
-        from .trace import TraceWriter
-
-        trace: TraceWriter | None = (
-            TraceWriter(self._trace_dir, goal) if self._trace_dir else None
-        )
+    def run(self, plan: Plan) -> ExecutionResult:
+        """Execute *plan* and return an ExecutionResult (signals caught internally)."""
+        ctx: dict[str, Any] = {}
         try:
-            return self._run(goal, plan, trace)
-        finally:
-            if trace:
-                trace.close()
+            self._exec(plan.body, ctx)
+            return ExecutionResult(status="done", steps=self._steps, value=None)
+        except ReturnSignal as sig:
+            return ExecutionResult(status="done", steps=self._steps, value=sig.value)
+        except StopSignal:
+            return ExecutionResult(status="stopped", steps=self._steps)
+        except ReplanSignal as sig:
+            return ExecutionResult(status="replan", steps=self._steps, error=sig.description)
+        except StepBudgetExceeded:
+            return ExecutionResult(status="step_budget", steps=self._steps)
 
-    def _run(self, goal: str, plan: Plan, trace) -> ExecutionResult:
-        """Run *plan* toward *goal*, replanning up to *max_replans* times."""
-        replans = 0
-        current_plan = plan
-        total_steps = 0
-        catalog = self._registry.render_catalog()
+    def _exec(self, node: StmtNode, ctx: dict[str, Any]) -> Any:
+        """Dispatch on node kind."""
+        if isinstance(node, SeqNode):
+            last: Any = None
+            for step in node.steps:
+                last = self._exec(step, ctx)
+            return last
 
-        if trace:
-            _write_plan_start(trace, goal, current_plan)
+        if isinstance(node, IfNode):
+            if self._eval(node.condition, ctx):
+                return self._exec(node.then_branch, ctx)
+            if node.else_branch is not None:
+                return self._exec(node.else_branch, ctx)
+            return None
 
-        while True:
-            interp = Interpreter(
-                self._registry,
-                self._feedback_evaluator,
-                self._image_fn,
-                goal=goal,
-                step_budget=self._step_budget,
-                trace=trace,
-            )
-            try:
-                interp.run(current_plan)
-                result = ExecutionResult(
-                    status="done",
-                    replans=replans,
-                    steps=total_steps + interp._steps,
-                    value=None,
-                )
-            except ReturnSignal as sig:
-                result = ExecutionResult(
-                    status="done",
-                    replans=replans,
-                    steps=total_steps + interp._steps,
-                    value=sig.value,
-                )
-            except StopSignal:
-                result = ExecutionResult(
-                    status="stopped",
-                    replans=replans,
-                    steps=total_steps + interp._steps,
-                )
-            except ReplanSignal as sig:
-                total_steps += interp._steps
-                if replans >= self._max_replans:
-                    result = ExecutionResult(
-                        status="replan_limit",
-                        replans=replans,
-                        steps=total_steps,
-                        error=sig.description,
-                    )
-                else:
-                    if trace:
-                        trace.write(
-                            {"event": "replan", "attempt": replans + 1, "reason": sig.description}
-                        )
-                    replans += 1
-                    try:
-                        current_plan = self._planner.plan(
-                            goal, catalog, context=sig.description
-                        )
-                    except RuntimeError as exc:
-                        result = ExecutionResult(
-                            status="replan_failed",
-                            replans=replans,
-                            steps=total_steps,
-                            error=str(exc),
-                        )
-                        if trace:
-                            trace.write(
-                                {
-                                    "event": "replan_failed",
-                                    "attempt": replans,
-                                    "error": str(exc),
-                                }
-                            )
-                            trace.write(
-                                {
-                                    "event": "plan_end",
-                                    "status": result.status,
-                                    "replans": result.replans,
-                                    "steps": result.steps,
-                                    "value": str(result.value),
-                                }
-                            )
-                        return result
-                    if trace:
-                        _write_plan_start(trace, goal, current_plan, replan=replans)
-                    continue
-            except StepBudgetExceeded:
-                result = ExecutionResult(
-                    status="step_budget",
-                    replans=replans,
-                    steps=total_steps + interp._steps,
-                )
+        if isinstance(node, WhileNode):
+            iterations = 0
+            while self._eval(node.condition, ctx):
+                if iterations >= node.max_iterations:
+                    raise RuntimeError(f"while loop exceeded max_iterations={node.max_iterations}")
+                self._exec(node.body, ctx)
+                iterations += 1
+            return None
 
-            if trace:
-                trace.write(
+        if isinstance(node, CallNode):
+            if self._steps >= self._step_budget:
+                raise StepBudgetExceeded()
+            skill = self._registry.get(node.skill)
+            evaluated_args = {key: self._eval(value, ctx) for key, value in node.args.items()}
+            args_str = ", ".join(f"{k}={v!r}" for k, v in evaluated_args.items())
+            logger.info("Skill call: %s(%s)", node.skill, args_str)
+            result = skill(**evaluated_args)
+            self._last_skill_result = str(result)
+            self._steps += 1
+            if node.assign_to is not None:
+                ctx[node.assign_to] = result
+            if self._trace:
+                self._trace.write(
                     {
-                        "event": "plan_end",
-                        "status": result.status,
-                        "replans": result.replans,
-                        "steps": result.steps,
-                        "value": str(result.value),
+                        "event": "skill_call",
+                        "skill": node.skill,
+                        "args": {k: str(v) for k, v in evaluated_args.items()},
+                        "result": str(result),
+                        "step": self._steps,
                     }
                 )
             return result
+
+        if isinstance(node, FeedbackNode):
+            image_bytes = self._image_fn()
+            logger.info("Feedback check: %r", node.description)
+            description = node.description
+            if self._last_skill_result:
+                description = (
+                    f"{description}\n\nPrior skill result: {self._last_skill_result}"
+                )
+            outcome = self._feedback_evaluator.evaluate(
+                image_bytes, description, self._goal
+            )
+            if self._trace:
+                event: dict[str, Any] = {
+                    "event": "feedback",
+                    "description": node.description,
+                    "decision": outcome.decision.value,
+                    "step": self._steps,
+                }
+                if outcome.reason:
+                    event["reason"] = outcome.reason
+                self._trace.write(event)
+            if outcome.decision == FeedbackDecision.CONTINUE:
+                return None
+            if outcome.decision == FeedbackDecision.STOP:
+                raise StopSignal()
+            if outcome.decision == FeedbackDecision.REPLAN:
+                raise ReplanSignal(node.description)
+            raise ValueError(f"Unsupported feedback decision: {outcome.decision!r}")
+
+        if isinstance(node, ReturnNode):
+            value = self._eval(node.value, ctx) if node.value is not None else None
+            raise ReturnSignal(value=value)
+
+        raise TypeError(f"Unsupported statement node: {type(node)!r}")
+
+    def _eval(self, expr: Expr, ctx: dict[str, Any]) -> Any:
+        """Evaluate an expression. Only literals, vars, binop, not allowed.
+        Raises NameError for unbound variables.
+        Raises TypeError for invalid operand types.
+        """
+        if isinstance(expr, LiteralExpr):
+            return expr.value
+
+        if isinstance(expr, VarExpr):
+            if expr.name not in ctx:
+                raise NameError(f"Variable {expr.name!r} is not bound")
+            return ctx[expr.name]
+
+        if isinstance(expr, BinOpExpr):
+            if expr.op == "and":
+                left = self._eval(expr.left, ctx)
+                if not left:
+                    return left
+                return self._eval(expr.right, ctx)
+
+            if expr.op == "or":
+                left = self._eval(expr.left, ctx)
+                if left:
+                    return left
+                return self._eval(expr.right, ctx)
+
+            if expr.op == "in":
+                left = self._eval(expr.left, ctx)
+                right = self._eval(expr.right, ctx)
+                if right is None:
+                    return False
+                return left in right
+
+            left = self._eval(expr.left, ctx)
+            right = self._eval(expr.right, ctx)
+
+            if expr.op == "==":
+                return left == right
+            if expr.op == "!=":
+                return left != right
+
+            try:
+                if expr.op == "<":
+                    return left < right
+                if expr.op == "<=":
+                    return left <= right
+                if expr.op == ">":
+                    return left > right
+                if expr.op == ">=":
+                    return left >= right
+            except TypeError as exc:
+                raise TypeError(f"Incomparable operands for {expr.op}: {left!r}, {right!r}") from exc
+
+            raise ValueError(f"Unsupported binary operator: {expr.op!r}")
+
+        if isinstance(expr, NotExpr):
+            return not self._eval(expr.operand, ctx)
+
+        raise TypeError(f"Unsupported expression node: {type(expr)!r}")

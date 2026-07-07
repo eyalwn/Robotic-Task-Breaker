@@ -5,6 +5,7 @@ import re
 
 import builtins
 import logging
+import os
 
 import numpy as np
 import pytest
@@ -13,6 +14,7 @@ from conftest import FakeEnv
 from sim.arm_tools import create_move_ee, create_set_gripper
 from sim.libero_backend import (
     LiberoArm,
+    LiberoBackend,
     LiberoCamera,
     _agent_state_from_obs,
     _log_episode_horizon,
@@ -621,3 +623,123 @@ def test_set_target_object_sets_last_obj_pos(monkeypatch):
     assert arm.last_obj_pos == pytest.approx([0.1, 0.2, 0.448])
     arm._update_positions_from_obs(arm.last_obs)
     assert arm.last_obj_pos == pytest.approx([0.1, 0.2, 0.448])
+
+
+def test_libero_backend_apply_env_defaults(monkeypatch):
+    for key in (
+        "VLA_AXIS_SIGNS",
+        "VLA_AXIS_REMAP",
+        "VLA_USE_ENV_TASK_SUCCESS",
+        "VLA_GRIPPER_MODE",
+        "VLA_ACTION_SCALE",
+        "LIBERO_EE_DELTA_SCALE",
+        "VLA_STEPS_PER_ACTION",
+        "VLA_ADAPTIVE_SCALE",
+        "VLA_CHUNK_STEPS",
+        "VLA_STAGNATION_CHUNKS",
+        "LIBERO_SETTLE_STEPS",
+        "VLA_FAIL_WORSENING_STEPS",
+        "VLA_PROXIMITY_GRASP",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    LiberoBackend._apply_env_defaults()
+    assert os.environ.get("VLA_USE_ENV_TASK_SUCCESS") == "false"
+    assert os.environ.get("VLA_GRIPPER_MODE") == "absolute_open_close"
+    assert os.environ.get("VLA_ACTION_SCALE") == "1.0"
+    assert os.environ.get("LIBERO_EE_DELTA_SCALE") == "1.0"
+    assert os.environ.get("VLA_STEPS_PER_ACTION") == "1"
+    assert os.environ.get("VLA_ADAPTIVE_SCALE") == "false"
+    assert os.environ.get("VLA_CHUNK_STEPS") == "5"
+    assert os.environ.get("VLA_STAGNATION_CHUNKS") == "20"
+    assert os.environ.get("LIBERO_SETTLE_STEPS") == "10"
+    assert os.environ.get("VLA_FAIL_WORSENING_STEPS") == "200"
+    assert os.environ.get("VLA_PROXIMITY_GRASP") == "false"
+    assert "VLA_AXIS_SIGNS" not in os.environ
+    assert "VLA_AXIS_REMAP" not in os.environ
+
+
+def test_libero_backend_register_skills(monkeypatch):
+    import vla.arm_skills as arm_skills_mod
+
+    from core.skills import SkillRegistry
+    from sim.libero_backend import LiberoBackend
+    from sim.libero_skills import libero_object_human_name, libero_place_result_hook
+
+    env = FakeLiberoEnv()
+    arm = LiberoArm(env)
+    camera = LiberoCamera(env, arm=arm)
+
+    backend = LiberoBackend.__new__(LiberoBackend)
+    backend._env = env
+    backend._arm = arm
+    backend._camera = camera
+    backend._vla_port = 8765
+
+    recorded: dict = {}
+    real_register = arm_skills_mod.register_arm_skills
+
+    def _recording_register_arm_skills(*args, **kwargs):
+        recorded["kwargs"] = kwargs
+        return real_register(*args, **kwargs)
+
+    monkeypatch.setattr(
+        arm_skills_mod,
+        "register_arm_skills",
+        _recording_register_arm_skills,
+    )
+
+    class _StubTool:
+        def invoke(self, args):
+            return "ok"
+
+    monkeypatch.setattr(
+        "vla.create_vla_manipulation",
+        lambda **kwargs: _StubTool(),
+    )
+    monkeypatch.setattr(
+        "vla.VLAConfig.from_env",
+        lambda: type("Cfg", (), {"max_inner_steps": 10})(),
+    )
+
+    registry = SkillRegistry()
+    backend.register_skills(registry, "pick the can")
+
+    names = {s.name for s in registry._skills.values()}
+    assert "state.list_objects" in names
+    assert "perception.locate" in names
+    assert "arm.grab" in names
+    assert "arm.place" in names
+    assert recorded["kwargs"]["arm"] is arm
+    assert recorded["kwargs"]["name_mapper"] is libero_object_human_name
+    assert recorded["kwargs"]["place_result_hook"] is libero_place_result_hook
+
+
+def test_libero_backend_success_delegates_to_checker(monkeypatch):
+    from sim.libero_backend import LiberoBackend
+
+    env = FakeLiberoEnv()
+    arm = LiberoArm(env)
+    arm.last_info = {"is_success": True}
+
+    backend = LiberoBackend.__new__(LiberoBackend)
+    backend._arm = arm
+
+    checker_calls: list[str] = []
+
+    class _FakeChecker:
+        def __init__(self, arm_obj, **kwargs):
+            checker_calls.append("init")
+
+        def refresh(self):
+            checker_calls.append("refresh")
+
+        def check(self):
+            checker_calls.append("check")
+            return True
+
+    monkeypatch.setattr(
+        "sim.libero_success_checker.LiberoSuccessChecker",
+        _FakeChecker,
+    )
+    assert backend.success() is True
+    assert checker_calls == ["init", "refresh", "check"]

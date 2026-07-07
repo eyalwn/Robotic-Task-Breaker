@@ -217,3 +217,102 @@ def test_capture_image_returns_jpeg():
     img = cv2.imdecode(arr, cv2.IMREAD_COLOR)
     assert img is not None, "JPEG bytes must decode to a valid image"
     assert img.shape[0] > 0 and img.shape[1] > 0
+
+
+def test_maniskill_backend_apply_env_defaults(monkeypatch):
+    import os
+
+    from sim.maniskill_backend import ManiSkillBackend
+
+    for key in (
+        "VLA_AXIS_REMAP",
+        "VLA_AXIS_SIGNS",
+        "VLA_SIM_PICKCUBE_GRIPPER_PROFILE",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    ManiSkillBackend._apply_env_defaults()
+    assert os.environ.get("VLA_AXIS_REMAP") == "2,0,1"
+    assert os.environ.get("VLA_AXIS_SIGNS") == "1,-1,-1"
+    assert os.environ.get("VLA_SIM_PICKCUBE_GRIPPER_PROFILE") == "true"
+
+
+def test_maniskill_backend_register_skills(monkeypatch):
+    from core.skills import SkillRegistry
+    from sim.maniskill_backend import ManiSkillBackend
+
+    env = FakeEnv()
+    arm = object()
+    camera = object()
+    checker = type("Checker", (), {"check": lambda self: False})()
+
+    backend = ManiSkillBackend.__new__(ManiSkillBackend)
+    backend._env = env
+    backend._arm = arm
+    backend._camera = camera
+    backend._checker = checker
+    backend._vla_port = 8765
+
+    goal = "pick the cube"
+    vla_kwargs: dict = {}
+    arm_skill_calls: list[dict] = []
+
+    class _StubTool:
+        def invoke(self, args):
+            return "ok"
+
+    def _record_vla(**kwargs):
+        vla_kwargs.update(kwargs)
+        return _StubTool()
+
+    def _record_arm_skills(registry, vla_callable, arm=None):
+        arm_skill_calls.append({"arm": arm})
+        return _orig_register_arm_skills(registry, vla_callable, arm=arm)
+
+    import vla.arm_skills as arm_skills_mod
+
+    _orig_register_arm_skills = arm_skills_mod.register_arm_skills
+    monkeypatch.setattr("vla.create_vla_manipulation", _record_vla)
+    monkeypatch.setattr("vla.VLAConfig.from_env", lambda: type("Cfg", (), {})())
+    monkeypatch.setattr(arm_skills_mod, "register_arm_skills", _record_arm_skills)
+
+    registry = SkillRegistry()
+    backend.register_skills(registry, goal)
+
+    names = {s.name for s in registry._skills.values()}
+    assert "state.list_objects" in names
+    assert "perception.locate" in names
+    assert "arm.grab" in names
+    assert "arm.place" in names
+    assert vla_kwargs.get("task_prompt") == goal
+    assert len(arm_skill_calls) == 1
+    assert arm_skill_calls[0]["arm"] is None
+
+
+def test_maniskill_backend_success_delegates_to_checker():
+    from sim.maniskill_backend import ManiSkillBackend
+
+    class _Checker:
+        def __init__(self):
+            self.calls = 0
+
+        def check(self):
+            self.calls += 1
+            return True
+
+    checker = _Checker()
+    backend = ManiSkillBackend.__new__(ManiSkillBackend)
+    backend._checker = checker
+    assert backend.success() is True
+    assert checker.calls == 1
+
+
+def test_maniskill_backend_close_swallows_errors():
+    from sim.maniskill_backend import ManiSkillBackend
+
+    class _Env:
+        def close(self):
+            raise RuntimeError("boom")
+
+    backend = ManiSkillBackend.__new__(ManiSkillBackend)
+    backend._env = _Env()
+    backend.close()

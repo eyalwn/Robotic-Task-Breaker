@@ -779,3 +779,87 @@ class LiberoArm:
 
     def reset_to_initial(self) -> None:
         logger.warning("LiberoArm.reset_to_initial() not implemented for LIBERO")
+
+
+class LiberoBackend:
+    def __init__(
+        self,
+        task_suite: str | None = None,
+        task_idx: int | None = None,
+        vla_port: int | None = None,
+    ) -> None:
+        self._apply_env_defaults()
+        self._env = create_env(task_suite=task_suite, task_idx=task_idx)
+        self._arm = LiberoArm(self._env)
+        self._camera = LiberoCamera(self._env, arm=self._arm)
+        self._vla_port = (
+            vla_port if vla_port is not None else int(os.environ.get("VLA_PORT", "8765"))
+        )
+
+    @staticmethod
+    def _apply_env_defaults() -> None:
+        os.environ.pop("VLA_AXIS_SIGNS", None)
+        os.environ.pop("VLA_AXIS_REMAP", None)
+        os.environ.setdefault("VLA_USE_ENV_TASK_SUCCESS", "false")
+        os.environ.setdefault("VLA_GRIPPER_MODE", "absolute_open_close")
+        os.environ.setdefault("VLA_ACTION_SCALE", "1.0")
+        os.environ.setdefault("LIBERO_EE_DELTA_SCALE", "1.0")
+        os.environ.setdefault("VLA_STEPS_PER_ACTION", "1")
+        os.environ.setdefault("VLA_ADAPTIVE_SCALE", "false")
+        os.environ.setdefault("VLA_CHUNK_STEPS", "5")
+        os.environ.setdefault("VLA_STAGNATION_CHUNKS", "20")
+        os.environ.setdefault("LIBERO_SETTLE_STEPS", "10")
+        os.environ.setdefault("VLA_FAIL_WORSENING_STEPS", "200")
+        os.environ.setdefault("VLA_PROXIMITY_GRASP", "false")
+
+    def register_skills(self, registry, goal: str) -> None:
+        from sim.libero_skills import (
+            libero_object_human_name,
+            libero_place_result_hook,
+            register_libero_skills,
+        )
+        from vla import VLAConfig, create_vla_manipulation
+        from vla.arm_skills import register_arm_skills
+
+        register_libero_skills(registry, self._env)
+        cfg = VLAConfig.from_env()
+        tool = create_vla_manipulation(
+            tool_name="arm_vla",
+            tool_description="VLA-driven arm manipulation",
+            task_prompt=goal,
+            server_address=f"http://localhost:{self._vla_port}",
+            arm=self._arm,
+            camera=self._camera,
+            max_steps=cfg.max_inner_steps,
+            cfg=cfg,
+        )
+        vla_callable = lambda task: tool.invoke({"task": task})
+        register_arm_skills(
+            registry,
+            vla_callable,
+            arm=self._arm,
+            name_mapper=libero_object_human_name,
+            place_result_hook=libero_place_result_hook,
+        )
+
+    def list_objects(self) -> list[str]:
+        from sim.libero_skills import LiberoListObjectsSkill
+
+        return LiberoListObjectsSkill(self._env)()
+
+    def capture_image(self) -> bytes:
+        return self._camera.capture_image()
+
+    def success(self) -> bool:
+        from sim.libero_success_checker import LiberoSuccessChecker
+
+        checker = LiberoSuccessChecker(self._arm)
+        checker.refresh()
+        return checker.check()
+
+    def close(self) -> None:
+        if hasattr(self, "_env") and hasattr(self._env, "close"):
+            try:
+                self._env.close()
+            except Exception:
+                pass

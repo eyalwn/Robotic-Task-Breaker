@@ -114,7 +114,7 @@ Notes: requires A100 (same Pi0.5 weight size as M2). Patches baked into `colab/m
 **Scope**
 
 - `src/core/skills.py`: `Skill` base, `SkillRegistry`, shared typed values (e.g. `Pose`, `DetectedObject`). Interfaces only; concrete implementations live in backend packages.
-- `src/core/plan/`: `schema.py` (AST schema), `interpreter.py` (walker + restricted expression evaluator over a small typed value space; **no `eval` / `exec`**), `planner.py` (LLM-facing interface; concrete LLM call deferred to M6), `feedback.py`, `executor.py`.
+- `src/core/plan/`: `schema.py` (AST schema), `executor.py` (walker + restricted expression evaluator over a small typed value space; **no `eval` / `exec`**), `planner.py` (LLM-facing interface), `feedback.py`. *(The top-level `plan → execute → replan` loop lives in `src/core/runner.py` (`Runner`); backends implement `src/core/backend.py`'s `Backend` protocol — both added in the post-M6 Runner/Backend refactor.)*
 - Signals: `ReturnSignal(value)` from `return` nodes → `status="done"`; `StopSignal()` from `feedback → STOP` → `status="stopped"`.
 - Skill adapters: `arm.grab` / `arm.place` in `src/vla/arm_skills.py`; `vla_tool` injected as a callable accepting `task` kwarg.
 - Cross-platform; no sim or VLA contract changes.
@@ -140,7 +140,7 @@ Notes: requires A100 (same Pi0.5 weight size as M2). Patches baked into `colab/m
 - `src/sim/libero_skills.py`: `perception.detect` / `perception.locate` / `state.list_objects` against LIBERO's MuJoCo scene. `_unwrap_to_sim` walks the LeRobot SyncVectorEnv wrapper chain; skills return `None`/`[]` gracefully if sim is unreachable.
 - `src/sim/maniskill_skills.py`: same three skills against ManiSkill scene via `_find_actors` reflection on `env.unwrapped`.
 - Sim selection by example import; no config knob.
-- `examples/long_horizon_handcrafted_libero.py`: handcrafted plan + `_AlwaysContinue` feedback stub + `_NoReplan` planner, wired to `Executor`.
+- `examples/long_horizon_handcrafted_libero.py`: handcrafted plan + `AlwaysContinueEvaluator` + `StaticPlanner`, wired via `Runner`.
 - `examples/long_horizon_handcrafted_maniskill.py`: same, ManiSkill PickCube — Windows smoke test.
 
 **Acceptance**
@@ -172,7 +172,7 @@ Notes: `grasp_triggered=false` — Pi0.5 (DROID weights) does not reliably grasp
 - `src/core/plan/interpreter.py` *(minimal change)*: add optional `trace: TraceWriter | None` param; emit `skill_call`/`skill_result`/`feedback` events when set.
 - `src/core/plan/executor.py` *(minimal change)*: add optional `trace_dir: str | None` param; create/pass `TraceWriter` per run; emit `plan_start`/`replan`/`plan_end` events.
 - Skill catalog in LLM prompt auto-rendered from `SkillRegistry.render_catalog()` — single source of truth.
-- `examples/long_horizon_llm_libero.py`: full E2E on **LIBERO-Long / LIBERO-10** with `LLMPlanner` + `LLMFeedbackEvaluator` + LIBERO sim-GT skills + arm skills + `Executor`. Target task: LIBERO-10 task 0 (implementing agent confirms exact task name at scoping). Trace written to `traces/` by default.
+- `examples/long_horizon_llm_libero.py`: full E2E on **LIBERO-Long / LIBERO-10** with `LLMPlanner` + `LLMFeedbackEvaluator` + LIBERO sim-GT skills + arm skills + `Runner`. Target task: LIBERO-10 task 0 (implementing agent confirms exact task name at scoping). Trace written to `traces/` by default.
 
 **Acceptance**
 
@@ -196,6 +196,16 @@ Notes: bare-primitive args coercion added to `CallNode` schema (`src/core/plan/s
 
 - Default `LLM_MODEL` updated from `gpt-4o-mini` → `gpt-4.1-mini` in `.env.example` and validation notebooks. `gpt-4o` and `gpt-4o-mini` are legacy as of 2026; `gpt-4.1-mini` has stronger instruction-following at a comparable price point.
 - `LLMFeedbackEvaluator` system prompt reordered to lead with the STOP-semantics constraint: STOP = entire goal done or permanently failed; a positive intermediate sub-goal check = CONTINUE. Root cause: `gpt-4o-mini` called STOP after placing only the first of two objects, terminating the plan early.
+
+**Post-M6 Runner / Backend refactor (done ✓)**
+
+Inverted the execution stack so example scripts are a thin application layer and all wiring lives in core + backends.
+
+- **`Executor`** (`src/core/plan/executor.py`) is now the single-plan walker: `run(plan) -> ExecutionResult` (`done` / `stopped` / `replan` / `step_budget`), catching its own signals. It holds **no planner**. (This is the former `Interpreter`, renamed; the old `run_task` function is gone.)
+- **`Runner`** (`src/core/runner.py`) is the top-level loop: builds the `SkillRegistry`, calls `backend.register_skills`, enriches the goal with scene objects, then drives `plan → execute → replan` (bounded) calling the **planner**, writes the trace, computes the success verdict, logs status, closes the backend, and returns a `RunResult`. Planner/feedback default to the LLM implementations (lazy-imported so the handcrafted path never loads langchain); `StaticPlanner` + `AlwaysContinueEvaluator` (in `core/plan`) drive handcrafted/no-LLM runs.
+- **`Backend`** protocol (`src/core/backend.py`): `register_skills(registry, goal)`, `capture_image()`, `success()`, `close()`. `LiberoBackend` / `ManiSkillBackend` (in `src/sim/`) own all sim + VLA wiring and tuning defaults. Examples just build a backend, define a goal, and call `Runner().run(backend, goal)`.
+- `src/vla/arm_skills.py` is backend-agnostic: LIBERO-specific object-name mapping and place-result upgrade are injected as `name_mapper` / `place_result_hook` from `LiberoBackend`. `src/vla/**` no longer imports `sim`.
+- `core/plan/__init__.py` lazy-imports `LLMPlanner` / `LLMFeedbackEvaluator` (PEP 562 `__getattr__`). No schema, VLA HTTP, or skill-contract changes.
 
 **Out of scope for M6**
 
@@ -249,11 +259,12 @@ Implementation details (ports, batching, chunking, inner-step limits) live in co
 ## Architecture constraints
 
 - `**core/**`** stays **OS- and backend-agnostic** (no device paths, no sim imports, no robot SDKs).
-- **Simulation and hardware** live in `**sim/`**, `robots/**`,** or dedicated backend modules; select backend via **config/env**.
+- **Simulation and hardware** live in `**sim/`**, `robots/**`,** or dedicated backend modules; select backend via **config/env**. Each backend implements the `Backend` protocol (`src/core/backend.py`) and owns its own sim/VLA wiring so example scripts stay a thin application layer (`Runner().run(backend, goal)`).
+- `**vla/**`** is sim-agnostic (no `sim` imports); backend-specific behavior is injected via hooks (e.g. `name_mapper` / `place_result_hook` on `register_arm_skills`).
 - **Optional** heavy or HW-only dependencies: **lazy imports** and/or `requirements-optional.txt` so minimal sim dev does not install everything.
 - **Plan representation:** structured JSON AST (schema in `src/core/plan/schema.py`); the executor walks it with a restricted expression evaluator. **No `exec`** of generated code; **no `eval`** of arbitrary expressions.
 - **Skills:** `Skill` base + `SkillRegistry` live in `src/core/skills.py` (interfaces only). Concrete skill implementations live in their backend packages (`src/sim/*_skills.py`, `src/vla/arm_skills.py`, future `src/robots/*_skills.py`) and self-register at import time.
-- Adding a new sim, robot, or capability: add a backend adapter and skill implementations in the relevant backend package; the planner / executor stay unchanged.
+- Adding a new sim, robot, or capability: add a `Backend` implementation + skill implementations in the relevant backend package; `Runner`, the planner, and the `Executor` stay unchanged.
 - **`core/llm_agent.py`** — the general-purpose LLM tool-call loop used by HW robot agents (`XLeRobot`, `EarthRover`). Not a sim concern; retained as-is.
 
 ## Configuration

@@ -1,9 +1,18 @@
-from .executor import ExecutionResult, Executor
-from .feedback import FeedbackDecision, FeedbackEvaluator, FeedbackOutcome
-from .interpreter import Interpreter, ReplanSignal, ReturnSignal, StepBudgetExceeded, StopSignal
-from .llm_feedback import LLMFeedbackEvaluator
-from .llm_planner import LLMPlanner
-from .planner import Planner
+from .executor import (
+    ExecutionResult,
+    Executor,
+    ReplanSignal,
+    ReturnSignal,
+    StepBudgetExceeded,
+    StopSignal,
+)
+from .feedback import (
+    AlwaysContinueEvaluator,
+    FeedbackDecision,
+    FeedbackEvaluator,
+    FeedbackOutcome,
+)
+from .planner import Planner, StaticPlanner
 from .schema import (
     BinOpExpr,
     CallNode,
@@ -40,15 +49,28 @@ __all__ = [
     "FeedbackDecision",
     "FeedbackOutcome",
     "FeedbackEvaluator",
+    "AlwaysContinueEvaluator",
     "Planner",
+    "StaticPlanner",
     "LLMPlanner",
     "LLMFeedbackEvaluator",
-    "Interpreter",
+    "Executor",
     "ReplanSignal",
     "ReturnSignal",
     "StopSignal",
     "StepBudgetExceeded",
-    "Executor",
     "ExecutionResult",
     "TraceWriter",
 ]
+
+
+def __getattr__(name: str):
+    if name == "LLMPlanner":
+        from .llm_planner import LLMPlanner
+
+        return LLMPlanner
+    if name == "LLMFeedbackEvaluator":
+        from .llm_feedback import LLMFeedbackEvaluator
+
+        return LLMFeedbackEvaluator
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

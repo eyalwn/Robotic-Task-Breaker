@@ -737,6 +737,66 @@ class ManiSkillArm:
         self.last_obj_pos = self._try_get_obj_pos()
 
 
+class ManiSkillBackend:
+    def __init__(
+        self,
+        env_id: str | None = None,
+        render_human: bool = False,
+        vla_port: int | None = None,
+    ) -> None:
+        self._apply_env_defaults()
+        env_id = env_id if env_id is not None else os.environ.get(
+            "MANISKILL_ENV", "PickCube-v1"
+        )
+        self._env = create_env(env_id, render_human=render_human)
+        self._arm = ManiSkillArm(self._env)
+        self._camera = ManiSkillCamera(self._env, arm=self._arm)
+        from sim.success_checker import PickCubeSuccessChecker
+
+        self._checker = PickCubeSuccessChecker(self._env, consecutive_steps=1)
+        self._vla_port = (
+            vla_port if vla_port is not None else int(os.environ.get("VLA_PORT", "8765"))
+        )
+
+    @staticmethod
+    def _apply_env_defaults() -> None:
+        os.environ.setdefault("VLA_AXIS_REMAP", "2,0,1")
+        os.environ.setdefault("VLA_AXIS_SIGNS", "1,-1,-1")
+        os.environ.setdefault("VLA_SIM_PICKCUBE_GRIPPER_PROFILE", "true")
+
+    def register_skills(self, registry, goal: str) -> None:
+        from sim.maniskill_skills import register_maniskill_skills
+        from vla import VLAConfig, create_vla_manipulation
+        from vla.arm_skills import register_arm_skills
+
+        register_maniskill_skills(registry, self._env)
+        cfg = VLAConfig.from_env()
+        tool = create_vla_manipulation(
+            tool_name="arm_vla",
+            tool_description="VLA-driven arm manipulation",
+            task_prompt=goal,
+            server_address=f"http://localhost:{self._vla_port}",
+            arm=self._arm,
+            camera=self._camera,
+            cfg=cfg,
+        )
+        vla_callable = lambda task: tool.invoke({"task": task})
+        register_arm_skills(registry, vla_callable)
+
+    def capture_image(self) -> bytes:
+        return self._camera.capture_image()
+
+    def success(self) -> bool:
+        return bool(self._checker.check())
+
+    def close(self) -> None:
+        if hasattr(self._env, "close"):
+            try:
+                self._env.close()
+            except Exception:
+                pass
+
+
 class ManiSkillDrive:
     """Wraps a ManiSkill env and exposes move_linear / turn_in_place."""
 

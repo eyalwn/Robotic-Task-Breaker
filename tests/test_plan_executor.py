@@ -1,25 +1,14 @@
 from __future__ import annotations
 
-from core.plan import ExecutionResult, Executor, FeedbackDecision, FeedbackOutcome, Plan, validate_plan
+import pytest
+
+from core.plan import (
+    FeedbackDecision,
+    FeedbackOutcome,
+    Executor,
+    Plan,
+)
 from core.skills import Skill, SkillRegistry
-
-
-class ArmGrabMockSkill(Skill):
-    name = "arm.grab"
-    description = "mock arm grab"
-    parameters = []
-    returns = "str"
-
-    def __init__(self, returns: list[str]) -> None:
-        self._returns = returns
-        self._idx = 0
-
-    def __call__(self, **kwargs: object) -> str:
-        if self._idx >= len(self._returns):
-            return self._returns[-1]
-        value = self._returns[self._idx]
-        self._idx += 1
-        return value
 
 
 class MockSkill(Skill):
@@ -30,270 +19,480 @@ class MockSkill(Skill):
 
     def __init__(self, return_value: object = None) -> None:
         self.return_value = return_value
+        self.calls: list[dict[str, object]] = []
 
     def __call__(self, **kwargs: object) -> object:
+        self.calls.append(dict(kwargs))
         return self.return_value
 
 
-class StaticPlanMockPlanner:
-    def __init__(self, plan_to_return: Plan) -> None:
-        self._plan_to_return = plan_to_return
-
-    def plan(self, goal: str, catalog: str, context: str = "") -> Plan:
-        return self._plan_to_return
-
-
-class MockPlanner:
-    def __init__(self, plans: list[Plan]) -> None:
-        self._plans = plans
-        self.calls: list[tuple[str, str, str]] = []
-
-    def plan(self, goal: str, catalog: str, context: str = "") -> Plan:
-        self.calls.append((goal, catalog, context))
-        if self._plans:
-            return self._plans.pop(0)
-        raise RuntimeError("No plan available")
-
-
-class FailingPlanner:
-    def plan(self, goal: str, catalog: str, context: str = "") -> Plan:
-        raise RuntimeError("LLMPlanner: plan validation failed after 3 attempts")
-
-
-class SequenceFeedbackEvaluator:
-    def __init__(self, decisions: list[FeedbackDecision]) -> None:
-        self._decisions = decisions
-        self._idx = 0
+class MockFeedbackEvaluator:
+    def __init__(self, decision: FeedbackDecision, reason: str = "") -> None:
+        self.decision = decision
+        self.reason = reason
+        self.last_description: str | None = None
 
     def evaluate(self, image_bytes: bytes, description: str, goal: str) -> FeedbackOutcome:
-        if self._idx >= len(self._decisions):
-            return FeedbackOutcome(decision=self._decisions[-1])
-        decision = self._decisions[self._idx]
-        self._idx += 1
-        return FeedbackOutcome(decision=decision)
+        self.last_description = description
+        return FeedbackOutcome(decision=self.decision, reason=self.reason)
 
 
 def mock_image_fn() -> bytes:
     return b"fake-image"
 
 
-def handcrafted_plan() -> Plan:
-    return validate_plan(
+def build_executor(
+    skill: Skill,
+    decision: FeedbackDecision = FeedbackDecision.CONTINUE,
+    step_budget: int = 30,
+) -> Executor:
+    registry = SkillRegistry()
+    registry.register(skill)
+    return Executor(
+        registry=registry,
+        feedback_evaluator=MockFeedbackEvaluator(decision),
+        image_fn=mock_image_fn,
+        goal="test-goal",
+        step_budget=step_budget,
+    )
+
+
+def test_seq_executes_in_order() -> None:
+    skill = MockSkill("ok")
+    executor = build_executor(skill)
+    plan = Plan.model_validate(
         {
-            "goal": "pick up the cube",
+            "goal": "g",
+            "body": {
+                "kind": "seq",
+                "steps": [
+                    {"kind": "call", "skill": "mock.skill", "args": {"x": {"kind": "literal", "value": 1}}},
+                    {"kind": "call", "skill": "mock.skill", "args": {"x": {"kind": "literal", "value": 2}}},
+                    {"kind": "call", "skill": "mock.skill", "args": {"x": {"kind": "literal", "value": 3}}},
+                ],
+            },
+        }
+    )
+    executor.run(plan)
+    assert [call["x"] for call in skill.calls] == [1, 2, 3]
+
+
+def test_if_then() -> None:
+    skill = MockSkill("ok")
+    executor = build_executor(skill)
+    plan = Plan.model_validate(
+        {
+            "goal": "g",
+            "body": {
+                "kind": "if",
+                "condition": {"kind": "literal", "value": True},
+                "then_branch": {"kind": "call", "skill": "mock.skill"},
+                "else_branch": {"kind": "feedback", "description": "skip"},
+            },
+        }
+    )
+    executor.run(plan)
+    assert len(skill.calls) == 1
+
+
+def test_if_else() -> None:
+    skill = MockSkill("ok")
+    executor = build_executor(skill)
+    plan = Plan.model_validate(
+        {
+            "goal": "g",
+            "body": {
+                "kind": "if",
+                "condition": {"kind": "literal", "value": False},
+                "then_branch": {"kind": "call", "skill": "mock.skill"},
+                "else_branch": {"kind": "feedback", "description": "else path"},
+            },
+        }
+    )
+    executor.run(plan)
+    assert len(skill.calls) == 0
+
+
+def test_while_max_iterations() -> None:
+    skill = MockSkill("ok")
+    executor = build_executor(skill)
+    plan = Plan.model_validate(
+        {
+            "goal": "g",
+            "body": {
+                "kind": "while",
+                "condition": {"kind": "literal", "value": True},
+                "max_iterations": 3,
+                "body": {"kind": "call", "skill": "mock.skill"},
+            },
+        }
+    )
+    with pytest.raises(RuntimeError, match="while loop exceeded max_iterations=3"):
+        executor.run(plan)
+    assert len(skill.calls) == 3
+
+
+def test_call_assigns_return() -> None:
+    skill = MockSkill("result")
+    executor = build_executor(skill)
+    plan = Plan.model_validate(
+        {
+            "goal": "g",
+            "body": {
+                "kind": "seq",
+                "steps": [
+                    {"kind": "call", "skill": "mock.skill", "assign_to": "x"},
+                    {"kind": "return", "value": {"kind": "var", "name": "x"}},
+                ],
+            },
+        }
+    )
+    result = executor.run(plan)
+    assert result.status == "done"
+    assert result.value == "result"
+
+
+def test_feedback_continue() -> None:
+    skill = MockSkill("ok")
+    executor = build_executor(skill, decision=FeedbackDecision.CONTINUE)
+    plan = Plan.model_validate(
+        {
+            "goal": "g",
+            "body": {"kind": "feedback", "description": "all good"},
+        }
+    )
+    result = executor.run(plan)
+    assert result.status == "done"
+    assert result.value is None
+
+
+def test_feedback_stop() -> None:
+    skill = MockSkill("ok")
+    executor = build_executor(skill, decision=FeedbackDecision.STOP)
+    plan = Plan.model_validate({"goal": "g", "body": {"kind": "feedback", "description": "halt"}})
+    result = executor.run(plan)
+    assert result.status == "stopped"
+
+
+def test_feedback_replan() -> None:
+    skill = MockSkill("ok")
+    executor = build_executor(skill, decision=FeedbackDecision.REPLAN)
+    plan = Plan.model_validate({"goal": "g", "body": {"kind": "feedback", "description": "retry"}})
+    result = executor.run(plan)
+    assert result.status == "replan"
+
+
+def test_return_node() -> None:
+    skill = MockSkill("ok")
+    executor = build_executor(skill)
+    plan = Plan.model_validate(
+        {
+            "goal": "g",
+            "body": {"kind": "return", "value": {"kind": "literal", "value": 42}},
+        }
+    )
+    result = executor.run(plan)
+    assert result.status == "done"
+    assert result.value == 42
+
+
+def test_step_budget() -> None:
+    skill = MockSkill("ok")
+    executor = build_executor(skill, step_budget=2)
+    plan = Plan.model_validate(
+        {
+            "goal": "g",
+            "body": {
+                "kind": "seq",
+                "steps": [
+                    {"kind": "call", "skill": "mock.skill"},
+                    {"kind": "call", "skill": "mock.skill"},
+                    {"kind": "call", "skill": "mock.skill"},
+                ],
+            },
+        }
+    )
+    result = executor.run(plan)
+    assert result.status == "step_budget"
+    assert len(skill.calls) == 2
+
+
+def test_var_unbound_raises() -> None:
+    skill = MockSkill("ok")
+    executor = build_executor(skill)
+    plan = Plan.model_validate(
+        {"goal": "g", "body": {"kind": "return", "value": {"kind": "var", "name": "missing"}}}
+    )
+    with pytest.raises(NameError):
+        executor.run(plan)
+
+
+def test_binop_equality() -> None:
+    skill = MockSkill("ok")
+    executor = build_executor(skill)
+    true_plan = Plan.model_validate(
+        {
+            "goal": "g",
+            "body": {
+                "kind": "return",
+                "value": {
+                    "kind": "binop",
+                    "op": "==",
+                    "left": {"kind": "literal", "value": 1},
+                    "right": {"kind": "literal", "value": 1},
+                },
+            },
+        }
+    )
+    false_plan = Plan.model_validate(
+        {
+            "goal": "g",
+            "body": {
+                "kind": "return",
+                "value": {
+                    "kind": "binop",
+                    "op": "==",
+                    "left": {"kind": "literal", "value": 1},
+                    "right": {"kind": "literal", "value": 2},
+                },
+            },
+        }
+    )
+
+    true_result = executor.run(true_plan)
+    false_result = executor.run(false_plan)
+    assert true_result.status == "done"
+    assert false_result.status == "done"
+    assert true_result.value is True
+    assert false_result.value is False
+
+
+def test_binop_and_short_circuit() -> None:
+    skill = MockSkill("ok")
+    executor = build_executor(skill)
+    plan = Plan.model_validate(
+        {
+            "goal": "g",
+            "body": {
+                "kind": "return",
+                "value": {
+                    "kind": "binop",
+                    "op": "and",
+                    "left": {"kind": "literal", "value": False},
+                    "right": {"kind": "var", "name": "missing"},
+                },
+            },
+        }
+    )
+    result = executor.run(plan)
+    assert result.status == "done"
+    assert result.value is False
+
+
+def test_binop_in_true() -> None:
+    skill = MockSkill(["apple", "banana"])
+    executor = build_executor(skill)
+    plan = Plan.model_validate(
+        {
+            "goal": "g",
+            "body": {
+                "kind": "seq",
+                "steps": [
+                    {"kind": "call", "skill": "mock.skill", "args": {}, "assign_to": "objects"},
+                    {
+                        "kind": "if",
+                        "condition": {
+                            "kind": "binop",
+                            "op": "in",
+                            "left": {"kind": "literal", "value": "apple"},
+                            "right": {"kind": "var", "name": "objects"},
+                        },
+                        "then_branch": {"kind": "call", "skill": "mock.skill", "args": {}},
+                    },
+                ],
+            },
+        }
+    )
+    executor.run(plan)
+    assert len(skill.calls) == 2
+
+
+def test_binop_in_false() -> None:
+    skill = MockSkill(["apple", "banana"])
+    executor = build_executor(skill)
+    plan = Plan.model_validate(
+        {
+            "goal": "g",
+            "body": {
+                "kind": "seq",
+                "steps": [
+                    {"kind": "call", "skill": "mock.skill", "args": {}, "assign_to": "objects"},
+                    {
+                        "kind": "if",
+                        "condition": {
+                            "kind": "binop",
+                            "op": "in",
+                            "left": {"kind": "literal", "value": "grape"},
+                            "right": {"kind": "var", "name": "objects"},
+                        },
+                        "then_branch": {"kind": "call", "skill": "mock.skill", "args": {}},
+                    },
+                ],
+            },
+        }
+    )
+    executor.run(plan)
+    assert len(skill.calls) == 1
+
+
+def test_binop_in_none_right_returns_false() -> None:
+    skill = MockSkill(None)
+    executor = build_executor(skill)
+    plan = Plan.model_validate(
+        {
+            "goal": "g",
+            "body": {
+                "kind": "seq",
+                "steps": [
+                    {"kind": "call", "skill": "mock.skill", "args": {}, "assign_to": "objects"},
+                    {
+                        "kind": "if",
+                        "condition": {
+                            "kind": "binop",
+                            "op": "in",
+                            "left": {"kind": "literal", "value": "apple"},
+                            "right": {"kind": "var", "name": "objects"},
+                        },
+                        "then_branch": {"kind": "call", "skill": "mock.skill", "args": {}},
+                    },
+                ],
+            },
+        }
+    )
+    executor.run(plan)
+    assert len(skill.calls) == 1
+
+
+def test_not_expr() -> None:
+    skill = MockSkill("ok")
+    executor = build_executor(skill)
+    plan = Plan.model_validate(
+        {
+            "goal": "g",
+            "body": {
+                "kind": "return",
+                "value": {"kind": "not", "operand": {"kind": "literal", "value": True}},
+            },
+        }
+    )
+    result = executor.run(plan)
+    assert result.status == "done"
+    assert result.value is False
+
+
+def test_feedback_continue_then_return() -> None:
+    skill = MockSkill("ok")
+    executor = build_executor(skill, decision=FeedbackDecision.CONTINUE)
+    plan = Plan.model_validate(
+        {
+            "goal": "g",
+            "body": {
+                "kind": "seq",
+                "steps": [
+                    {"kind": "feedback", "description": "all good"},
+                    {"kind": "return", "value": {"kind": "literal", "value": "x"}},
+                ],
+            },
+        }
+    )
+    result = executor.run(plan)
+    assert result.status == "done"
+    assert result.value == "x"
+
+
+def test_feedback_trace_includes_reason(tmp_path) -> None:
+    import json
+
+    from core.plan.trace import TraceWriter
+
+    skill = MockSkill("ok")
+    registry = SkillRegistry()
+    registry.register(skill)
+    trace = TraceWriter(tmp_path, "trace-reason")
+    executor = Executor(
+        registry=registry,
+        feedback_evaluator=MockFeedbackEvaluator(
+            FeedbackDecision.CONTINUE, reason="object held"
+        ),
+        image_fn=mock_image_fn,
+        goal="test-goal",
+        trace=trace,
+    )
+    plan = Plan.model_validate(
+        {"goal": "g", "body": {"kind": "feedback", "description": "grasp check"}}
+    )
+    executor.run(plan)
+    trace.close()
+    event = json.loads(trace.path.read_text(encoding="utf-8").strip().splitlines()[0])
+    assert event["event"] == "feedback"
+    assert event["decision"] == "continue"
+    assert event["reason"] == "object held"
+
+
+def test_feedback_appends_prior_skill_result() -> None:
+    skill = MockSkill('{"status":"stopped","grasp_confirmed":false}')
+    feedback = MockFeedbackEvaluator(FeedbackDecision.CONTINUE)
+    registry = SkillRegistry()
+    registry.register(skill)
+    executor = Executor(
+        registry=registry,
+        feedback_evaluator=feedback,
+        image_fn=mock_image_fn,
+        goal="test-goal",
+    )
+    plan = Plan.model_validate(
+        {
+            "goal": "g",
             "body": {
                 "kind": "seq",
                 "steps": [
                     {
                         "kind": "call",
-                        "skill": "arm.grab",
-                        "args": {"object_name": {"kind": "literal", "value": "cube"}},
-                        "assign_to": "grab_result",
+                        "skill": "mock.skill",
+                        "args": {},
                     },
-                    {"kind": "feedback", "description": "Is the cube grasped?"},
-                    {"kind": "return", "value": {"kind": "var", "name": "grab_result"}},
+                    {"kind": "feedback", "description": "Is the object grasped?"},
                 ],
             },
         }
     )
+    executor.run(plan)
+    assert feedback.last_description is not None
+    assert "Prior skill result:" in feedback.last_description
+    assert "grasp_confirmed" in feedback.last_description
 
 
-def make_executor(
-    plans: list[Plan],
-    decisions: list[FeedbackDecision],
-    step_budget: int = 30,
-    max_replans: int = 3,
-) -> tuple[Executor, SkillRegistry, MockPlanner]:
+def test_executor_resolves_skill_alias() -> None:
+    target = MockSkill(["obj_a"])
     registry = SkillRegistry()
-    registry.register(MockSkill("ok"))
-    planner = MockPlanner(plans)
+    registry.register(target)
+    registry.register_alias("list_objects", target.name)
     executor = Executor(
         registry=registry,
-        planner=planner,
-        feedback_evaluator=SequenceFeedbackEvaluator(decisions),
+        feedback_evaluator=MockFeedbackEvaluator(FeedbackDecision.CONTINUE),
         image_fn=mock_image_fn,
-        max_replans=max_replans,
-        step_budget=step_budget,
+        goal="test-goal",
     )
-    return executor, registry, planner
-
-
-def test_executor_done() -> None:
-    plan = Plan.model_validate({"goal": "g", "body": {"kind": "call", "skill": "mock.skill"}})
-    executor, _, _ = make_executor([], [FeedbackDecision.CONTINUE])
-    result = executor.run("g", plan)
-    assert isinstance(result, ExecutionResult)
-    assert result.status == "done"
-    assert result.value is None
-
-
-def test_executor_return_value() -> None:
-    plan = Plan.model_validate(
-        {"goal": "g", "body": {"kind": "return", "value": {"kind": "literal", "value": 99}}}
-    )
-    executor, _, _ = make_executor([], [FeedbackDecision.CONTINUE])
-    result = executor.run("g", plan)
-    assert isinstance(result, ExecutionResult)
-    assert result.status == "done"
-    assert result.value == 99
-
-
-def test_executor_stopped() -> None:
-    plan = Plan.model_validate({"goal": "g", "body": {"kind": "feedback", "description": "stop now"}})
-    executor, _, _ = make_executor([], [FeedbackDecision.STOP])
-    result = executor.run("g", plan)
-    assert result.status == "stopped"
-    assert result.value is None
-
-
-def test_executor_replan_then_done() -> None:
-    first = Plan.model_validate({"goal": "g", "body": {"kind": "feedback", "description": "retry"}})
-    second = Plan.model_validate({"goal": "g", "body": {"kind": "call", "skill": "mock.skill"}})
-    executor, _, planner = make_executor([second], [FeedbackDecision.REPLAN, FeedbackDecision.CONTINUE])
-    result = executor.run("g", first)
-    assert result.status == "done"
-    assert result.replans == 1
-    assert len(planner.calls) == 1
-
-
-def test_executor_replan_limit() -> None:
-    first = Plan.model_validate({"goal": "g", "body": {"kind": "feedback", "description": "retry"}})
-    second = Plan.model_validate({"goal": "g", "body": {"kind": "feedback", "description": "retry-again"}})
-    executor, _, _ = make_executor([second], [FeedbackDecision.REPLAN, FeedbackDecision.REPLAN], max_replans=1)
-    result = executor.run("g", first)
-    assert result.status == "replan_limit"
-
-
-def test_executor_replan_planner_failure() -> None:
-    first = Plan.model_validate({"goal": "g", "body": {"kind": "feedback", "description": "retry"}})
-    registry = SkillRegistry()
-    registry.register(MockSkill("ok"))
-    executor = Executor(
-        registry=registry,
-        planner=FailingPlanner(),
-        feedback_evaluator=SequenceFeedbackEvaluator([FeedbackDecision.REPLAN]),
-        image_fn=mock_image_fn,
-        max_replans=3,
-        step_budget=30,
-    )
-    result = executor.run("g", first)
-    assert result.status == "replan_failed"
-    assert result.replans == 1
-    assert "plan validation failed" in (result.error or "")
-
-
-def test_executor_step_budget() -> None:
     plan = Plan.model_validate(
         {
             "goal": "g",
             "body": {
-                "kind": "seq",
-                "steps": [
-                    {"kind": "call", "skill": "mock.skill"},
-                    {"kind": "call", "skill": "mock.skill"},
-                    {"kind": "call", "skill": "mock.skill"},
-                ],
+                "kind": "call",
+                "skill": "list_objects",
+                "assign_to": "objects",
+                "args": {},
             },
         }
     )
-    executor, _, _ = make_executor([], [FeedbackDecision.CONTINUE], step_budget=2)
-    result = executor.run("g", plan)
-    assert result.status == "step_budget"
-
-
-def test_collect_plan_skills() -> None:
-    from core.plan.executor import _collect_plan_skills
-
-    plan = Plan.model_validate(
-        {
-            "goal": "g",
-            "body": {
-                "kind": "seq",
-                "steps": [
-                    {"kind": "call", "skill": "perception.detect"},
-                    {"kind": "call", "skill": "arm.grab"},
-                    {"kind": "feedback", "description": "grasped?"},
-                    {"kind": "call", "skill": "arm.place"},
-                ],
-            },
-        }
-    )
-    assert _collect_plan_skills(plan.body) == [
-        "perception.detect",
-        "arm.grab",
-        "arm.place",
-    ]
-
-
-def test_plan_start_trace_includes_skills(tmp_path) -> None:
-    import json
-
-    plan = Plan.model_validate(
-        {
-            "goal": "g",
-            "body": {
-                "kind": "seq",
-                "steps": [
-                    {"kind": "feedback", "description": "halt"},
-                    {"kind": "call", "skill": "perception.detect"},
-                    {"kind": "call", "skill": "arm.grab"},
-                    {"kind": "call", "skill": "arm.place"},
-                ],
-            },
-        }
-    )
-    registry = SkillRegistry()
-    registry.register(MockSkill("ok"))
-    executor = Executor(
-        registry=registry,
-        planner=MockPlanner([]),
-        feedback_evaluator=SequenceFeedbackEvaluator([FeedbackDecision.STOP]),
-        image_fn=mock_image_fn,
-        trace_dir=str(tmp_path),
-    )
-    executor.run("g", plan)
-
-    trace_files = list(tmp_path.glob("*.jsonl"))
-    assert len(trace_files) == 1
-    first_event = json.loads(trace_files[0].read_text(encoding="utf-8").splitlines()[0])
-    assert first_event["event"] == "plan_start"
-    assert first_event["skills"] == [
-        "perception.detect",
-        "arm.grab",
-        "arm.place",
-    ]
-
-
-def test_happy_path_continue() -> None:
-    plan = handcrafted_plan()
-    registry = SkillRegistry()
-    registry.register(ArmGrabMockSkill(["grabbed"]))
-    executor = Executor(
-        registry=registry,
-        planner=StaticPlanMockPlanner(plan),
-        feedback_evaluator=SequenceFeedbackEvaluator([FeedbackDecision.CONTINUE]),
-        image_fn=mock_image_fn,
-    )
-
-    result = executor.run("pick up the cube", plan)
-    assert result.status == "done"
-    assert result.replans == 0
-
-
-def test_replan_path() -> None:
-    plan = handcrafted_plan()
-    registry = SkillRegistry()
-    registry.register(ArmGrabMockSkill(["failed", "grabbed"]))
-    executor = Executor(
-        registry=registry,
-        planner=StaticPlanMockPlanner(plan),
-        feedback_evaluator=SequenceFeedbackEvaluator(
-            [FeedbackDecision.REPLAN, FeedbackDecision.CONTINUE]
-        ),
-        image_fn=mock_image_fn,
-        max_replans=1,
-    )
-
-    result = executor.run("pick up the cube", plan)
-    assert result.replans == 1
-    assert result.status != "replan_limit"
+    executor.run(plan)
+    assert target.calls == [{}]

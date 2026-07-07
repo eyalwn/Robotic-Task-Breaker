@@ -1,6 +1,7 @@
 """Sim-ground-truth perception skills for LIBERO (lazy-imported)."""
 from __future__ import annotations
 
+import json
 import logging
 import math
 import os
@@ -134,6 +135,33 @@ def libero_object_near_basket(
         return False, None
     xy = libero_horizontal_xy_dist(obj, basket)
     return xy <= max_xy, xy
+
+
+def libero_place_result_hook(
+    raw: str, arm: Any, object_name: str, location: str
+) -> str:
+    """Treat stagnation as place success when the object xy is near the basket."""
+    if "basket" not in location.lower() or not object_name:
+        return raw
+    try:
+        payload = json.loads(raw)
+    except json.JSONDecodeError:
+        return raw
+    if payload.get("status") == "success":
+        return raw
+    if payload.get("reason") not in ("stagnation", "max_inner_steps"):
+        return raw
+    env = getattr(arm, "_env", None)
+    if env is None:
+        return raw
+    near, xy_dist = libero_object_near_basket(env, object_name)
+    if not near:
+        return raw
+    payload["status"] = "success"
+    payload["reason"] = "place_proximity"
+    payload["place_xy_dist"] = round(xy_dist, 4) if xy_dist is not None else None
+    payload["grasp_triggered"] = True
+    return json.dumps(payload, separators=(",", ":"))
 
 
 class LiberoDetectSkill(Skill):

@@ -12,8 +12,10 @@ from sim.libero_skills import (
     LiberoLocateSkill,
     _unwrap_to_sim,
     libero_object_human_name,
+    libero_place_result_hook,
     register_libero_skills,
 )
+from vla.arm_skills import ArmPlaceSkill
 
 
 def _make_fake_sim(body_names, body_positions):
@@ -113,6 +115,114 @@ def test_list_objects_no_sim():
     skill = LiberoListObjectsSkill(vec_env)
     assert skill() == []
     assert _unwrap_to_sim(vec_env) is None
+
+
+def test_libero_place_result_hook_upgrades_stagnation_when_near_basket(
+    monkeypatch,
+) -> None:
+    monkeypatch.setenv("LIBERO_PLACE_SMOKE_MAX_XY", "0.12")
+
+    class _Env:
+        pass
+
+    class _Arm:
+        def __init__(self) -> None:
+            self._env = _Env()
+
+    positions = {
+        "alphabet_soup_1_main": [0.0, 0.0, 0.5],
+        "basket_1_main": [0.05, 0.0, 0.5],
+    }
+    monkeypatch.setattr(
+        "sim.libero_skills.libero_body_position",
+        lambda _env, body: positions.get(body),
+    )
+
+    stagnation = (
+        '{"status":"stopped","reason":"stagnation","steps_applied":12,'
+        '"min_dist":0.08,"grasp_triggered":false}'
+    )
+    raw = libero_place_result_hook(
+        stagnation, _Arm(), "alphabet_soup_1_main", "basket"
+    )
+    import json
+
+    payload = json.loads(raw)
+    assert payload["status"] == "success"
+    assert payload["reason"] == "place_proximity"
+    assert payload["place_xy_dist"] == 0.05
+    assert payload["grasp_triggered"] is True
+
+
+def test_libero_place_result_hook_keeps_stagnation_when_far(monkeypatch) -> None:
+    monkeypatch.setenv("LIBERO_PLACE_SMOKE_MAX_XY", "0.12")
+
+    class _Env:
+        pass
+
+    class _Arm:
+        _env = _Env()
+
+    positions = {
+        "alphabet_soup_1_main": [0.5, 0.0, 0.5],
+        "basket_1_main": [0.0, 0.0, 0.5],
+    }
+    monkeypatch.setattr(
+        "sim.libero_skills.libero_body_position",
+        lambda _env, body: positions.get(body),
+    )
+
+    stagnation = '{"status":"stopped","reason":"stagnation","steps_applied":12}'
+    raw = libero_place_result_hook(
+        stagnation, _Arm(), "alphabet_soup_1_main", "basket"
+    )
+    import json
+
+    assert json.loads(raw)["reason"] == "stagnation"
+
+
+def test_arm_place_skill_with_libero_hooks(monkeypatch) -> None:
+    monkeypatch.setenv("LIBERO_PLACE_SMOKE_MAX_XY", "0.12")
+
+    class _Env:
+        pass
+
+    class _Arm:
+        def __init__(self) -> None:
+            self._env = _Env()
+
+        def set_target_object(self, name: str) -> bool:
+            return True
+
+    positions = {
+        "alphabet_soup_1_main": [0.0, 0.0, 0.5],
+        "basket_1_main": [0.05, 0.0, 0.5],
+    }
+    monkeypatch.setattr(
+        "sim.libero_skills.libero_body_position",
+        lambda _env, body: positions.get(body),
+    )
+
+    stagnation = (
+        '{"status":"stopped","reason":"stagnation","steps_applied":12,'
+        '"min_dist":0.08,"grasp_triggered":false}'
+    )
+
+    class _StagnationVla:
+        def __call__(self, **_kwargs: object) -> str:
+            return stagnation
+
+    raw = ArmPlaceSkill(
+        _StagnationVla(),
+        arm=_Arm(),
+        name_mapper=libero_object_human_name,
+        place_result_hook=libero_place_result_hook,
+    )(object_name="alphabet_soup_1_main", location="basket")
+    import json
+
+    payload = json.loads(raw)
+    assert payload["status"] == "success"
+    assert payload["reason"] == "place_proximity"
 
 
 def test_unwrap_to_sim_via_unwrapped():

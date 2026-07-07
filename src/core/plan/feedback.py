@@ -20,3 +20,8 @@ class FeedbackOutcome:
 class FeedbackEvaluator(Protocol):
     def evaluate(self, image_bytes: bytes, description: str, goal: str) -> FeedbackOutcome:
         ...
+
+
+class AlwaysContinueEvaluator:
+    def evaluate(self, image_bytes: bytes, description: str, goal: str) -> FeedbackOutcome:
+        return FeedbackOutcome(decision=FeedbackDecision.CONTINUE)

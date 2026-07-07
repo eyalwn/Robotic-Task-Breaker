@@ -20,32 +20,58 @@ class MockVlaTool:
         return "ok"
 
 
-def test_arm_grab_skill_calls_vla() -> None:
+def test_arm_grab_skill_default_uses_raw_object_name() -> None:
     vla_tool = MockVlaTool()
     skill = ArmGrabSkill(vla_tool)
+    skill(object_name="alphabet_soup_1_main")
+    assert vla_tool.calls == [{"task": "pick up the alphabet_soup_1_main"}]
+
+
+def test_arm_grab_skill_with_name_mapper() -> None:
+    from sim.libero_skills import libero_object_human_name
+
+    vla_tool = MockVlaTool()
+    skill = ArmGrabSkill(vla_tool, name_mapper=libero_object_human_name)
     skill(object_name="alphabet_soup_1_main")
     assert vla_tool.calls == [{"task": "pick up the alphabet soup can"}]
 
 
-def test_arm_place_skill_calls_vla() -> None:
+def test_arm_place_skill_default_uses_raw_object_name() -> None:
     vla_tool = MockVlaTool()
     skill = ArmPlaceSkill(vla_tool)
     skill(object_name="cream_cheese_1_main", location="basket_1_main")
     assert vla_tool.calls == [
-        {"task": "put the cream cheese box in the basket"}
+        {"task": "put the cream_cheese_1_main in the basket"}
     ]
 
 
-def test_arm_place_skill_basket_location_emits_libero_prompt() -> None:
+def test_arm_place_skill_basket_location_prompt() -> None:
     vla_tool = MockVlaTool()
     skill = ArmPlaceSkill(vla_tool)
     skill(object_name="alphabet_soup_1_main", location="basket")
     assert vla_tool.calls == [
-        {"task": "put the alphabet soup can in the basket"}
+        {"task": "put the alphabet_soup_1_main in the basket"}
     ]
     assert _place_task_prompt("alphabet soup can", "basket") == (
         "put the alphabet soup can in the basket"
     )
+
+
+def test_arm_place_skill_default_returns_raw_vla_result() -> None:
+    stagnation = '{"status":"stopped","reason":"stagnation"}'
+
+    class _StagnationVla:
+        def __call__(self, **_kwargs: object) -> str:
+            return stagnation
+
+    class _Arm:
+        def set_target_object(self, name: str) -> bool:
+            return True
+
+    raw = ArmPlaceSkill(_StagnationVla(), arm=_Arm())(
+        object_name="alphabet_soup_1_main", location="basket"
+    )
+    assert raw == stagnation
 
 
 def test_arm_grab_skill_sets_target_object() -> None:
@@ -86,7 +112,7 @@ def test_arm_place_skill_sets_basket_target_when_location_mentions_basket() -> N
     skill(object_name="alphabet_soup_1_main", location="in the basket")
     assert arm.target == "basket_1_main"
     assert vla_tool.calls == [
-        {"task": "put the alphabet soup can in the basket"}
+        {"task": "put the alphabet_soup_1_main in the basket"}
     ]
 
 
@@ -151,80 +177,6 @@ def test_arm_grab_skips_prepare_when_not_after_place(monkeypatch) -> None:
     arm = _Arm()
     ArmGrabSkill(vla_tool, arm=arm)(object_name="alphabet_soup_1_main")
     assert arm.prepared == 0
-
-
-def test_arm_place_skill_upgrades_stagnation_when_near_basket(monkeypatch) -> None:
-    monkeypatch.setenv("LIBERO_PLACE_SMOKE_MAX_XY", "0.12")
-
-    class _Env:
-        pass
-
-    class _Arm:
-        def __init__(self) -> None:
-            self._env = _Env()
-
-        def set_target_object(self, name: str) -> bool:
-            return True
-
-    positions = {
-        "alphabet_soup_1_main": [0.0, 0.0, 0.5],
-        "basket_1_main": [0.05, 0.0, 0.5],
-    }
-    monkeypatch.setattr(
-        "sim.libero_skills.libero_body_position",
-        lambda _env, body: positions.get(body),
-    )
-
-    stagnation = (
-        '{"status":"stopped","reason":"stagnation","steps_applied":12,'
-        '"min_dist":0.08,"grasp_triggered":false}'
-    )
-
-    class _StagnationVla:
-        def __call__(self, **_kwargs: object) -> str:
-            return stagnation
-
-    raw = ArmPlaceSkill(_StagnationVla(), arm=_Arm())(
-        object_name="alphabet_soup_1_main", location="basket"
-    )
-    import json
-
-    payload = json.loads(raw)
-    assert payload["status"] == "success"
-    assert payload["reason"] == "place_proximity"
-    assert payload["place_xy_dist"] == 0.05
-
-
-def test_arm_place_skill_keeps_stagnation_when_far_from_basket(monkeypatch) -> None:
-    monkeypatch.setenv("LIBERO_PLACE_SMOKE_MAX_XY", "0.12")
-
-    class _Env:
-        pass
-
-    class _Arm:
-        _env = _Env()
-
-    positions = {
-        "alphabet_soup_1_main": [0.5, 0.0, 0.5],
-        "basket_1_main": [0.0, 0.0, 0.5],
-    }
-    monkeypatch.setattr(
-        "sim.libero_skills.libero_body_position",
-        lambda _env, body: positions.get(body),
-    )
-
-    stagnation = '{"status":"stopped","reason":"stagnation","steps_applied":12}'
-
-    class _StagnationVla:
-        def __call__(self, **_kwargs: object) -> str:
-            return stagnation
-
-    raw = ArmPlaceSkill(_StagnationVla(), arm=_Arm())(
-        object_name="alphabet_soup_1_main", location="basket"
-    )
-    import json
-
-    assert json.loads(raw)["reason"] == "stagnation"
 
 
 def test_missing_skill_raises_keyerror() -> None:
