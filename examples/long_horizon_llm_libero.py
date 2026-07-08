@@ -1,16 +1,8 @@
 """M6 - LLM-emitted plan on LIBERO-Long (LIBERO-10) with full executor + VLA."""
 import logging
 import os
-import sys
-from pathlib import Path
 
 from dotenv import find_dotenv, load_dotenv
-
-_examples = Path(__file__).resolve().parent
-_src = _examples.parent / "src"
-for path in (_src, _examples):
-    if str(path) not in sys.path:
-        sys.path.insert(0, str(path))
 
 load_dotenv(find_dotenv())
 logging.basicConfig(

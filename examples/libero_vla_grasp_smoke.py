@@ -11,14 +11,8 @@ from __future__ import annotations
 import json
 import logging
 import os
-import sys
-from pathlib import Path
 
 from dotenv import find_dotenv, load_dotenv
-
-_src = Path(__file__).resolve().parents[1] / "src"
-if str(_src) not in sys.path:
-    sys.path.insert(0, str(_src))
 
 load_dotenv(find_dotenv())
 # PickCube axis calibration must not bleed from .env into LIBERO OpenPI path.

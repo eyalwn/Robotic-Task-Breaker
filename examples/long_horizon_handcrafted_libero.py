@@ -1,13 +1,7 @@
 """M5 — LIBERO-Object with handcrafted plan + sim-GT skills (Linux)."""
 import logging
 import os
-import sys
 import time
-from pathlib import Path
-
-_src = Path(__file__).resolve().parents[1] / "src"
-if str(_src) not in sys.path:
-    sys.path.insert(0, str(_src))
 
 from dotenv import find_dotenv, load_dotenv
 

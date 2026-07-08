@@ -1,4 +1,4 @@
-# Core (sim + LLM on Windows). Pin versions were copied from the former pyproject.toml.
+# Core (sim + LLM on Windows). Runtime deps for .venv; packaging metadata in pyproject.toml.
 langchain==1.1.0
 langchain-google-genai==3.2.0
 langchain-openai==1.1.0

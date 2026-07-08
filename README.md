@@ -31,6 +31,7 @@ GPU PyTorch for ManiSkill: **do not** run `pip install -r requirements-maniskill
 python3 -m venv .venv
 .venv/bin/python -m pip install -U pip
 .venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python -m pip install -e .
 # Then run the PyTorch+CUDA install line from pytorch.org (not shown here — it varies by CUDA).
 .venv/bin/python -m pip install "mani-skill>=3.0.0b20"
 ```
@@ -41,6 +42,7 @@ python3 -m venv .venv
 python -m venv .venv
 .venv/Scripts/python -m pip install -U pip
 .venv/Scripts/python -m pip install -r requirements.txt
+.venv/Scripts/python -m pip install -e .
 .venv/Scripts/python -m pip install -r requirements-maniskill.txt
 ```
 
@@ -156,7 +158,7 @@ source .venv/Scripts/activate
 python examples/long_horizon_handcrafted_maniskill.py
 ```
 
-The client uses `http://localhost:${VLA_PORT}`. Examples add `src` to `sys.path` automatically.
+The client uses `http://localhost:${VLA_PORT}`. After `pip install -e .`, examples import `core` / `sim` directly; LIBERO smoke scripts still add `examples/` for `libero_vla_smoke_common`.
 
 *LIBERO — handcrafted plan (Linux only):*
 

@@ -1,8 +1,6 @@
 import unittest
 import os
-import sys
 # pytest.ini sets pythonpath = src
-sys.path.append(os.path.join(os.path.dirname(__file__), '../src'))
 
 from core.memory import Memory
 

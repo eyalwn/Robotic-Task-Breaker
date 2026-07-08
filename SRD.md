@@ -1,6 +1,6 @@
 # Longor SRD
 
-Private codebase: dependencies in `requirements.txt`. Source packages live under `src/`. Run with `PYTHONPATH=src`; tests use `pytest.ini` `pythonpath = src`.
+Private codebase: dependencies in `requirements.txt`; install the repo editable with `pip install -e .` so `core`, `sim`, `vla`, and `robots` import without `PYTHONPATH`. Source packages live under `src/`. Tests use `pytest.ini` `pythonpath = src`.
 
 ## Goal
 
@@ -28,7 +28,7 @@ Enable robots to perform **long-horizon** tasks by separating **planning** (LLM)
 
 **Acceptance (manual, on Linux host)**
 
-- `.venv`: `pip install -r requirements.txt` (+ sim deps), ManiSkill for PickCube per `README.md` / [ManiSkill installation](https://maniskill.readthedocs.io/en/latest/user_guide/getting_started/installation.html), run `pytest` from repo root.
+- `.venv`: `pip install -r requirements.txt`, `pip install -e .` (+ sim deps), ManiSkill for PickCube per `README.md` / [ManiSkill installation](https://maniskill.readthedocs.io/en/latest/user_guide/getting_started/installation.html), run `pytest` from repo root.
 - `.vla-venv`: Octo per `README.md` §3 — **Linux:** Octo `requirements.txt` + `services/requirements-vla-octo-small-1.5-linux.txt`; **Windows:** `services/requirements-vla-octo-small-1.5-windows.txt` + `pip install -e ~/octo --no-deps` (no upstream `requirements.txt`); `**VLA_POLICY`** set; weights from Hugging Face in `services/octo_service.py`; `python services/run_vla_server.py` serves `/health` on `VLA_PORT`.
 - With both terminals up and `.env` filled, `python examples/long_horizon_handcrafted_maniskill.py` completes a run (success/failure per sim/policy is fine; wiring must work).
 - `README.md` remains valid for **Windows (Git Bash)** and **Linux (with CUDA)** including Octo VLA venv paths in §3.

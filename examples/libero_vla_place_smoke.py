@@ -21,10 +21,8 @@ from pathlib import Path
 from dotenv import find_dotenv, load_dotenv
 
 _examples = Path(__file__).resolve().parent
-_src = _examples.parent / "src"
-for path in (_src, _examples):
-    if str(path) not in sys.path:
-        sys.path.insert(0, str(path))
+if str(_examples) not in sys.path:
+    sys.path.insert(0, str(_examples))
 
 load_dotenv(find_dotenv())
 

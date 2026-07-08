@@ -6,12 +6,6 @@ Device paths are read from env vars (set these before running on HW):
   ROBOCREW_USB_RIGHT  right-arm/wheel USB port (default: /dev/arm_right)
 """
 import os
-import sys
-from pathlib import Path
-
-_src = Path(__file__).resolve().parents[1] / "src"
-if str(_src) not in sys.path:
-    sys.path.insert(0, str(_src))
 
 from core.camera import RobotCamera
 from robots.XLeRobot.xlerobot_llm_agent import XLeRobotAgent
