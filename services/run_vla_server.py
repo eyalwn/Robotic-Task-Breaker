@@ -5,7 +5,7 @@ import os
 import sys
 from pathlib import Path
 
-_SUPPORTED = ("octo-small-1.5", "pi05")
+_SUPPORTED = ("octo-small-1.5", "pi05", "smolvla")
 
 
 def _load_dotenv() -> None:
@@ -87,6 +87,39 @@ def main() -> None:
             )
             print(
                 "  Pi0.5 is not supported on Windows. If you switched policies, recreate .vla-venv.",
+                file=sys.stderr,
+            )
+            print(f"  {exc}", file=sys.stderr)
+            sys.exit(3)
+        return
+
+    if policy == "smolvla":
+        target = here / "smolvla_service.py"
+        if not target.is_file():
+            print(f"error: missing {target}", file=sys.stderr)
+            sys.exit(1)
+        try:
+            runpy.run_path(str(target), run_name="__main__")
+        except ImportError as exc:
+            print(
+                "error: SmolVLA (LeRobot) or HTTP deps not importable in this venv.",
+                file=sys.stderr,
+            )
+            print(
+                "  Linux + NVIDIA (T4-class OK):",
+                file=sys.stderr,
+            )
+            print(
+                "    pip install -r services/requirements-vla-smolvla-linux.txt",
+                file=sys.stderr,
+            )
+            print(
+                "  Default checkpoint: HuggingFaceVLA/smolvla_libero "
+                "(override with SMOLVLA_CHECKPOINT).",
+                file=sys.stderr,
+            )
+            print(
+                "  If you switched policies and pip conflicts, remove .vla-venv and recreate it.",
                 file=sys.stderr,
             )
             print(f"  {exc}", file=sys.stderr)

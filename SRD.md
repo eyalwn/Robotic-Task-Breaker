@@ -258,7 +258,7 @@ Retire the legacy sim-loop path; consolidate tests and notebooks.
 - Changes to backend success criteria semantics or VLA wire format.
 - Recursive sub-planning.
 
-### M8 (planned)
+### M8 (implementation complete — acceptance pending)
 
 **SmolVLA VLA backend for LIBERO (Colab-cost path).** Add a lightweight VLA service so long-horizon LIBERO runs do not depend on Pi0.5 (A100 + ~12 GiB checkpoint). Longor's LLM planner already decomposes work into short `arm.grab` / `arm.place` sub-tasks; SmolVLA (~450M) is sufficient for those chunks and runs on **T4 16GB** Colab alongside LIBERO.
 
@@ -268,7 +268,7 @@ Retire the legacy sim-loop path; consolidate tests and notebooks.
 - SmolVLA shares the **LeRobot** stack already used for LIBERO env wiring.
 - Octo-small remains wired but is DROID-trained and a poor LIBERO manipulator without fine-tuning.
 
-**Scope**
+**Scope (implemented)**
 
 - `services/smolvla_service.py`: FastAPI service, same `/health` + `POST /predict` contract as `octo_service.py` / `pi05_service.py`.
 - `services/run_vla_server.py`: add `VLA_POLICY=smolvla`.
@@ -277,7 +277,7 @@ Retire the legacy sim-loop path; consolidate tests and notebooks.
 - Server maps SmolVLA outputs to the existing LIBERO wire format consumed by `LiberoArm.apply_vla_action` (7-DOF OSC deltas + gripper).
 - Accept agentview JPEG + optional wrist JPEG + 8-dim proprio (`agent_state`) on `/predict` — same client path as Pi0.5 (`vla/client.py`, `vla/tools.py`).
 - `README.md` §3: SmolVLA venv setup; mark as **primary LIBERO VLA** for Colab.
-- `colab/m8_smolvla_libero.ipynb` (or update `m7` notebook): T4-oriented validator — VLA service health, wiring smoke, optional short LIBERO arm rollout.
+- `colab/m8_smolvla_libero.ipynb`: T4-oriented validator — VLA service health, wiring smoke, optional short LIBERO arm rollout.
 - `LiberoBackend` / `.env.example`: document `VLA_POLICY=smolvla` as the recommended LIBERO default after M8.
 - No planner, executor, skill-schema, or perception changes.
 
@@ -507,7 +507,7 @@ Linux milestone acceptance runs via notebooks in `colab/`:
 | `colab/m5_handcrafted_libero.ipynb` | M5 handcrafted plan |
 | `colab/m6_llm_libero.ipynb` | M6 LLM plan (sim-GT perception; legacy) |
 | `colab/m7_real_perception_libero.ipynb` | M7 real perception E2E (task 0; requires M8 SmolVLA) |
-| `colab/m8_smolvla_libero.ipynb` | M8 SmolVLA VLA wiring (planned) |
+| `colab/m8_smolvla_libero.ipynb` | M8 SmolVLA VLA wiring |
 | `colab/m10_libero_10_campaign.ipynb` | M10 per-task campaign (planned) |
 
 Each notebook is self-contained and ephemeral-safe: no Google Drive dependency; the repo is cloned and deps installed into the Colab VM's local disk on each session. The GitHub PAT and any API keys are read from Colab Secrets (never embedded in notebook cells). `.venv` is created with `--system-site-packages` to inherit Colab's pre-installed CUDA PyTorch; `.vla-venv` is fully isolated. The VLA server runs as a background subprocess; the notebook polls `/health` before proceeding. M7+ notebooks require `GITHUB_BRANCH` and sync to `origin/<GITHUB_BRANCH>` (not silent `main`).

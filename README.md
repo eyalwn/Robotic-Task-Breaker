@@ -11,7 +11,7 @@ Create **two** virtualenvs in this directory: `.venv` (app / sim / LLM) and `.vl
 ### 1 — Environment file
 
 1. `cp .env.example .env`
-2. Set secrets (e.g. `OPENAI_API_KEY`). Set `**VLA_POLICY`** to an id implemented in `services/run_vla_server.py` (e.g. `octo-small-1.5`). Octo loads `**rail-berkeley/octo-small-1.5**` from Hugging Face on first service start (see `services/octo_service.py`).
+2. Set secrets (e.g. `OPENAI_API_KEY`). Set `**VLA_POLICY`** to an id implemented in `services/run_vla_server.py` (for LIBERO use `smolvla`; for ManiSkill use `octo-small-1.5`).
 
 **Never commit `.env` (gitignored).**
 
@@ -61,6 +61,22 @@ Set `BACKEND=libero` in `.env`.
 **One stack per venv.** If pip conflicts appear when switching policies, delete `.vla-venv` and recreate. Set `VLA_POLICY` in `.env` to match the installed stack.
 
 Pick **one** of the VLA stacks below.
+
+---
+
+#### SmolVLA `smolvla` (primary LIBERO VLA on Linux/Colab)
+
+Requires **Linux + NVIDIA GPU** (Colab T4 is sufficient).
+
+```bash
+python3 -m venv .vla-venv
+.vla-venv/bin/python -m pip install -U pip
+.vla-venv/bin/python -m pip install -r services/requirements-vla-smolvla-linux.txt
+```
+
+Default checkpoint is `HuggingFaceVLA/smolvla_libero`. Override with `SMOLVLA_CHECKPOINT` in `.env` if needed.
+
+Set `VLA_POLICY=smolvla` in `.env`.
 
 ---
 
@@ -134,7 +150,7 @@ source .vla-venv/Scripts/activate
 python services/run_vla_server.py
 ```
 
-`VLA_POLICY` in `.env` selects the implementation (e.g. `octo-small-1.5`). Wait until `GET /health` on `VLA_PORT` (default **8765**) succeeds.
+`VLA_POLICY` in `.env` selects the implementation (e.g. `smolvla`, `octo-small-1.5`, `pi05`). Wait until `GET /health` on `VLA_PORT` (default **8765**) succeeds.
 
 **Terminal B — example**
 
@@ -151,6 +167,7 @@ python examples/maniskill_pickcube.py
 ```bash
 cd /path/to/Longor
 source .venv/bin/activate
+export VLA_POLICY=smolvla
 export MUJOCO_GL=egl
 python examples/long_horizon_llm_libero.py
 ```
