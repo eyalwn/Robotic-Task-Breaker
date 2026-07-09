@@ -225,11 +225,29 @@ Retire the legacy sim-loop path; consolidate tests and notebooks.
 
 ---
 
-### M7 (optional, later)
+### M7 (in progress)
 
-**Real perception backend.** Open-vocab detector (e.g. Grounding DINO or OWL-ViT + SAM2) implementing the same `perception.`* skill set as the sim-GT versions, but against rendered RGB instead of sim ground truth — so a single sim can be paired with either sim-GT or real perception. Introduces a `PerceptionBackend` interface in `src/core/skills.py` and a config knob (e.g. `PERCEPTION_BACKEND=sim_gt | openvocab`). Linux + GPU. Out of current planning scope; recorded so the option is on file.
+**Real perception, no sim-GT cheating.** Replace sim-ground-truth perception in the long-horizon LIBERO path with RGB-based perception and keep the same planner/executor/arm contracts. M7 targets exactly the same scenario as `examples/long_horizon_llm_libero.py`: **LIBERO-10 (`libero_10`) task 0**.
 
-**M1–M3** widen OS, sim, and policy options; **M4–M6** add the planner architecture on top, with **LIBERO** as the primary E2E target and **ManiSkill on Windows** as the cross-platform smoke test.
+**Scope**
+
+- Add a perception adapter boundary (e.g. `PerceptionBackend`) that provides `state.list_objects`, `perception.detect`, and `perception.locate` without exposing simulator internals to the planner/executor.
+- Add a real-perception implementation for LIBERO-10 task 0 that works from rendered RGB frames instead of simulator ground-truth object state. For M7, pragmatic task-focused CV heuristics are acceptable; broad open-vocab detection is a later milestone.
+- Add config-based selection (e.g. `PERCEPTION_BACKEND=sim_gt|real`) at backend wiring time; do not hard-code perception mode in examples.
+- Keep VLA HTTP contract, planner schema, executor loop, and `Runner` public behavior unchanged.
+
+**Acceptance**
+
+- On Linux + GPU with a running VLA service, `python examples/long_horizon_llm_libero.py` on `libero_10` task 0 reaches **full success** (`RunResult.success=True`, process exit code 0) using the real-perception backend.
+- The successful run above must not use simulator ground-truth perception calls (`sim/libero_skills.py` and equivalents) for `state.list_objects` / `perception.*`.
+- Add tests that fail if real-perception mode falls back to sim-GT perception wiring.
+- On Windows, `pytest` remains green with perception backends tested via mocks/fakes (no Linux-only runtime dependency in unit tests).
+
+**Out of scope for M7**
+
+- Success across all LIBERO-10 tasks (task 0 only for this milestone).
+- Changes to backend success criteria semantics or VLA wire format.
+- Recursive sub-planning.
 
 ## Validation tooling (Colab)
 

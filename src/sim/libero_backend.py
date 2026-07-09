@@ -808,15 +808,19 @@ class LiberoBackend:
         os.environ.setdefault("VLA_PROXIMITY_GRASP", "false")
 
     def register_skills(self, registry, goal: str) -> None:
+        from sim.libero_perception import register_libero_perception_skills
         from sim.libero_skills import (
             libero_object_human_name,
             libero_place_result_hook,
-            register_libero_skills,
         )
         from vla import VLAConfig, create_vla_manipulation
         from vla.arm_skills import register_arm_skills
 
-        register_libero_skills(registry, self._env)
+        self._perception_mode = register_libero_perception_skills(
+            registry,
+            vec_env=self._env,
+            camera=self._camera,
+        )
         cfg = VLAConfig.from_env()
         tool = create_vla_manipulation(
             tool_name="arm_vla",
@@ -838,6 +842,13 @@ class LiberoBackend:
         )
 
     def list_objects(self) -> list[str]:
+        from sim.libero_perception import resolve_perception_backend
+
+        mode = getattr(self, "_perception_mode", None) or resolve_perception_backend()
+        if mode == "real":
+            from sim.libero_real_perception import RealListObjectsSkill
+
+            return RealListObjectsSkill(self._camera)()
         from sim.libero_skills import LiberoListObjectsSkill
 
         return LiberoListObjectsSkill(self._env)()

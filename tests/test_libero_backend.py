@@ -665,6 +665,8 @@ def test_libero_backend_register_skills(monkeypatch):
     from sim.libero_backend import LiberoBackend
     from sim.libero_skills import libero_object_human_name, libero_place_result_hook
 
+    monkeypatch.delenv("PERCEPTION_BACKEND", raising=False)
+
     env = FakeLiberoEnv()
     arm = LiberoArm(env)
     camera = LiberoCamera(env, arm=arm)
@@ -712,6 +714,130 @@ def test_libero_backend_register_skills(monkeypatch):
     assert recorded["kwargs"]["arm"] is arm
     assert recorded["kwargs"]["name_mapper"] is libero_object_human_name
     assert recorded["kwargs"]["place_result_hook"] is libero_place_result_hook
+    assert backend._perception_mode == "sim_gt"
+    assert getattr(registry.get("perception.detect"), "perception_source", "sim_gt") != "real"
+
+
+def test_libero_backend_list_objects_routes_real_perception(monkeypatch):
+    import types
+
+    from sim.libero_backend import LiberoBackend
+
+    monkeypatch.setenv("PERCEPTION_BACKEND", "real")
+
+    def _fake_blob_frame():
+        import cv2
+        import numpy as np
+
+        frame = np.full((160, 160, 3), 40, dtype=np.uint8)
+        cv2.circle(frame, (80, 80), 18, (220, 40, 40), thickness=-1)
+        return frame
+
+    camera = types.SimpleNamespace(
+        capture_image=lambda: b"",
+        is_placeholder_jpeg=lambda _b: False,
+    )
+
+    backend = LiberoBackend.__new__(LiberoBackend)
+    backend._perception_mode = "real"
+    backend._camera = camera
+    backend._env = types.SimpleNamespace()
+
+    class _ForbiddenSimGt:
+        def __init__(self, *_args, **_kwargs):
+            raise AssertionError(
+                "sim-GT list_objects path must not be used in real mode"
+            )
+
+    monkeypatch.setattr("sim.libero_skills.LiberoListObjectsSkill", _ForbiddenSimGt)
+    monkeypatch.setattr(
+        "sim.libero_real_perception._capture_rgb",
+        lambda _camera: _fake_blob_frame(),
+    )
+
+    names = backend.list_objects()
+    assert "alphabet_soup_1_main" in names
+
+
+def test_libero_backend_list_objects_real_mode_no_detection_returns_empty(
+    monkeypatch,
+):
+    import types
+
+    from sim.libero_backend import LiberoBackend
+
+    monkeypatch.setenv("PERCEPTION_BACKEND", "real")
+
+    camera = types.SimpleNamespace(
+        capture_image=lambda: b"",
+        is_placeholder_jpeg=lambda _b: False,
+    )
+
+    backend = LiberoBackend.__new__(LiberoBackend)
+    backend._perception_mode = "real"
+    backend._camera = camera
+    backend._env = types.SimpleNamespace()
+
+    class _ForbiddenSimGt:
+        def __init__(self, *_args, **_kwargs):
+            raise AssertionError(
+                "sim-GT list_objects path must not be used in real mode"
+            )
+
+    monkeypatch.setattr("sim.libero_skills.LiberoListObjectsSkill", _ForbiddenSimGt)
+    monkeypatch.setattr(
+        "sim.libero_real_perception._capture_rgb",
+        lambda _camera: None,
+    )
+
+    assert backend.list_objects() == []
+
+
+def test_libero_backend_register_skills_real_mode(monkeypatch):
+    import vla.arm_skills as arm_skills_mod
+
+    from core.skills import SkillRegistry
+    from sim.libero_backend import LiberoBackend
+
+    monkeypatch.setenv("PERCEPTION_BACKEND", "real")
+
+    env = FakeLiberoEnv()
+    arm = LiberoArm(env)
+    camera = LiberoCamera(env, arm=arm)
+
+    backend = LiberoBackend.__new__(LiberoBackend)
+    backend._env = env
+    backend._arm = arm
+    backend._camera = camera
+    backend._vla_port = 8765
+
+    monkeypatch.setattr(
+        arm_skills_mod,
+        "register_arm_skills",
+        lambda *args, **kwargs: None,
+    )
+    monkeypatch.setattr(
+        "vla.create_vla_manipulation",
+        lambda **kwargs: type("T", (), {"invoke": lambda self, a: "ok"})(),
+    )
+    monkeypatch.setattr(
+        "vla.VLAConfig.from_env",
+        lambda: type("Cfg", (), {"max_inner_steps": 10})(),
+    )
+
+    def _forbidden(*_args, **_kwargs):
+        raise AssertionError("sim-GT perception registered in real mode")
+
+    monkeypatch.setattr(
+        "sim.libero_skills.register_libero_skills",
+        _forbidden,
+    )
+
+    registry = SkillRegistry()
+    backend.register_skills(registry, "put objects in basket")
+
+    assert backend._perception_mode == "real"
+    assert registry.get("perception.detect").perception_source == "real"
 
 
 def test_libero_backend_success_delegates_to_checker(monkeypatch):
