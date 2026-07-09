@@ -1,8 +1,9 @@
 """M6 - LLM-emitted plan on LIBERO-Long (LIBERO-10) with full executor + VLA."""
-import logging
 import os
-
+import logging
 from dotenv import find_dotenv, load_dotenv
+from core.runner import Runner
+from sim.libero_backend import LiberoBackend
 
 load_dotenv(find_dotenv())
 logging.basicConfig(
@@ -10,29 +11,11 @@ logging.basicConfig(
     format="%(levelname)s [%(name)s] %(message)s",
     force=True,
 )
-for _h in logging.root.handlers:
-    if isinstance(_h, logging.StreamHandler) and not isinstance(
-        _h, logging.FileHandler
-    ):
-        _h.setLevel(logging.INFO)
+# noise filtering from 3rd party
 for _noisy in ("openai", "httpcore", "httpx", "trimesh", "matplotlib", "numexpr"):
     logging.getLogger(_noisy).setLevel(logging.WARNING)
 
-from core.runner import Runner
-from sim.libero_backend import LiberoBackend
-
 GOAL = "put the alphabet soup can and the cream cheese box in the basket"
-
-
-def main() -> None:
-    backend = LiberoBackend(
-        task_suite=os.environ.get("LIBERO_TASK_SUITE", "libero_10"),
-    )
-    result = Runner(
-        trace_dir=os.environ.get("LONGOR_TRACE_DIR", "traces"),
-    ).run(backend, GOAL)
-    raise SystemExit(0 if result.success else 1)
-
-
-if __name__ == "__main__":
-    main()
+backend = LiberoBackend(task_suite="libero_10", task_idx=0)
+result = Runner(trace_dir="traces").run(backend, GOAL)
+raise SystemExit(0 if result.success else 1)

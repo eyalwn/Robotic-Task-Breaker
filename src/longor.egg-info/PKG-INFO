@@ -38,6 +38,7 @@ GPU PyTorch for ManiSkill: **do not** run `pip install -r requirements-maniskill
 python3 -m venv .venv
 .venv/bin/python -m pip install -U pip
 .venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python -m pip install -e .
 # Then run the PyTorch+CUDA install line from pytorch.org (not shown here — it varies by CUDA).
 .venv/bin/python -m pip install "mani-skill>=3.0.0b20"
 ```
@@ -48,6 +49,7 @@ python3 -m venv .venv
 python -m venv .venv
 .venv/Scripts/python -m pip install -U pip
 .venv/Scripts/python -m pip install -r requirements.txt
+.venv/Scripts/python -m pip install -e .
 .venv/Scripts/python -m pip install -r requirements-maniskill.txt
 ```
 
@@ -145,40 +147,28 @@ python services/run_vla_server.py
 
 `VLA_POLICY` in `.env` selects the implementation (e.g. `octo-small-1.5`). Wait until `GET /health` on `VLA_PORT` (default **8765**) succeeds.
 
-**Terminal B — sim example**
+**Terminal B — example**
 
-*ManiSkill — handcrafted plan (Linux or Windows):*
-
-```bash
-cd /path/to/Longor
-source .venv/bin/activate
-python examples/long_horizon_handcrafted_maniskill.py
-```
-
-Windows (Git Bash):
+*ManiSkill PickCube (Linux or Windows):*
 
 ```bash
 cd /path/to/Longor
-source .venv/Scripts/activate
-python examples/long_horizon_handcrafted_maniskill.py
+source .venv/bin/activate   # or .venv/Scripts/activate on Windows
+python examples/maniskill_pickcube.py
 ```
 
-The client uses `http://localhost:${VLA_PORT}`. Examples add `src` to `sys.path` automatically.
-
-*LIBERO — handcrafted plan (Linux only):*
+*LIBERO — LLM plan (Linux only, requires `OPENAI_API_KEY` in `.env`):*
 
 ```bash
 cd /path/to/Longor
 source .venv/bin/activate
 export MUJOCO_GL=egl
-python examples/long_horizon_handcrafted_libero.py
-```
-
-*LIBERO — LLM-emitted plan (Linux only, requires `OPENAI_API_KEY` in `.env`):*
-
-```bash
 python examples/long_horizon_llm_libero.py
 ```
+
+*XLeRobot hardware demos* live under `examples/0_xlerobot_*.py` through `examples/3_xlerobot_*.py`.
+
+The client uses `http://localhost:${VLA_PORT}`. After `pip install -e .`, examples import `core` / `sim` / `robots` directly. LIBERO VLA smoke checks live in `tests/test_libero_integration.py` (`pytest -m integration`).
 
 ## Tests
 

@@ -47,7 +47,7 @@ python -m venv .venv
 ```
 
 **Note:** Rationale for `requirements-maniskill.txt` vs CUDA is in the header of `requirements-maniskill.txt`.
-**Note:** keep `MANISKILL_ENV=PickCube-v1` in `.env` for ManiSkill examples.
+**Note:** ManiSkill examples pass `env_id` explicitly (e.g. `PickCube-v1`); `MANISKILL_ENV` is only used by `maniskill_rgbd_diag`.
 
 #### LIBERO (Linux only)
 
@@ -140,40 +140,28 @@ python services/run_vla_server.py
 
 `VLA_POLICY` in `.env` selects the implementation (e.g. `octo-small-1.5`). Wait until `GET /health` on `VLA_PORT` (default **8765**) succeeds.
 
-**Terminal B — sim example**
+**Terminal B — example**
 
-*ManiSkill — handcrafted plan (Linux or Windows):*
-
-```bash
-cd /path/to/Longor
-source .venv/bin/activate
-python examples/long_horizon_handcrafted_maniskill.py
-```
-
-Windows (Git Bash):
+*ManiSkill PickCube (Linux or Windows):*
 
 ```bash
 cd /path/to/Longor
-source .venv/Scripts/activate
-python examples/long_horizon_handcrafted_maniskill.py
+source .venv/bin/activate   # or .venv/Scripts/activate on Windows
+python examples/maniskill_pickcube.py
 ```
 
-The client uses `http://localhost:${VLA_PORT}`. After `pip install -e .`, examples import `core` / `sim` directly; LIBERO smoke scripts still add `examples/` for `libero_vla_smoke_common`.
-
-*LIBERO — handcrafted plan (Linux only):*
+*LIBERO — LLM plan (Linux only, requires `OPENAI_API_KEY` in `.env`):*
 
 ```bash
 cd /path/to/Longor
 source .venv/bin/activate
 export MUJOCO_GL=egl
-python examples/long_horizon_handcrafted_libero.py
-```
-
-*LIBERO — LLM-emitted plan (Linux only, requires `OPENAI_API_KEY` in `.env`):*
-
-```bash
 python examples/long_horizon_llm_libero.py
 ```
+
+*XLeRobot hardware demos* live under `examples/0_xlerobot_*.py` through `examples/3_xlerobot_*.py`.
+
+The client uses `http://localhost:${VLA_PORT}`. After `pip install -e .`, examples import `core` / `sim` / `robots` directly. LIBERO VLA smoke checks live in `tests/test_libero_integration.py` (`pytest -m integration`).
 
 ## Tests
 

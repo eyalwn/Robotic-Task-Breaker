@@ -1,91 +1,93 @@
-"""
-This example demonstrates how to activate arm manipulation of your XLeRobot.
-vla_single_arm_manipulation tools allow XLeRobot to use its arm for manipulating objects with pretrained VLA policies.
+"""XLeRobot arm VLA demo (grab notebook, give to human).
 
-Device paths are read from env vars (set these before running on HW):
-  ROBOCREW_CAMERA       main camera device        (default: /dev/camera_center)
-  ROBOCREW_CAMERA_RIGHT right-arm camera device   (default: /dev/camera_right)
-  ROBOCREW_USB_RIGHT    right-arm/wheel USB port  (default: /dev/arm_right)
-  ROBOCREW_USB_LEFT     left-arm/head USB port    (default: /dev/arm_left)
+Run VLA server first:
+  python -m lerobot.async_inference.policy_server --host=0.0.0.0 --port=8080
+
+Device paths via ROBOCREW_CAMERA, ROBOCREW_CAMERA_RIGHT, ROBOCREW_USB_*.
 """
 import os
+from pathlib import Path
 
 from core.camera import RobotCamera
 from core.tools import save_checkpoint
-from robots.XLeRobot.xlerobot_llm_agent import XLeRobotAgent
-from robots.XLeRobot.tools import \
-    create_vla_single_arm_manipulation, \
-    create_go_to_precision_mode, \
-    create_go_to_normal_mode, \
-    create_move_backward, \
-    create_move_forward, \
-    create_strafe_right, \
-    create_strafe_left, \
-    create_look_around, \
-    create_turn_right, \
-    create_turn_left
 from robots.XLeRobot.servo_controls import ServoController
+from robots.XLeRobot.tools import (
+    create_go_to_normal_mode,
+    create_go_to_precision_mode,
+    create_look_around,
+    create_move_backward,
+    create_move_forward,
+    create_strafe_left,
+    create_strafe_right,
+    create_turn_left,
+    create_turn_right,
+    create_vla_single_arm_manipulation,
+)
+from robots.XLeRobot.xlerobot_llm_agent import XLeRobotAgent
 
-
-prompt_path = Path(__file__).parent.parent.resolve() / "src/robots/XLeRobot/xlerobot.prompt"
-with open(prompt_path, "r") as f:
+prompt_path = Path(__file__).parent.parent / "src/robots/XLeRobot/xlerobot.prompt"
+with open(prompt_path, encoding="utf-8") as f:
     system_prompt = f.read()
 
-# set up main camera
 main_camera = RobotCamera(os.environ.get("ROBOCREW_CAMERA", "/dev/camera_center"))
-
-#set up servo controller
 right_arm_wheel_usb = os.environ.get("ROBOCREW_USB_RIGHT", "/dev/arm_right")
 left_arm_head_usb = os.environ.get("ROBOCREW_USB_LEFT", "/dev/arm_left")
 servo_controller = ServoController(right_arm_wheel_usb, left_arm_head_usb)
 
-#set up tools
 move_forward = create_move_forward(servo_controller)
 move_backward = create_move_backward(servo_controller)
 turn_left = create_turn_left(servo_controller)
 turn_right = create_turn_right(servo_controller)
 strafe_left = create_strafe_left(servo_controller)
 strafe_right = create_strafe_right(servo_controller)
-
 look_around = create_look_around(servo_controller, main_camera)
 go_to_precision_mode = create_go_to_precision_mode(servo_controller)
 go_to_normal_mode = create_go_to_normal_mode(servo_controller)
 
-
-#   Remember to run the VLA server before using manipulation tools:
-#   python -m lerobot.async_inference.policy_server --host=0.0.0.0 --port=8080
-
+camera_config = {
+    "main": {"index_or_path": os.environ.get("ROBOCREW_CAMERA", "/dev/camera_center")},
+    "right_arm": {
+        "index_or_path": os.environ.get("ROBOCREW_CAMERA_RIGHT", "/dev/camera_right"),
+    },
+}
 
 pick_up_notebook = create_vla_single_arm_manipulation(
     tool_name="Grab_a_notebook",
-    tool_description="Manipulation tool to grab a notebook from the table and put it to your basket. Use the tool only when you are very very close to table with a notebook, and look straingt on it.",
+    tool_description=(
+        "Manipulation tool to grab a notebook from the table and put it to your basket. "
+        "Use the tool only when you are very very close to table with a notebook, "
+        "and look straingt on it."
+    ),
     task_prompt="Grab a notebook.",
     server_address="0.0.0.0:8080",
     policy_name="Grigorij/act_right-arm-grab-notebook-2",
     policy_type="act",
     arm_port=right_arm_wheel_usb,
     servo_controller=servo_controller,
-    camera_config={"main": {"index_or_path": os.environ.get("ROBOCREW_CAMERA", "/dev/camera_center")}, "right_arm": {"index_or_path": os.environ.get("ROBOCREW_CAMERA_RIGHT", "/dev/camera_right")}},
+    camera_config=camera_config,
     main_camera_object=main_camera,
     policy_device="cpu",
 )
 
 give_notebook = create_vla_single_arm_manipulation(
     tool_name="Give_a_notebook_to_a_human",
-    tool_description="Manipulation tool to take a notebook from your basket and give it to human. Use the tool only when you are close to the human (base of human is below green line), and look straingt on him.",
+    tool_description=(
+        "Manipulation tool to take a notebook from your basket and give it to human. "
+        "Use the tool only when you are close to the human (base of human is below green line), "
+        "and look straingt on him."
+    ),
     task_prompt="Grab a notebook and give it to a human.",
     server_address="0.0.0.0:8080",
     policy_name="Grigorij/act_right_arm_give_notebook",
     policy_type="act",
     arm_port=right_arm_wheel_usb,
     servo_controller=servo_controller,
-    camera_config={"main": {"index_or_path": os.environ.get("ROBOCREW_CAMERA", "/dev/camera_center")}, "right_arm": {"index_or_path": os.environ.get("ROBOCREW_CAMERA_RIGHT", "/dev/camera_right")}},
+    camera_config=camera_config,
     main_camera_object=main_camera,
     policy_device="cpu",
     execution_time=45,
 )
 
-# init agent
 agent = XLeRobotAgent(
     model="google_genai:gemini-3-flash-preview",
     system_prompt=system_prompt,
@@ -109,6 +111,8 @@ agent = XLeRobotAgent(
     servo_controller=servo_controller,
 )
 
-agent.task = "Approach blue notebook, grab it from the table and give it to human. Do not approach human until you grabbed a notebook."
-
+agent.task = (
+    "Approach blue notebook, grab it from the table and give it to human. "
+    "Do not approach human until you grabbed a notebook."
+)
 agent.go()

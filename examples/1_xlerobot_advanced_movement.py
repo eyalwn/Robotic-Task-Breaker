@@ -1,29 +1,23 @@
-"""
- - The normal mode allows faster movement, while camera is looking higher.
- - The precision mode allows slower movement, while camera is looking lower for better movement precision and ability to see its own body.
- - Looking around tool uses the main camera to look left and right to find objects of interest.
- - Strafe movement is for going sideways without turning robot body.
+"""XLeRobot advanced navigation (normal/precision modes, strafe, look-around).
 
-Device paths are read from env vars (set these before running on HW):
-  ROBOCREW_CAMERA     camera device  (default: /dev/camera_center)
-  ROBOCREW_USB_RIGHT  right-arm/wheel USB port (default: /dev/arm_right)
-  ROBOCREW_USB_LEFT   left-arm/head USB port   (default: /dev/arm_left)
+Device paths via ROBOCREW_CAMERA, ROBOCREW_USB_RIGHT, ROBOCREW_USB_LEFT.
 """
 import os
 
 from core.camera import RobotCamera
-from robots.XLeRobot.xlerobot_llm_agent import XLeRobotAgent
-from robots.XLeRobot.tools import \
-    create_go_to_precision_mode, \
-    create_go_to_normal_mode, \
-    create_move_backward, \
-    create_move_forward, \
-    create_strafe_right, \
-    create_strafe_left, \
-    create_look_around, \
-    create_turn_right, \
-    create_turn_left
 from robots.XLeRobot.servo_controls import ServoController
+from robots.XLeRobot.tools import (
+    create_go_to_normal_mode,
+    create_go_to_precision_mode,
+    create_look_around,
+    create_move_backward,
+    create_move_forward,
+    create_strafe_left,
+    create_strafe_right,
+    create_turn_left,
+    create_turn_right,
+)
+from robots.XLeRobot.xlerobot_llm_agent import XLeRobotAgent
 
 system_prompt = """
 ## ROBOT SPECS
@@ -62,29 +56,25 @@ system_prompt = """
 6. Stuck or lost target? → PRECISION mode + move_backward/strafe OR switch to NORMAL + look_around
 """
 
-# set up main camera
 main_camera = RobotCamera(os.environ.get("ROBOCREW_CAMERA", "/dev/camera_center"))
+servo_controller = ServoController(
+    os.environ.get("ROBOCREW_USB_RIGHT", "/dev/arm_right"),
+    os.environ.get("ROBOCREW_USB_LEFT", "/dev/arm_left"),
+)
 
-#set up wheel movement tools
-right_arm_wheel_usb = os.environ.get("ROBOCREW_USB_RIGHT", "/dev/arm_right")
-left_arm_head_usb = os.environ.get("ROBOCREW_USB_LEFT", "/dev/arm_left")
-servo_controller = ServoController(right_arm_wheel_usb, left_arm_head_usb)
-
-#set up tools
 move_forward = create_move_forward(servo_controller)
 move_backward = create_move_backward(servo_controller)
 turn_left = create_turn_left(servo_controller)
 turn_right = create_turn_right(servo_controller)
 strafe_left = create_strafe_left(servo_controller)
 strafe_right = create_strafe_right(servo_controller)
-
 look_around = create_look_around(servo_controller, main_camera)
 go_to_precision_mode = create_go_to_precision_mode(servo_controller)
 go_to_normal_mode = create_go_to_normal_mode(servo_controller)
 
-# init agent
 agent = XLeRobotAgent(
     model="google_genai:gemini-3-flash-preview",
+    system_prompt=system_prompt,
     tools=[
         move_forward,
         move_backward,
@@ -96,12 +86,11 @@ agent = XLeRobotAgent(
         go_to_precision_mode,
         go_to_normal_mode,
     ],
-    history_len=8,              # nr of last message-answer pairs to keep
+    history_len=8,
     main_camera=main_camera,
     camera_fov=90,
     servo_controller=servo_controller,
 )
 
 agent.task = "Find human and follow him closely."
-
 agent.go()

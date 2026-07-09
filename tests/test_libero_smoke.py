@@ -1,14 +1,7 @@
 """Unit tests for LIBERO VLA smoke helpers (no sim/VLA)."""
 from __future__ import annotations
 
-import sys
-from pathlib import Path
-
-_examples = Path(__file__).resolve().parents[1] / "examples"
-if str(_examples) not in sys.path:
-    sys.path.insert(0, str(_examples))
-
-from libero_vla_smoke_common import grasp_passed  # noqa: E402
+from sim.libero_smoke import grasp_passed
 
 
 def test_grasp_passed_requires_confirmed_or_lift_reason() -> None:

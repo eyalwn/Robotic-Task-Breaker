@@ -419,7 +419,7 @@ def test_create_env_raises_when_lerobot_unavailable(monkeypatch):
 
     monkeypatch.setattr(builtins, "__import__", _fake)
     with pytest.raises(RuntimeError, match="lerobot"):
-        create_env()
+        create_env(task_suite="libero_object", task_idx=0)
 
 
 def test_env_step_count_matches_env_steps(monkeypatch):

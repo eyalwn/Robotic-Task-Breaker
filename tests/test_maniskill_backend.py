@@ -48,7 +48,7 @@ def test_create_env_raises_without_maniskill(monkeypatch):
 
 	try:
 		with pytest.raises(RuntimeError, match="ManiSkill"):
-			maniskill_backend.create_env()
+			maniskill_backend.create_env(env_id="PickCube-v1")
 	finally:
 		for pkg, mod in hidden.items():
 			sys.modules[pkg] = mod

@@ -24,13 +24,13 @@ Enable robots to perform **long-horizon** tasks by separating **planning** (LLM)
 **Scope**
 
 - Documented setup paths for **Linux (with CUDA)** (POSIX venv, ManiSkill, JAX+VLA on **NVIDIA**) without breaking the **Windows (Git Bash)** flow on the reference machine.
-- A fresh clone + `README.md` steps should get a developer to: **two venvs**, **Octo HTTP service** running, `**examples/long_horizon_handcrafted_maniskill.py`** against ManiSkill + VLA, and `**pytest**` (same expectations as Windows; **integration** tests are marked — see `pytest.ini` / `pytest -m integration`).
+- A fresh clone + `README.md` steps should get a developer to: **two venvs**, **Octo HTTP service** running, `**examples/maniskill_pickcube.py`** against ManiSkill + VLA, and `**pytest**` (same expectations as Windows; **integration** tests are marked — see `pytest.ini` / `pytest -m integration`).
 
 **Acceptance (manual, on Linux host)**
 
 - `.venv`: `pip install -r requirements.txt`, `pip install -e .` (+ sim deps), ManiSkill for PickCube per `README.md` / [ManiSkill installation](https://maniskill.readthedocs.io/en/latest/user_guide/getting_started/installation.html), run `pytest` from repo root.
 - `.vla-venv`: Octo per `README.md` §3 — **Linux:** Octo `requirements.txt` + `services/requirements-vla-octo-small-1.5-linux.txt`; **Windows:** `services/requirements-vla-octo-small-1.5-windows.txt` + `pip install -e ~/octo --no-deps` (no upstream `requirements.txt`); `**VLA_POLICY`** set; weights from Hugging Face in `services/octo_service.py`; `python services/run_vla_server.py` serves `/health` on `VLA_PORT`.
-- With both terminals up and `.env` filled, `python examples/long_horizon_handcrafted_maniskill.py` completes a run (success/failure per sim/policy is fine; wiring must work).
+- With both terminals up and `.env` filled, `python examples/maniskill_pickcube.py` completes a run (success/failure per sim/policy is fine; wiring must work).
 - `README.md` remains valid for **Windows (Git Bash)** and **Linux (with CUDA)** including Octo VLA venv paths in §3.
 
 **Colab validation results (Python 3.12, GPU — June 2026)**
@@ -90,7 +90,7 @@ Notes: requires A100 (free T4 OOM-kills during 11.6 GiB checkpoint load). Dep pa
 **Acceptance (manual, on Linux host)**
 
 - `.venv` with LeRobot + LIBERO deps from `requirements-libero.txt`; `export MUJOCO_GL=egl`.
-- `python examples/long_horizon_handcrafted_libero.py` with a running VLA server starts a LIBERO-Object task, drives the arm via VLA, and runs to completion (wiring correctness; task success not required).
+- `pytest -m integration tests/test_libero_integration.py::test_handcrafted_libero_pick` with a running VLA server starts a LIBERO-Object task, drives the arm via VLA, and runs to completion (wiring correctness; task success not required).
 - On **Windows**: `pytest` passes (LIBERO backend unit tests mock the env; no real LIBERO required).
 - `arm_tools.py` works unchanged with `LiberoArm`.
 
@@ -140,8 +140,8 @@ Notes: requires A100 (same Pi0.5 weight size as M2). Patches baked into `colab/m
 - `src/sim/libero_skills.py`: `perception.detect` / `perception.locate` / `state.list_objects` against LIBERO's MuJoCo scene. `_unwrap_to_sim` walks the LeRobot SyncVectorEnv wrapper chain; skills return `None`/`[]` gracefully if sim is unreachable.
 - `src/sim/maniskill_skills.py`: same three skills against ManiSkill scene via `_find_actors` reflection on `env.unwrapped`.
 - Sim selection by example import; no config knob.
-- `examples/long_horizon_handcrafted_libero.py`: handcrafted plan + `AlwaysContinueEvaluator` + `StaticPlanner`, wired via `Runner`.
-- `examples/long_horizon_handcrafted_maniskill.py`: same, ManiSkill PickCube — Windows smoke test.
+- `tests/test_libero_integration.py::test_handcrafted_libero_pick`: handcrafted plan + `AlwaysContinueEvaluator` + `StaticPlanner`, wired via `Runner`.
+- `examples/maniskill_pickcube.py`: same, ManiSkill PickCube — cross-platform smoke example.
 
 **Acceptance**
 
@@ -151,7 +151,7 @@ Notes: requires A100 (same Pi0.5 weight size as M2). Patches baked into `colab/m
 
 **Colab validation results (Python 3.12, A100 GPU — June 2026)**
 
-- [x] `examples/long_horizon_handcrafted_libero.py` wiring (LIBERO-Object task 0 + Pi0.5 VLA): **passed** — 60 arm steps applied, `Executor result: status=done`, exit 0.
+- [x] `tests/test_libero_integration.py::test_handcrafted_libero_pick` wiring (LIBERO-Object task 0 + Pi0.5 VLA): **passed** — 60 arm steps applied, `Executor result: status=done`, exit 0.
 - [x] `pytest` (non-integration, Linux): **160 passed, 5 skipped**.
 
 Notes: `grasp_triggered=false` — Pi0.5 (DROID weights) does not reliably grasp in LIBERO sim; wiring correctness only. `obj=?` in VLA step log is expected: `arm.grab` passes a task string to the VLA; object pose from `perception.locate` is not forwarded to the VLA step logger by design.
@@ -218,8 +218,8 @@ Retire the legacy sim-loop path; consolidate tests and notebooks.
 **Scope (completed)**
 
 - Deleted `src/sim/runner.py`, `src/sim/tools.py`, `src/sim/policy_stub_tools.py` (sim-loop helpers; no surviving dependents).
-- `src/core/llm_agent.py` **stays** — still used by `src/robots/XLeRobot/` and `src/robots/EarthRover/` HW agents.
-- Deleted `examples/libero_object.py` and `examples/maniskill_pickcube.py`; M1/M3 acceptance criteria updated to reference `long_horizon_handcrafted_maniskill.py` / `long_horizon_handcrafted_libero.py`.
+- `src/core/llm_agent.py` **stays** — still used by `src/robots/XLeRobot/` HW agents.
+- Deleted `examples/libero_object.py` and legacy `maniskill_pickcube.py` wrappers; M1/M3 acceptance criteria updated to reference `examples/maniskill_pickcube.py` / `tests/test_libero_integration.py`.
 - Deleted legacy test files (`test_e2e_sim_loop.py`, `test_sim_loop.py`, `test_sim_runner.py`, `test_policy_stub_tool.py`); merged overlapping test files (`test_arm_tools` → `test_maniskill_arm_adapter`, `test_e2e_handcrafted_plan` → `test_plan_executor`, `test_vla_adaptive_scaling` → `test_vla_action`, `test_sim_tools_contract` → `test_maniskill_backend`).
 - Notebooks reduced from 5 to 2: deleted `m1_maniskill_octo.ipynb`, `m2_pi05_vla.ipynb`, `m3_libero_object.ipynb`; compacted `m5_handcrafted_libero.ipynb` and `m6_llm_libero.ipynb`.
 
@@ -265,7 +265,7 @@ Implementation details (ports, batching, chunking, inner-step limits) live in co
 - **Plan representation:** structured JSON AST (schema in `src/core/plan/schema.py`); the executor walks it with a restricted expression evaluator. **No `exec`** of generated code; **no `eval`** of arbitrary expressions.
 - **Skills:** `Skill` base + `SkillRegistry` live in `src/core/skills.py` (interfaces only). Concrete skill implementations live in their backend packages (`src/sim/*_skills.py`, `src/vla/arm_skills.py`, future `src/robots/*_skills.py`) and self-register at import time.
 - Adding a new sim, robot, or capability: add a `Backend` implementation + skill implementations in the relevant backend package; `Runner`, the planner, and the `Executor` stay unchanged.
-- **`core/llm_agent.py`** — the general-purpose LLM tool-call loop used by HW robot agents (`XLeRobot`, `EarthRover`). Not a sim concern; retained as-is.
+- **`core/llm_agent.py`** — the general-purpose LLM tool-call loop used by HW robot agents (`XLeRobot`). Not a sim concern; retained as-is.
 
 ## Configuration
 

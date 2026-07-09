@@ -1,14 +1,12 @@
 # Exit codes: 0=ok; 2=mani_skill import failed; 3=Vulkan DeviceLost; 4=gym.make/reset failed; 5=rgbd obs without RGB tensors.
-# Stderr: SAPIEN/ManiSkill may warn there; upstream noise unless the process exits non-zero.
-# Non-zero exit => host render/Vulkan (not Octo/VLA); read stdout lines prefixed diag_*.
 """Single-shot ManiSkill RGBD probe: prints diag_config/diag_result/diag_status on stdout."""
 from __future__ import annotations
 
 import os
-import sys
 
 import gymnasium as gym
 from dotenv import find_dotenv, load_dotenv
+
 from sim.maniskill_backend import _default_sim_backend
 
 
@@ -32,7 +30,7 @@ def _has_rgb(obs) -> bool:
     return _walk(obs)
 
 
-def main() -> int:
+def run() -> int:
     load_dotenv(find_dotenv())
     try:
         import mani_skill.envs  # noqa: F401
@@ -40,7 +38,10 @@ def main() -> int:
         print(f"diag_status=error reason=missing_maniskill detail={exc}")
         return 2
 
-    env_id = os.environ.get("MANISKILL_ENV", "PickCube-v1")
+    env_id = os.environ.get("MANISKILL_ENV", "").strip()
+    if not env_id:
+        print("diag_status=error reason=missing_MANISKILL_ENV detail=set MANISKILL_ENV e.g. PickCube-v1")
+        return 4
     obs_mode = os.environ.get("MANISKILL_OBS_MODE", "rgbd")
     render_mode = "human" if os.environ.get("DISPLAY_ENV", "0") == "1" else "rgb_array"
     render_backend = os.environ.get("MANISKILL_RENDER_BACKEND", "").strip() or None
@@ -82,7 +83,3 @@ def main() -> int:
 
     print("diag_status=ok")
     return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

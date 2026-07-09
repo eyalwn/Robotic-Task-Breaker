@@ -22,8 +22,6 @@ warnings.filterwarnings("ignore", category=UserWarning, module="sapien")
 
 logger = logging.getLogger(__name__)
 
-_PREFERRED_ENVS = ["PickCube-v1", "PushCube-v1", "StackCube-v1", "LiftPegUpright-v1"]
-
 # Steps used to approximate 1 m forward / 1 degree of turn
 _STEPS_PER_METER = 20
 _STEPS_PER_DEGREE = 1
@@ -46,16 +44,6 @@ def _require_maniskill():
             f"ManiSkill backend requires: {', '.join(missing)}. "
             "Install with: pip install mani_skill"
         )
-
-
-def _pick_default_env(gym) -> str:
-    import mani_skill.envs  # noqa: F401 – registers envs as side-effect
-
-    ids = sorted(gym.envs.registry.keys())
-    for pref in _PREFERRED_ENVS:
-        if pref in ids:
-            return pref
-    return ids[0]
 
 
 def _is_tensor(obj) -> bool:
@@ -87,7 +75,7 @@ def _maybe_refresh_human_viewer(env) -> None:
 
 
 def create_env(
-    env_id: str | None = None,
+    env_id: str,
     render_human: bool = False,
     obs_mode: str = "rgbd",
     control_mode: str = "pd_joint_delta_pos",
@@ -96,13 +84,16 @@ def create_env(
     _require_maniskill()
     import gymnasium as gym
 
+    env_id = env_id.strip()
+    if not env_id:
+        raise ValueError("env_id is required (e.g. 'PickCube-v1')")
+
     obs_mode = os.environ.get("MANISKILL_OBS_MODE", "").strip() or obs_mode
     require_rgbd = os.environ.get("ROBOCREW_REQUIRE_RGBD", "1").strip() == "1"
     make_retries = max(1, int(os.environ.get("MANISKILL_GYM_MAKE_RETRIES", "1")))
     retry_sleep = max(
         0.0, float(os.environ.get("MANISKILL_GYM_MAKE_RETRY_SLEEP", "0.35"))
     )
-    env_id = env_id or _pick_default_env(gym)
     render_mode = "human" if render_human else "rgb_array"
     render_backend = os.environ.get("MANISKILL_RENDER_BACKEND", "").strip() or None
     sim_backend = os.environ.get("MANISKILL_SIM_BACKEND", "").strip() or _default_sim_backend()
@@ -740,14 +731,11 @@ class ManiSkillArm:
 class ManiSkillBackend:
     def __init__(
         self,
-        env_id: str | None = None,
+        env_id: str,
         render_human: bool = False,
         vla_port: int | None = None,
     ) -> None:
         self._apply_env_defaults()
-        env_id = env_id if env_id is not None else os.environ.get(
-            "MANISKILL_ENV", "PickCube-v1"
-        )
         self._env = create_env(env_id, render_human=render_human)
         self._arm = ManiSkillArm(self._env)
         self._camera = ManiSkillCamera(self._env, arm=self._arm)

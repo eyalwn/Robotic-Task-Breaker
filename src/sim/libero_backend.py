@@ -237,8 +237,8 @@ def _log_episode_horizon(vec: Any) -> None:
 
 
 def create_env(
-    task_suite: str | None = None,
-    task_idx: int | None = None,
+    task_suite: str,
+    task_idx: int,
     control_mode: str = "relative",
     obs_type: str = "pixels_agent_pos",
 ):
@@ -247,16 +247,11 @@ def create_env(
     from lerobot.envs.configs import LiberoEnv
     from lerobot.envs.factory import make_env
 
-    task_suite = (
-        task_suite or os.environ.get("LIBERO_TASK_SUITE", "libero_object")
-    ).strip()
-    if task_idx is None:
-        raw = os.environ.get("LIBERO_TASK_IDX", "0").strip()
-        try:
-            task_idx = int(raw, 10)
-        except ValueError:
-            logger.warning("Invalid LIBERO_TASK_IDX=%r — using 0", raw)
-            task_idx = 0
+    task_suite = task_suite.strip()
+    if not task_suite:
+        raise ValueError("task_suite is required (e.g. 'libero_10', 'libero_object')")
+    if task_idx < 0:
+        raise ValueError(f"task_idx must be >= 0, got {task_idx}")
 
     obs_type = os.environ.get("LIBERO_OBS_TYPE", "").strip() or obs_type
     control_mode = os.environ.get("LIBERO_CONTROL_MODE", "").strip() or control_mode
@@ -784,8 +779,8 @@ class LiberoArm:
 class LiberoBackend:
     def __init__(
         self,
-        task_suite: str | None = None,
-        task_idx: int | None = None,
+        task_suite: str,
+        task_idx: int,
         vla_port: int | None = None,
     ) -> None:
         self._apply_env_defaults()

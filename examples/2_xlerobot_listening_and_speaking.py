@@ -1,47 +1,32 @@
-"""
-The simplest example of agent that can listen and speak, aside from driving XLeRobot.
+"""XLeRobot voice demo: wakeword + mic + basic movement.
 
-Device paths are read from env vars (set these before running on HW):
-  ROBOCREW_CAMERA     camera device  (default: /dev/camera_center)
-  ROBOCREW_USB_RIGHT  right-arm/wheel USB port (default: /dev/arm_right)
+Device paths via ROBOCREW_CAMERA, ROBOCREW_USB_RIGHT.
 """
 import os
 
 from core.camera import RobotCamera
-from robots.XLeRobot.xlerobot_llm_agent import XLeRobotAgent
-from robots.XLeRobot.tools import create_move_forward, create_turn_right, create_turn_left
-from robots.XLeRobot.servo_controls import ServoController
 from core.tools import finish_task
+from robots.XLeRobot.servo_controls import ServoController
+from robots.XLeRobot.tools import create_move_forward, create_turn_left, create_turn_right
+from robots.XLeRobot.xlerobot_llm_agent import XLeRobotAgent
 
-# set up main camera
 main_camera = RobotCamera(os.environ.get("ROBOCREW_CAMERA", "/dev/camera_center"))
+servo_controller = ServoController(
+    right_arm_wheel_usb=os.environ.get("ROBOCREW_USB_RIGHT", "/dev/arm_right"),
+)
 
-# set up servo controller
-right_arm_wheel_usb = os.environ.get("ROBOCREW_USB_RIGHT", "/dev/arm_right")
-servo_controller = ServoController(right_arm_wheel_usb=right_arm_wheel_usb)
-
-# set up tools
 move_forward = create_move_forward(servo_controller)
 turn_left = create_turn_left(servo_controller)
 turn_right = create_turn_right(servo_controller)
 
-# init agent
 agent = XLeRobotAgent(
     model="google_genai:gemini-3-flash-preview",
-    tools=[
-        move_forward,
-        turn_left,
-        turn_right,
-        finish_task,
-    ],
-    
+    tools=[move_forward, turn_left, turn_right, finish_task],
     main_camera=main_camera,
     servo_controller=servo_controller,
-    sounddevice_index_or_alias="mic_main",    # provide your microphone device index.
-    wakeword="Bob",         # set custom wakeword (default is "robot").
-    #tts=True,               # uncomment for text-to-speech, to make robot speak (work in progress).
+    sounddevice_index_or_alias="mic_main",
+    wakeword="Bob",
 )
 
 agent.go()
-
 print("Listening for your instructions...")
