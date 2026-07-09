@@ -267,50 +267,49 @@ class Runner:
 
     def _log_status(self, result: ExecutionResult, success: bool, goal: str) -> None:
         headline = goal.split("\n")[0]
-        if result.status == "done":
-            logger.info("Task COMPLETED: %r", headline)
-        else:
-            logger.warning("Task FAILED (status=%s): %r", result.status, headline)
 
-        if result.status == "replan_failed":
-            logger.error(
-                "Run stopped: replan failed after %d replan(s), %d steps — %s",
-                result.replans,
-                result.steps,
-                result.error,
-            )
-        elif result.status != "done":
-            logger.warning(
-                "Run finished with status=%s replans=%d steps=%d error=%r",
-                result.status,
-                result.replans,
-                result.steps,
-                result.error,
-            )
-        elif result.value is not None and isinstance(result.value, str):
-            logger.info(
-                "Run finished with return value=%r (status=%s replans=%d steps=%d)",
-                result.value,
-                result.status,
-                result.replans,
-                result.steps,
-            )
-        else:
-            logger.info(
-                "Run complete: status=%s replans=%d steps=%d value=%r",
-                result.status,
-                result.replans,
-                result.steps,
-                result.value,
-            )
-
-        if result.status == "done" and not success:
+        if success:
+            logger.info("Task succeeded: %r", headline)
+        elif result.status == "done":
             if _return_indicates_failure(result.value):
-                logger.error(
-                    "Run status=done but return value indicates failure: %r",
-                    result.value,
+                logger.info(
+                    "Task not achieved: %r (plan finished; skill reported failure)",
+                    headline,
                 )
             else:
-                logger.error(
-                    "Run status=done but backend success is false — task not achieved"
+                logger.info(
+                    "Task not achieved: %r (plan finished; backend goal check failed)",
+                    headline,
                 )
+        elif result.status == "stopped":
+            logger.info("Task stopped: %r (feedback halted execution)", headline)
+        elif result.status == "replan_failed":
+            logger.info(
+                "Task failed: %r (replan planner error after %d replan(s))",
+                headline,
+                result.replans,
+            )
+        elif result.status == "replan_limit":
+            logger.info(
+                "Task failed: %r (replan limit reached after %d replan(s))",
+                headline,
+                result.replans,
+            )
+        elif result.status == "step_budget":
+            logger.info("Task failed: %r (executor step budget exceeded)", headline)
+        else:
+            logger.info("Task failed: %r (status=%s)", headline, result.status)
+
+        summary_parts = [
+            f"success={success}",
+            f"plan_status={result.status}",
+            f"steps={result.steps}",
+        ]
+        if result.replans:
+            summary_parts.append(f"replans={result.replans}")
+        if result.value is not None:
+            summary_parts.append(f"last_skill={result.value!r}")
+        if result.error:
+            summary_parts.append(f"error={result.error}")
+
+        logger.info("Run summary: %s", ", ".join(summary_parts))

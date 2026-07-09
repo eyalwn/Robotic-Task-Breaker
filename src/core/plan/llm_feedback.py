@@ -20,27 +20,29 @@ _SYSTEM = (
     "means CONTINUE — proceed to the remaining objects.\n\n"
     "You are a robot task progress evaluator. "
     "Given a camera image and a description of what to check, "
-    "decide whether the task is progressing well.\n\n"
-    "Call emit_decision with one of:\n"
-    "  'continue' — sub-goal met or progressing; proceed with remaining plan steps.\n"
-    "  'stop'     — ENTIRE goal complete or irrecoverably failed; halt ALL execution.\n"
-    "  'replan'   — the current approach is not working; a new plan is needed.\n\n"
+    "answer the check and decide whether the task is progressing well.\n\n"
+    "Call emit_decision with:\n"
+    "  assessment — your direct answer to the check (e.g. 'yes', 'no', or 'unknown').\n"
+    "  decision — one of:\n"
+    "    'continue' — sub-goal met or progressing; proceed with remaining plan steps.\n"
+    "    'stop'     — ENTIRE goal complete or irrecoverably failed; halt ALL execution.\n"
+    "    'replan'   — the current approach is not working; a new plan is needed.\n"
+    "  reason     — brief justification.\n\n"
     "If the prior skill result is from arm.place with reason=stagnation, but the "
     "image shows the object in or near the basket, prefer CONTINUE (placement adequate) "
     "over STOP or REPLAN.\n\n"
     "If the evaluation context mentions a prior arm.grab with status=stopped and "
     "grasp_confirmed=false, prefer REPLAN (grab failed — do not proceed to place).\n"
     "If the prior skill result mentions proximity_no_lift or grasp_confirmed=false "
-    "with close approach, prefer CONTINUE (retry grasp) over REPLAN.\n\n"
-    "Also provide a brief reason."
+    "with close approach, prefer CONTINUE (retry grasp) over REPLAN."
 )
 
 
 class LLMFeedbackEvaluator:
     def __init__(self, model: str) -> None:
         @lc_tool
-        def emit_decision(decision: str, reason: str = "") -> str:
-            """Emit a feedback decision: 'continue', 'stop', or 'replan'."""
+        def emit_decision(decision: str, assessment: str, reason: str = "") -> str:
+            """Emit feedback: assessment answers the check; decision is continue/stop/replan."""
             return decision
 
         llm = init_chat_model(model)
@@ -80,6 +82,7 @@ class LLMFeedbackEvaluator:
         args = response.tool_calls[0]["args"]
         raw: str = args.get("decision", "continue").lower().strip()
         reason = str(args.get("reason", "") or "")
+        assessment = str(args.get("assessment", "") or "").strip() or None
         try:
             decision = FeedbackDecision(raw)
         except ValueError:
@@ -89,10 +92,5 @@ class LLMFeedbackEvaluator:
             )
             decision = FeedbackDecision.CONTINUE
 
-        logger.debug("LLMFeedbackEvaluator full description: %s", description)
-        logger.info(
-            "LLM feedback: %s — %s",
-            decision.value.upper(),
-            reason or "(no reason)",
-        )
-        return FeedbackOutcome(decision=decision, reason=reason)
+        logger.debug("LLMFeedbackEvaluator full prompt: %s", description)
+        return FeedbackOutcome(decision=decision, reason=reason, assessment=assessment)

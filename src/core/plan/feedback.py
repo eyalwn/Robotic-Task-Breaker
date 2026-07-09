@@ -15,6 +15,7 @@ class FeedbackDecision(str, Enum):
 class FeedbackOutcome:
     decision: FeedbackDecision
     reason: str = ""
+    assessment: str | None = None
 
 
 class FeedbackEvaluator(Protocol):

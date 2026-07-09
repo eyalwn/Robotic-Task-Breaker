@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import json
+import logging
+
 from core.plan import (
     ExecutionResult,
     FeedbackDecision,
@@ -399,3 +402,28 @@ def test_verdict_succeeds_when_done_and_backend_success() -> None:
     result = runner.run(backend, "g", planner=planner, feedback=feedback)
     assert result.status == "done"
     assert result.success is True
+
+
+def test_log_status_not_achieved(caplog) -> None:
+    caplog.set_level(logging.INFO, logger="core.runner")
+    result = ExecutionResult(
+        status="done",
+        steps=2,
+        value=json.dumps({"status": "stopped", "reason": "stagnation", "min_dist": 0.18}),
+    )
+    Runner()._log_status(result, success=False, goal="pick the cube")
+    info_lines = [r.message for r in caplog.records if r.levelno == logging.INFO]
+    assert any("Task not achieved" in line for line in info_lines)
+    assert not any("Task COMPLETED" in line for line in info_lines)
+    assert not any("Task succeeded" in line for line in info_lines)
+    assert any("Run summary:" in line and "success=False" in line for line in info_lines)
+    assert not any(r.levelno >= logging.ERROR for r in caplog.records)
+
+
+def test_log_status_succeeded(caplog) -> None:
+    caplog.set_level(logging.INFO, logger="core.runner")
+    result = ExecutionResult(status="done", steps=2, value=None)
+    Runner()._log_status(result, success=True, goal="pick the cube")
+    info_lines = [r.message for r in caplog.records if r.levelno == logging.INFO]
+    assert any("Task succeeded" in line for line in info_lines)
+    assert any("Run summary:" in line and "success=True" in line for line in info_lines)

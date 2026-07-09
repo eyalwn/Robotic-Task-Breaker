@@ -27,6 +27,27 @@ from .schema import (
 logger = logging.getLogger(__name__)
 
 
+def _log_feedback(node_description: str, prompt: str, outcome: FeedbackOutcome) -> None:
+    logger.info("Feedback LLM asked: %r", node_description)
+    if prompt != node_description:
+        logger.debug("Feedback LLM prompt (full): %s", prompt)
+    if outcome.assessment is not None:
+        if outcome.reason:
+            logger.info(
+                "Feedback LLM response: %s — %s",
+                outcome.assessment,
+                outcome.reason,
+            )
+        else:
+            logger.info("Feedback LLM response: %s", outcome.assessment)
+    else:
+        logger.info("Feedback LLM: not consulted (stub evaluator)")
+    logger.info(
+        "Feedback executor decision: %s",
+        outcome.decision.value.upper(),
+    )
+
+
 class ReplanSignal(Exception):
     """Raised by a feedback node when the LLM evaluator returns REPLAN."""
 
@@ -124,9 +145,10 @@ class Executor:
             skill = self._registry.get(node.skill)
             evaluated_args = {key: self._eval(value, ctx) for key, value in node.args.items()}
             args_str = ", ".join(f"{k}={v!r}" for k, v in evaluated_args.items())
-            logger.info("Skill call: %s(%s)", node.skill, args_str)
+            logger.info("Uses skill: %s(%s)", node.skill, args_str)
             result = skill(**evaluated_args)
             self._last_skill_result = str(result)
+            logger.info("Skill result (%s): %r", node.skill, result)
             self._steps += 1
             if node.assign_to is not None:
                 ctx[node.assign_to] = result
@@ -144,7 +166,6 @@ class Executor:
 
         if isinstance(node, FeedbackNode):
             image_bytes = self._image_fn()
-            logger.info("Feedback check: %r", node.description)
             description = node.description
             if self._last_skill_result:
                 description = (
@@ -153,6 +174,7 @@ class Executor:
             outcome = self._feedback_evaluator.evaluate(
                 image_bytes, description, self._goal
             )
+            _log_feedback(node.description, description, outcome)
             if self._trace:
                 event: dict[str, Any] = {
                     "event": "feedback",

@@ -169,15 +169,15 @@ def create_env(
     if render_human:
         _maybe_refresh_human_viewer(env)
     logger.info(
-        "env created: %s (render_mode=%s, obs_mode=%s, seed=%s)",
+        "Simulator: ManiSkill, env=%s (render_mode=%s, obs_mode=%s, seed=%s)",
         env_id,
         render_mode,
         obs_mode,
         sim_seed,
     )
-    logger.info("Renderer backend: %s", render_backend or "default")
-    logger.info("Simulation backend: %s", sim_backend or "default")
-    logger.info("Controller: %s", control_mode)
+    logger.debug("Renderer backend: %s", render_backend or "default")
+    logger.debug("Simulation backend: %s", sim_backend or "default")
+    logger.debug("Controller: %s", control_mode)
     setattr(env, "_sim_obs_mode", obs_mode)
     setattr(env, "_sim_render_backend", render_backend or "default")
     return env
@@ -555,7 +555,7 @@ class ManiSkillArm:
         robot.set_qpos(self._initial_qpos)
         # Let physics/contacts settle so downstream tools start from a stable state.
         self.step(steps=3)
-        logger.info("ManiSkillArm: reset to initial qpos")
+        logger.debug("ManiSkillArm: reset to initial qpos")
 
     def _compute_tcp_jacobian(self):
         """Return (3, n_arm) positional Jacobian via finite differences."""

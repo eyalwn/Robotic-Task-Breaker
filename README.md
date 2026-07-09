@@ -1,12 +1,8 @@
 # Longor
 
-Note: This file lives at the **repository root** (the directory that contains `src/`, `examples/`, and `services/`). If your checkout is nested (e.g. `…/RoboCrew/Longor`), `cd` to that inner folder first.
-
-**Supported dev hosts:** **Linux** and **Windows (Git Bash)** only.
-
 ## Goal
 
-Long-horizon robot tasks via an **LLM loop**, **VLAs** for arm moves, **RGB** feedback from sim or cameras. **ManiSkill** first, then LIBERO (see `SRD.md`).
+Long-horizon robot tasks via an **LLM loop**, **VLAs** for arm moves, **RGB** feedback from sim or cameras.
 
 ## Setup
 

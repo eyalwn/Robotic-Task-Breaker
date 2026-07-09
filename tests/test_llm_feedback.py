@@ -27,13 +27,17 @@ class _Model:
         return _BoundLLM(self._response)
 
 
-def _mock_feedback_llm(decision_str):
+def _mock_feedback_llm(decision_str, assessment: str = "yes"):
     return _Model(
         _Response(
             [
                 {
                     "name": "emit_decision",
-                    "args": {"decision": decision_str, "reason": "test"},
+                    "args": {
+                        "decision": decision_str,
+                        "assessment": assessment,
+                        "reason": "test",
+                    },
                     "id": "tc-1",
                 }
             ]
@@ -50,6 +54,7 @@ def test_feedback_continue(monkeypatch) -> None:
     result = evaluator.evaluate(b"img", "desc", "goal")
     assert result.decision == FeedbackDecision.CONTINUE
     assert result.reason == "test"
+    assert result.assessment == "yes"
 
 
 def test_feedback_stop(monkeypatch) -> None:
@@ -70,6 +75,17 @@ def test_feedback_replan(monkeypatch) -> None:
     evaluator = LLMFeedbackEvaluator(model="fake")
     result = evaluator.evaluate(b"img", "desc", "goal")
     assert result.decision == FeedbackDecision.REPLAN
+
+
+def test_feedback_assessment_no(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "core.plan.llm_feedback.init_chat_model",
+        lambda _model: _mock_feedback_llm("continue", assessment="no"),
+    )
+    evaluator = LLMFeedbackEvaluator(model="fake")
+    result = evaluator.evaluate(b"img", "Is cube grasped?", "goal")
+    assert result.decision == FeedbackDecision.CONTINUE
+    assert result.assessment == "no"
 
 
 def test_feedback_no_tool_call_defaults_continue(monkeypatch) -> None:

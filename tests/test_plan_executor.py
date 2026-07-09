@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+
 import pytest
 
 from core.plan import (
@@ -27,14 +29,24 @@ class MockSkill(Skill):
 
 
 class MockFeedbackEvaluator:
-    def __init__(self, decision: FeedbackDecision, reason: str = "") -> None:
+    def __init__(
+        self,
+        decision: FeedbackDecision,
+        reason: str = "",
+        assessment: str | None = None,
+    ) -> None:
         self.decision = decision
         self.reason = reason
+        self.assessment = assessment
         self.last_description: str | None = None
 
     def evaluate(self, image_bytes: bytes, description: str, goal: str) -> FeedbackOutcome:
         self.last_description = description
-        return FeedbackOutcome(decision=self.decision, reason=self.reason)
+        return FeedbackOutcome(
+            decision=self.decision,
+            reason=self.reason,
+            assessment=self.assessment,
+        )
 
 
 def mock_image_fn() -> bytes:
@@ -408,6 +420,51 @@ def test_feedback_continue_then_return() -> None:
     result = executor.run(plan)
     assert result.status == "done"
     assert result.value == "x"
+
+
+def test_feedback_logging_llm_response(caplog) -> None:
+    caplog.set_level(logging.INFO, logger="core.plan.executor")
+    skill = MockSkill("ok")
+    executor = build_executor(
+        skill,
+        decision=FeedbackDecision.CONTINUE,
+    )
+    executor._feedback_evaluator = MockFeedbackEvaluator(
+        FeedbackDecision.CONTINUE,
+        reason="cube still on table",
+        assessment="no",
+    )
+    plan = Plan.model_validate(
+        {"goal": "g", "body": {"kind": "feedback", "description": "Is cube grasped?"}}
+    )
+    executor.run(plan)
+    messages = [r.message for r in caplog.records if r.levelno == logging.INFO]
+    assert any("Feedback LLM asked: 'Is cube grasped?'" in m for m in messages)
+    assert any("Feedback LLM response: no — cube still on table" in m for m in messages)
+    assert any("Feedback executor decision: CONTINUE" in m for m in messages)
+
+
+def test_feedback_logging_stub_evaluator(caplog) -> None:
+    from core.plan.feedback import AlwaysContinueEvaluator
+
+    caplog.set_level(logging.INFO, logger="core.plan.executor")
+    skill = MockSkill("ok")
+    registry = SkillRegistry()
+    registry.register(skill)
+    executor = Executor(
+        registry=registry,
+        feedback_evaluator=AlwaysContinueEvaluator(),
+        image_fn=mock_image_fn,
+        goal="test-goal",
+    )
+    plan = Plan.model_validate(
+        {"goal": "g", "body": {"kind": "feedback", "description": "Is cube grasped?"}}
+    )
+    executor.run(plan)
+    messages = [r.message for r in caplog.records if r.levelno == logging.INFO]
+    assert any("Feedback LLM asked: 'Is cube grasped?'" in m for m in messages)
+    assert any("Feedback LLM: not consulted (stub evaluator)" in m for m in messages)
+    assert any("Feedback executor decision: CONTINUE" in m for m in messages)
 
 
 def test_feedback_trace_includes_reason(tmp_path) -> None:
