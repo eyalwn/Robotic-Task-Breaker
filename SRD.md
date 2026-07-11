@@ -225,7 +225,7 @@ Retire the legacy sim-loop path; consolidate tests and notebooks.
 
 ---
 
-### M7 (implementation complete — E2E acceptance blocked on M8)
+### M7 (implementation complete — E2E acceptance pending)
 
 **Real perception, no sim-GT cheating.** Replace sim-ground-truth perception in the long-horizon LIBERO path with RGB-based perception and keep the same planner/executor/arm contracts. M7 targets exactly the same scenario as `examples/long_horizon_llm_libero.py`: **LIBERO-10 (`libero_10`) task 0**.
 
@@ -234,12 +234,12 @@ Retire the legacy sim-loop path; consolidate tests and notebooks.
 - `src/sim/libero_perception.py`: config-based perception selection (`PERCEPTION_BACKEND=sim_gt|real`; default `sim_gt` until M9).
 - `src/sim/libero_real_perception.py`: task-0 RGB perception (`state.list_objects`, `perception.detect`, `perception.locate`) from camera frames only.
 - `src/sim/libero_backend.py`: wires perception mode at skill registration; guard tests prevent real-mode fallback to sim-GT registration.
-- `colab/m7_real_perception_libero.ipynb`: M7 Colab validator (`PERCEPTION_BACKEND=real`, `GITHUB_BRANCH` required); **update to `VLA_POLICY=smolvla` after M8 lands**.
+- `colab/m7_real_perception_libero.ipynb`: M7 Colab validator (`PERCEPTION_BACKEND=real`, `GITHUB_BRANCH` required); use `VLA_POLICY=smolvla` (M8 validated).
 - VLA HTTP contract, planner schema, executor loop, and `Runner` public behavior unchanged.
 
-**Acceptance (E2E gate — manual / Colab; requires M8)**
+**Acceptance (E2E gate — manual / Colab)**
 
-- **Prerequisite:** M8 (SmolVLA VLA backend) complete. M7 E2E is **not** run against Pi0.5 — Pi0.5 remains an optional reference backend only (A100-class hardware).
+- **Prerequisite:** M8 (SmolVLA VLA backend) complete ✓. M7 E2E is **not** run against Pi0.5 — Pi0.5 remains an optional reference backend only (A100-class hardware).
 - On Linux + **Colab T4-class GPU** with SmolVLA VLA service running, `PERCEPTION_BACKEND=real VLA_POLICY=smolvla python examples/long_horizon_llm_libero.py` on `libero_10` task 0 reaches **full success** (`RunResult.success=True`, process exit code 0).
 - The successful run must not register sim-GT perception skills (`sim/libero_skills.py` perception path).
 - Evidence to record per acceptance run:
@@ -253,12 +253,12 @@ Retire the legacy sim-loop path; consolidate tests and notebooks.
 **Out of scope for M7**
 
 - Success across all LIBERO-10 tasks (task 0 only).
-- SmolVLA VLA backend (M8).
+- SmolVLA VLA backend (M8) ✓.
 - Full sim-GT removal (M9).
 - Changes to backend success criteria semantics or VLA wire format.
 - Recursive sub-planning.
 
-### M8 (implementation complete — acceptance pending)
+### M8 (implemented — Linux validated ✓)
 
 **SmolVLA VLA backend for LIBERO (Colab-cost path).** Add a lightweight VLA service so long-horizon LIBERO runs do not depend on Pi0.5 (A100 + ~12 GiB checkpoint). Longor's LLM planner already decomposes work into short `arm.grab` / `arm.place` sub-tasks; SmolVLA (~450M) is sufficient for those chunks and runs on **T4 16GB** Colab alongside LIBERO.
 
@@ -288,6 +288,14 @@ Retire the legacy sim-loop path; consolidate tests and notebooks.
 - `pytest` green on Windows (service unit tests mock SmolVLA; no live GPU).
 - Optional integration (`pytest -m integration`): LIBERO-Object task 0 arm smoke with SmolVLA server running — wiring correctness; task success not required for M8 pass.
 - Pi0.5 path remains available but is **not** the acceptance backend for M7+ milestones.
+
+**Validated (Colab T4, 2026-07-12, `colab/m8_smolvla_libero.ipynb`)**
+
+- `.vla-venv` + `GET /health` → `{"status":"ok","model":"smolvla"}`.
+- `POST /predict` smoke → HTTP 200, 50×7-DOF action rows (`M8 SmolVLA wiring smoke PASS`).
+- `pytest -m "not integration"` → 294 passed, 2 skipped.
+- Windows `services/tests/test_smolvla_service.py` → 10 passed (mocked policy; no live GPU).
+- Fix: `_prepare_observation_for_inference` converts HWC uint8 JPEG → BCHW float32 before LeRobot preprocessor (without `lerobot` import on Windows test path).
 
 **Out of scope for M8**
 
@@ -510,7 +518,19 @@ Linux milestone acceptance runs via notebooks in `colab/`:
 | `colab/m8_smolvla_libero.ipynb` | M8 SmolVLA VLA wiring |
 | `colab/m10_libero_10_campaign.ipynb` | M10 per-task campaign (planned) |
 
-Each notebook is self-contained and ephemeral-safe: no Google Drive dependency; the repo is cloned and deps installed into the Colab VM's local disk on each session. The GitHub PAT and any API keys are read from Colab Secrets (never embedded in notebook cells). `.venv` is created with `--system-site-packages` to inherit Colab's pre-installed CUDA PyTorch; `.vla-venv` is fully isolated. The VLA server runs as a background subprocess; the notebook polls `/health` before proceeding. M7+ notebooks require `GITHUB_BRANCH` and sync to `origin/<GITHUB_BRANCH>` (not silent `main`).
+Each notebook is self-contained and ephemeral-safe: no Google Drive dependency; the repo is cloned to `/content/Longor` on the Colab VM and deps are installed into the VM's local disk on each session. `.venv` is created with `--system-site-packages` to inherit Colab's pre-installed CUDA PyTorch; `.vla-venv` is fully isolated. The VLA server runs as a background subprocess; the notebook polls `/health` before proceeding. M7+ notebooks require `GITHUB_BRANCH` and sync to `origin/<GITHUB_BRANCH>` (not silent `main` when validating a pre-merge branch).
+
+**How to run (default: Cursor IDE + Colab GPU runtime)**
+
+Most development runs these notebooks from **Cursor** connected to a remote Colab Linux+CUDA kernel — not the colab.google.com web UI. Cursor has **no Colab Secrets panel**; section 1 reads `os.environ` and prompts for secrets inline.
+
+| Variable | Cursor IDE (default) | colab.google.com (secondary) |
+|----------|----------------------|------------------------------|
+| `GITHUB_BRANCH` | Edit the `GITHUB_BRANCH = '…'` line at the top of section 1 in the notebook | Colab Secrets, or the same inline line |
+| `GITHUB_TOKEN` | `getpass` prompt when section 1 runs | Colab Secrets, or the same `getpass` prompt |
+| Other API keys (e.g. `OPENAI_API_KEY`) | `getpass` or `os.environ[…]` in section 1 | Colab Secrets, or the same inline pattern |
+
+Never commit tokens into notebook cells. When M8 (or the milestone under test) is already on `origin/main`, set `GITHUB_BRANCH='main'`. Use a feature branch only when validating unpushed or pre-merge work.
 
 ## VLA integration — architecture
 

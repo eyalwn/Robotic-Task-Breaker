@@ -145,10 +145,34 @@ def _load_smolvla_policy() -> PolicyBundle:
     )
 
 
+def _prepare_observation_for_inference(
+    observation: dict,
+    device: object,
+    task: str = "",
+) -> dict:
+    """HWC uint8 numpy → BCHW float32 tensors (LeRobot inference contract)."""
+    import torch
+
+    prepared = {}
+    for name, value in observation.items():
+        tensor = torch.from_numpy(value)
+        if "image" in name:
+            if tensor.dtype == torch.uint8:
+                tensor = tensor.type(torch.float32) / 255
+            tensor = tensor.permute(2, 0, 1).contiguous()
+        tensor = tensor.unsqueeze(0).to(device)
+        prepared[name] = tensor
+    prepared["task"] = task
+    prepared["robot_type"] = ""
+    return prepared
+
+
 def _run_inference(bundle: PolicyBundle, obs: dict) -> np.ndarray:
     import torch
 
     bundle.policy.reset()
+    task = obs.pop("task", "")
+    obs = _prepare_observation_for_inference(obs, bundle.device, task=task)
     batch = bundle.preprocessor(obs)
     chunk = bundle.policy.predict_action_chunk(batch)
     if not isinstance(chunk, torch.Tensor):
