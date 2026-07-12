@@ -59,6 +59,9 @@ def apply_smoke_env_defaults() -> None:
     os.environ.setdefault("VLA_SIM_PICKCUBE_GRIPPER_PROFILE", "false")
     os.environ.setdefault("VLA_FAIL_WORSENING_STEPS", "200")
     os.environ.setdefault("VLA_PROXIMITY_GRASP", "false")
+    os.environ.setdefault("VLA_GRIPPER_CONFIDENCE", "0.5")
+    os.environ.setdefault("VLA_FAIL_DIST_CONSECUTIVE_STEPS", "200")
+    os.environ.setdefault("VLA_FAIL_IK_SATURATION_STEPS", "200")
 
 
 def attach_run_log_file(

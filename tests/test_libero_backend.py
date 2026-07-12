@@ -640,6 +640,11 @@ def test_libero_backend_apply_env_defaults(monkeypatch):
         "LIBERO_SETTLE_STEPS",
         "VLA_FAIL_WORSENING_STEPS",
         "VLA_PROXIMITY_GRASP",
+        "VLA_GRIPPER_CONFIDENCE",
+        "VLA_MAX_INNER_STEPS",
+        "VLA_FAIL_DIST_CONSECUTIVE_STEPS",
+        "VLA_FAIL_IK_SATURATION_STEPS",
+        "VLA_MAX_TOOL_SECONDS",
     ):
         monkeypatch.delenv(key, raising=False)
     LiberoBackend._apply_env_defaults()
@@ -654,8 +659,28 @@ def test_libero_backend_apply_env_defaults(monkeypatch):
     assert os.environ.get("LIBERO_SETTLE_STEPS") == "10"
     assert os.environ.get("VLA_FAIL_WORSENING_STEPS") == "200"
     assert os.environ.get("VLA_PROXIMITY_GRASP") == "false"
+    assert os.environ.get("VLA_GRIPPER_CONFIDENCE") == "0.5"
+    assert os.environ.get("VLA_MAX_INNER_STEPS") == "200"
+    assert os.environ.get("VLA_FAIL_DIST_CONSECUTIVE_STEPS") == "200"
+    assert os.environ.get("VLA_FAIL_IK_SATURATION_STEPS") == "200"
+    assert os.environ.get("VLA_MAX_TOOL_SECONDS") == "180"
     assert "VLA_AXIS_SIGNS" not in os.environ
     assert "VLA_AXIS_REMAP" not in os.environ
+
+
+def test_libero_backend_apply_env_defaults_preserves_overrides(monkeypatch):
+    overrides = {
+        "VLA_MAX_INNER_STEPS": "99",
+        "VLA_GRIPPER_CONFIDENCE": "0.9",
+        "VLA_FAIL_DIST_CONSECUTIVE_STEPS": "77",
+        "VLA_FAIL_IK_SATURATION_STEPS": "88",
+        "VLA_MAX_TOOL_SECONDS": "42",
+    }
+    for key, value in overrides.items():
+        monkeypatch.setenv(key, value)
+    LiberoBackend._apply_env_defaults()
+    for key, value in overrides.items():
+        assert os.environ.get(key) == value
 
 
 def test_libero_backend_register_skills(monkeypatch):

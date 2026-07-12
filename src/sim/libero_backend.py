@@ -806,6 +806,11 @@ class LiberoBackend:
         os.environ.setdefault("LIBERO_SETTLE_STEPS", "10")
         os.environ.setdefault("VLA_FAIL_WORSENING_STEPS", "200")
         os.environ.setdefault("VLA_PROXIMITY_GRASP", "false")
+        os.environ.setdefault("VLA_GRIPPER_CONFIDENCE", "0.5")
+        os.environ.setdefault("VLA_MAX_INNER_STEPS", "200")
+        os.environ.setdefault("VLA_FAIL_DIST_CONSECUTIVE_STEPS", "200")
+        os.environ.setdefault("VLA_FAIL_IK_SATURATION_STEPS", "200")
+        os.environ.setdefault("VLA_MAX_TOOL_SECONDS", "180")
 
     def register_skills(self, registry, goal: str) -> None:
         from sim.libero_perception import register_libero_perception_skills

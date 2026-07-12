@@ -234,7 +234,7 @@ Retire the legacy sim-loop path; consolidate tests and notebooks.
 - `src/sim/libero_perception.py`: config-based perception selection (`PERCEPTION_BACKEND=sim_gt|real`; default `sim_gt` until M9).
 - `src/sim/libero_real_perception.py`: task-0 RGB perception (`state.list_objects`, `perception.detect`, `perception.locate`) from camera frames only.
 - `src/sim/libero_backend.py`: wires perception mode at skill registration; guard tests prevent real-mode fallback to sim-GT registration.
-- `colab/m7_real_perception_libero.ipynb`: M7 Colab validator (`PERCEPTION_BACKEND=real`, `GITHUB_BRANCH` required); use `VLA_POLICY=smolvla` (M8 validated).
+- `colab/m7_real_perception_libero.ipynb`: M7 Colab validator (`PERCEPTION_BACKEND=real`, `GITHUB_BRANCH` required); SmolVLA server wiring and health checks are in the same notebook.
 - VLA HTTP contract, planner schema, executor loop, and `Runner` public behavior unchanged.
 
 **Acceptance (E2E gate — manual / Colab)**
@@ -247,7 +247,7 @@ Retire the legacy sim-loop path; consolidate tests and notebooks.
   - full `.env` vars (`PERCEPTION_BACKEND`, `VLA_POLICY`, `SMOLVLA_*` if set, `LLM_MODEL`, etc.),
   - subprocess stdout containing `Task succeeded:` and `Run summary: success=True`,
   - trace file under `traces/` and optional video under `videos/`.
-- **Colab procedure:** run `colab/m7_real_perception_libero.ipynb` (with SmolVLA after M8) on T4; `GITHUB_BRANCH` required.
+- **Colab procedure:** run `colab/m7_real_perception_libero.ipynb` (SmolVLA path included) on T4; `GITHUB_BRANCH` required.
 - On Windows: `pytest` green with perception tested via mocks/fakes (no Linux-only runtime deps in unit tests).
 
 **Out of scope for M7**
@@ -277,7 +277,7 @@ Retire the legacy sim-loop path; consolidate tests and notebooks.
 - Server maps SmolVLA outputs to the existing LIBERO wire format consumed by `LiberoArm.apply_vla_action` (7-DOF OSC deltas + gripper).
 - Accept agentview JPEG + optional wrist JPEG + 8-dim proprio (`agent_state`) on `/predict` — same client path as Pi0.5 (`vla/client.py`, `vla/tools.py`).
 - `README.md` §3: SmolVLA venv setup; mark as **primary LIBERO VLA** for Colab.
-- `colab/m8_smolvla_libero.ipynb`: T4-oriented validator — VLA service health, wiring smoke, optional short LIBERO arm rollout.
+- SmolVLA validation consolidated into `colab/m7_real_perception_libero.ipynb` (server health + end-to-end LIBERO run in one flow).
 - `LiberoBackend` / `.env.example`: document `VLA_POLICY=smolvla` as the recommended LIBERO default after M8.
 - No planner, executor, skill-schema, or perception changes.
 
@@ -289,7 +289,7 @@ Retire the legacy sim-loop path; consolidate tests and notebooks.
 - Optional integration (`pytest -m integration`): LIBERO-Object task 0 arm smoke with SmolVLA server running — wiring correctness; task success not required for M8 pass.
 - Pi0.5 path remains available but is **not** the acceptance backend for M7+ milestones.
 
-**Validated (Colab T4, 2026-07-12, `colab/m8_smolvla_libero.ipynb`)**
+**Validated (Colab T4, 2026-07-12 via `colab/m7_real_perception_libero.ipynb`)**
 
 - `.vla-venv` + `GET /health` → `{"status":"ok","model":"smolvla"}`.
 - `POST /predict` smoke → HTTP 200, 50×7-DOF action rows (`M8 SmolVLA wiring smoke PASS`).
@@ -299,7 +299,7 @@ Retire the legacy sim-loop path; consolidate tests and notebooks.
 
 **Out of scope for M8**
 
-- M7 full E2E success (runs after M8 lands).
+- M7 full E2E success (M8 prerequisite complete; separate M7 acceptance gate).
 - LIBERO-10 campaign (M10).
 - Fine-tuning SmolVLA from scratch (use published `smolvla_libero` checkpoint; fine-tune only if checkpoint underperforms on chunked sub-tasks).
 - OpenVLA / Octo policy changes.
@@ -514,8 +514,7 @@ Linux milestone acceptance runs via notebooks in `colab/`:
 |----------|-----------|
 | `colab/m5_handcrafted_libero.ipynb` | M5 handcrafted plan |
 | `colab/m6_llm_libero.ipynb` | M6 LLM plan (sim-GT perception; legacy) |
-| `colab/m7_real_perception_libero.ipynb` | M7 real perception E2E (task 0; requires M8 SmolVLA) |
-| `colab/m8_smolvla_libero.ipynb` | M8 SmolVLA VLA wiring |
+| `colab/m7_real_perception_libero.ipynb` | M7 real perception E2E + SmolVLA VLA validation (task 0) |
 | `colab/m10_libero_10_campaign.ipynb` | M10 per-task campaign (planned) |
 
 Each notebook is self-contained and ephemeral-safe: no Google Drive dependency; the repo is cloned to `/content/Longor` on the Colab VM and deps are installed into the VM's local disk on each session. `.venv` is created with `--system-site-packages` to inherit Colab's pre-installed CUDA PyTorch; `.vla-venv` is fully isolated. The VLA server runs as a background subprocess; the notebook polls `/health` before proceeding. M7+ notebooks require `GITHUB_BRANCH` and sync to `origin/<GITHUB_BRANCH>` (not silent `main` when validating a pre-merge branch).
@@ -530,7 +529,7 @@ Most development runs these notebooks from **Cursor** connected to a remote Cola
 | `GITHUB_TOKEN` | `getpass` prompt when section 1 runs | Colab Secrets, or the same `getpass` prompt |
 | Other API keys (e.g. `OPENAI_API_KEY`) | `getpass` or `os.environ[…]` in section 1 | Colab Secrets, or the same inline pattern |
 
-Never commit tokens into notebook cells. When M8 (or the milestone under test) is already on `origin/main`, set `GITHUB_BRANCH='main'`. Use a feature branch only when validating unpushed or pre-merge work.
+Never commit tokens into notebook cells. When the milestone under test is already on `origin/main`, set `GITHUB_BRANCH='main'`. Use a feature branch only when validating unpushed or pre-merge work.
 
 ## VLA integration — architecture
 
