@@ -1,0 +1,68 @@
+---
+description: Conventions and hard-won lessons for Longor Colab validation notebooks (colab/mN_*.ipynb)
+globs: colab/**/*.ipynb
+alwaysApply: false
+---
+
+# Colab Validation Notebooks (strict launcher model)
+
+## Single source of truth
+
+- This file is the **only** Colab notebook policy. Do not create overlapping Colab rules in additional `.mdc` files.
+
+## Notebook contract (required)
+
+- A validation notebook is a **launcher**, not an experiment harness.
+- Allowed notebook responsibilities:
+  1. collect secrets / env vars,
+  2. clone/sync repo + install deps,
+  3. start background services and poll `/health`,
+  4. run **exactly one** Python entrypoint under `scripts/colab/**`,
+  5. show summary/artifact paths.
+- Disallowed inside notebooks:
+  - policy sweeps, matrix experiments, verdict engines,
+  - custom metric parsing/comparison logic,
+  - large inline orchestration code that belongs in Python modules.
+
+## One notebook ↔ one script
+
+- Each notebook must declare one explicit script path (for example `RUN_SCRIPT="scripts/colab/m7_probe.py"`).
+- Variants use CLI args/env passed to the same script, not notebook cell branching.
+- For test/debug on Colab, use a dedicated tiny notebook that calls a dedicated script (for example `scripts/colab/run_pytest.py` or `scripts/colab/m7_debug_smoke.py`).
+
+## Script output contract (required)
+
+Every script invoked by a Colab notebook must:
+
+- write run artifacts under `artifacts/colab/<milestone>/<run_id>/`,
+- write `summary.json` with at least:
+  - `run_id`, `milestone`, `timestamp_utc`,
+  - `git_branch`, `git_sha`,
+  - `entrypoint`, `argv`,
+  - `env_snapshot` (non-secret only),
+  - `status` (`pass`/`fail`), `reason`,
+  - key metrics and artifact paths,
+- stream logs to `run.log`,
+- return exit code `0` on pass, non-zero on fail.
+
+## Cell command style
+
+Use Jupyter magics for kernel-env installs/commands:
+
+```python
+# ✅
+%pip install -r requirements.txt
+!apt-get install -y cmake
+
+# ❌
+subprocess.run([sys.executable, "-m", "pip", "install", "-r", "requirements.txt"], check=True)
+```
+
+Exception: use `subprocess` when targeting a different interpreter (for example `.vla-venv`). Keep that logic minimal and helper-based.
+
+## Operational guardrails
+
+- No `google.colab` imports (notebooks must run from Cursor-connected kernels too).
+- Never write secrets/tokens into notebook cells or repo files.
+- SmolVLA baseline checks must start with closed-loop `n_action_steps=1` before testing larger horizons.
+- If notebook logic grows beyond setup + one script call, move that logic into `scripts/colab/**`.

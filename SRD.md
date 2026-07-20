@@ -15,521 +15,139 @@ Enable robots to perform **long-horizon** tasks by separating **planning** (LLM)
 
 **Arm control:** manipulation skills are **VLAs only**, behind a **single VLA HTTP server** at a time (see below). Other capabilities (navigation, simple grippers) are ordinary skills as the codebase evolves.
 
-## Milestones (first)
+## Milestones
 
-### M1 (implemented ✓)
+### Completed foundations (historical, unchanged IDs)
 
-**Linux** support for the existing sim + VLA + agent stack (**parity** with Windows for dev/CI).
+- **M1 (done):** Linux parity for the existing sim + VLA + test stack.
+- **M2 (done):** Pi0.5 backend (`VLA_POLICY=pi05`) validated on Linux GPU.
+- **M3 (done):** LIBERO backend integration (`LiberoBackend`, Linux-only runtime).
+- **M4 (done):** plan AST + executor + skill registry + safe expression evaluator.
+- **M5 (done):** handcrafted plan E2E with sim-GT perception + arm skills.
+- **M6 (done):** LLM planner + LLM feedback + trace writer + `Runner`/`Backend` architecture.
+- **M8 (done):** SmolVLA backend (`VLA_POLICY=smolvla`) validated on Colab T4.
 
-**Scope**
+### Evaluation doctrine (applies to all future milestones)
 
-- Documented setup paths for **Linux (with CUDA)** (POSIX venv, ManiSkill, JAX+VLA on **NVIDIA**) without breaking the **Windows (Git Bash)** flow on the reference machine.
-- A fresh clone + `README.md` steps should get a developer to: **two venvs**, **Octo HTTP service** running, `**examples/maniskill_pickcube.py`** against ManiSkill + VLA, and `**pytest**` (same expectations as Windows; **integration** tests are marked — see `pytest.ini` / `pytest -m integration`).
+- Do **not** conclude policy incapability from monolithic LIBERO-10 runs alone.
+- Always prove wiring on simpler isolated conditions before long-horizon target tasks.
+- For SmolVLA baseline checks, closed-loop `n_action_steps=1` is mandatory before trying larger horizons.
+- Keep debug scope contained: experiments and sweeps belong in scripts (`scripts/debug/**`, `scripts/colab/**`), not in production runtime modules.
 
-**Acceptance (manual, on Linux host)**
+### Current execution order (replanned)
 
-- `.venv`: `pip install -r requirements.txt`, `pip install -e .` (+ sim deps), ManiSkill for PickCube per `README.md` / [ManiSkill installation](https://maniskill.readthedocs.io/en/latest/user_guide/getting_started/installation.html), run `pytest` from repo root.
-- `.vla-venv`: Octo per `README.md` §3 — **Linux:** Octo `requirements.txt` + `services/requirements-vla-octo-small-1.5-linux.txt`; **Windows:** `services/requirements-vla-octo-small-1.5-windows.txt` + `pip install -e ~/octo --no-deps` (no upstream `requirements.txt`); `**VLA_POLICY`** set; weights from Hugging Face in `services/octo_service.py`; `python services/run_vla_server.py` serves `/health` on `VLA_PORT`.
-- With both terminals up and `.env` filled, `python examples/maniskill_pickcube.py` completes a run (success/failure per sim/policy is fine; wiring must work).
-- `README.md` remains valid for **Windows (Git Bash)** and **Linux (with CUDA)** including Octo VLA venv paths in §3.
+### M7 (planned) — Wiring correctness ladder (isolation first)
 
-**Colab validation results (Python 3.12, GPU — June 2026)**
+**Goal**
 
-- [x] `pytest` (non-integration, Linux): **160 passed, 2 skipped, 3 deselected** — Linux parity with Windows confirmed.
-- [~] Octo VLA E2E on ManiSkill: **closed — N/A**. Octo's pinned deps are incompatible with Python 3.12 (`numpy==1.24.3` / `ml_dtypes==0.2.0` have no Py3.12 wheels; `jax.random.KeyArray` removed in JAX 0.4.24). The VLA HTTP contract (`/health` + `POST /predict`) was validated end-to-end by M2 (Pi0.5 on A100) and M3 (LIBERO wiring); M1's Octo E2E acceptance criterion is therefore superseded and will not be re-attempted. Working Colab recipe preserved in `colab/m1_maniskill_octo.ipynb` for reference.
-
-**Out of scope for M1**
-
-- CI matrix on Linux (optional follow-up).
-- New backends or changing the VLA HTTP contract.
-
-### M2 (implemented — Linux validated ✓)
-
-**Additional VLA backend** — **π₀.5** (Pi0.5) via Physical Intelligence's [OpenPI](https://github.com/Physical-Intelligence/openpi) — proving the VLA HTTP contract is model-agnostic.
+Prove Longor wiring is correct in progressively harder, isolated stages before revisiting long-horizon real-perception acceptance.
 
 **Scope**
 
-- `services/pi05_service.py`: FastAPI service wrapping OpenPI Pi0.5 inference, same `/health` + `POST /predict` contract as `octo_service.py`. Server-side maps Pi0.5's native action output to the `[dx, dy, dz, gripper]` wire format.
-- `services/run_vla_server.py` supports `VLA_POLICY=pi05`.
-- `services/requirements-vla-pi05-linux.txt` for the Pi0.5 `.vla-venv`.
-- Setup instructions in `README.md` for **Linux + NVIDIA GPU** (≥ 8 GB VRAM). Pi0.5 does **not** run on Windows.
-- `src/vla/` client code contains no model-specific assumptions (remove any Octo-specific references).
-
-**Acceptance (manual, on Linux + NVIDIA host)**
-
-- `.vla-venv` with OpenPI + service deps installed per `README.md`; `python services/run_vla_server.py` with `VLA_POLICY=pi05` starts and `GET /health` returns OK.
-- `POST /predict` with a JPEG + task text returns a valid `{"actions": [[dx,dy,dz,gripper], ...]}` response.
-- On **Windows**: `pytest` passes (unit tests mock the VLA service; no real Pi0.5 required).
-- No Octo-specific references remain in `src/vla/`.
-
-**Colab validation results (Python 3.12, A100 GPU — June 2026)**
-
-- [x] Pi0.5 VLA service `/health` + `POST /predict`: **passed** — 15 action steps, `[dx,dy,dz,gripper]` format confirmed.
-- [x] `pytest` (non-integration, Linux): **160 passed, 2 skipped, 3 deselected**.
-
-Notes: requires A100 (free T4 OOM-kills during 11.6 GiB checkpoint load). Dep patches baked into `colab/m2_pi05_vla.ipynb`: pinned lerobot to OpenPI's git rev (`0cf8648`), upgraded `transformers`, set `timeout=180` for JIT warmup on first `/predict`.
-
-**Out of scope for M2**
-
-- Pi0.5 task success on ManiSkill (wiring correctness only; the model is not trained on sim data).
-- Pi0.5 on Windows (OpenPI requires Linux + NVIDIA GPU).
-- Fine-tuning or model adaptation.
-
-### M3 (implemented — Linux validated ✓)
-
-**LIBERO** simulation backend via [LeRobot](https://huggingface.co/docs/lerobot/main/libero) — same agent/VLA contract, env-specific adapters. Initial target: **LIBERO-Object** suite.
-
-**Scope**
-
-- `src/sim/libero_backend.py`: `create_env()`, `LiberoCamera`, `LiberoArm` adapters matching the `ManiSkillCamera`/`ManiSkillArm` interface (`capture_image`, `move_ee`, `set_gripper`). LIBERO uses MuJoCo + OSC controllers — direct EE delta control (no Jacobian IK needed).
-- `src/sim/libero_success_checker.py`: reads LIBERO's success flag from env info.
-- `examples/libero_object.py`: example script wiring LIBERO-Object + VLA, same pattern as `maniskill_pickcube.py`.
-- `requirements-libero.txt`: LeRobot + LIBERO deps (**Linux only**; LIBERO requires `sys_platform == 'linux'`).
-- `arm_tools.py` must work unchanged with `LiberoArm`.
-
-**Acceptance (manual, on Linux host)**
-
-- `.venv` with LeRobot + LIBERO deps from `requirements-libero.txt`; `export MUJOCO_GL=egl`.
-- `pytest -m integration tests/test_libero_integration.py::test_handcrafted_libero_pick` with a running VLA server starts a LIBERO-Object task, drives the arm via VLA, and runs to completion (wiring correctness; task success not required).
-- On **Windows**: `pytest` passes (LIBERO backend unit tests mock the env; no real LIBERO required).
-- `arm_tools.py` works unchanged with `LiberoArm`.
-
-**Colab validation results (Python 3.12, A100 GPU — June 2026)**
-
-- [x] `examples/libero_object.py` wiring (LIBERO-Object task 0 + Pi0.5 VLA): **passed** — 60 arm steps applied, exit 0.
-- [x] `pytest` (non-integration, Linux): **160 passed, 2 skipped, 3 deselected**.
-
-Notes: requires A100 (same Pi0.5 weight size as M2). Patches baked into `colab/m3_libero_object.ipynb`: apt `cmake` for `egl_probe` build, lerobot git rev (`0cf8648`), upgraded `transformers`, pre-create `~/.libero/config.yaml` to bypass interactive prompt, `VLA_MAX_TOOL_SECONDS=120` (Pi0.5 JIT warmup on first call), `pi05_libero` checkpoint pre-downloaded via `gsutil` (requires `pip install crcmod` first — Colab's `crcmod` lacks the C extension needed for GCS composite-object integrity checks).
-
-**Out of scope for M3**
-
-- LIBERO on Windows (Linux only).
-- LIBERO-Long or other suites beyond LIBERO-Object.
-- Centralized backend dispatcher (examples import their backend directly).
-
-### M4 (implemented)
-
-**Plan AST + executor + skill registry** — pure software layer; no sim, no real LLM.
-
-**Scope**
-
-- `src/core/skills.py`: `Skill` base, `SkillRegistry`, shared typed values (e.g. `Pose`, `DetectedObject`). Interfaces only; concrete implementations live in backend packages.
-- `src/core/plan/`: `schema.py` (AST schema), `executor.py` (walker + restricted expression evaluator over a small typed value space; **no `eval` / `exec`**), `planner.py` (LLM-facing interface), `feedback.py`. *(The top-level `plan → execute → replan` loop lives in `src/core/runner.py` (`Runner`); backends implement `src/core/backend.py`'s `Backend` protocol — both added in the post-M6 Runner/Backend refactor.)*
-- Signals: `ReturnSignal(value)` from `return` nodes → `status="done"`; `StopSignal()` from `feedback → STOP` → `status="stopped"`.
-- Skill adapters: `arm.grab` / `arm.place` in `src/vla/arm_skills.py`; `vla_tool` injected as a callable accepting `task` kwarg.
-- Cross-platform; no sim or VLA contract changes.
+1. **M7.1 cleanup pass**
+   - Remove non-essential post-M8 debug drift from hot-path files (`src/vla/tools.py`, `src/sim/libero_backend.py`, `services/smolvla_service.py`) while preserving validated contract behavior.
+   - Keep runtime logic thin; move experiment orchestration to `scripts/debug/**` or `scripts/colab/**`.
+2. **M7.2 isolated arm-control probe (sim-GT)**
+   - Simplest LIBERO environment, no planner/executor/LLM loop.
+   - Ask VLA to move EE to a target pose/region; verify deterministic motion and termination behavior.
+3. **M7.3 isolated arm-control probe (real-perception mode)**
+   - Same probe as M7.2 with `PERCEPTION_BACKEND=real`.
+   - Ensure no silent fallback to sim-GT registration.
+4. **M7.4 direct task probe, no planner decomposition**
+   - Simplest LIBERO pick/place task.
+   - Pass only task text + required env observation to VLA tool path (no LLM planning loop).
+5. **M7.5 structured-plan probe without LLM**
+   - Inject a static JSON plan (`StaticPlanner`) and validate executor/skill orchestration on the same simple task.
+6. **M7.6 full decomposition probe**
+   - Re-enable LLM planner+feedback on the simple task and confirm decomposition succeeds before moving back to LIBERO-10.
 
 **Acceptance**
 
-- Schema validation accepts well-formed plans and rejects malformed ones with usable errors.
-- Interpreter handles every node type (`seq`, `if`, `while`, `call`, `feedback`, `return`) on hand-crafted plans.
-- Restricted expression evaluator rejects unsafe input (no attribute access on arbitrary objects, no name lookup outside bound vars, no calls).
-- Handcrafted-plan E2E test runs against fully mocked sim + mocked LLM evaluator, exercising both `continue` and `replan` feedback decisions.
-- No changes to the VLA HTTP contract.
-
-**Out of scope for M4**
-
-- Real perception, real LLM-emitted plans, real sim integration, recursive sub-planning.
-
-### M5 (implemented ✓)
-
-**Sim-GT skills + handcrafted E2E** on **LIBERO** (Linux primary) and **ManiSkill** (Windows smoke test).
-
-**Scope**
-
-- `src/sim/libero_skills.py`: `perception.detect` / `perception.locate` / `state.list_objects` against LIBERO's MuJoCo scene. `_unwrap_to_sim` walks the LeRobot SyncVectorEnv wrapper chain; skills return `None`/`[]` gracefully if sim is unreachable.
-- `src/sim/maniskill_skills.py`: same three skills against ManiSkill scene via `_find_actors` reflection on `env.unwrapped`.
-- Sim selection by example import; no config knob.
-- `tests/test_libero_integration.py::test_handcrafted_libero_pick`: handcrafted plan + `AlwaysContinueEvaluator` + `StaticPlanner`, wired via `Runner`.
-- `examples/maniskill_pickcube.py`: same, ManiSkill PickCube — cross-platform smoke example.
-
-**Acceptance**
-
-- On **Linux**: handcrafted plan completes the chosen LIBERO task end-to-end against LIBERO + a running VLA server.
-- On **Windows**: ManiSkill version starts and executes ≥1 skill call without crashing (task success not required; arm calls may fail if no VLA is running).
-- `arm.grab` / `arm.place` operate over the unchanged VLA HTTP contract.
-
-**Colab validation results (Python 3.12, A100 GPU — June 2026)**
-
-- [x] `tests/test_libero_integration.py::test_handcrafted_libero_pick` wiring (LIBERO-Object task 0 + Pi0.5 VLA): **passed** — 60 arm steps applied, `Executor result: status=done`, exit 0.
-- [x] `pytest` (non-integration, Linux): **160 passed, 5 skipped**.
-
-Notes: `grasp_triggered=false` — Pi0.5 (DROID weights) does not reliably grasp in LIBERO sim; wiring correctness only. `obj=?` in VLA step log is expected: `arm.grab` passes a task string to the VLA; object pose from `perception.locate` is not forwarded to the VLA step logger by design.
-
-**Out of scope for M5**
-
-- Real perception (and the `PerceptionBackend` abstraction it motivates), LLM-emitted plans, LIBERO-Long.
-
-### M6 (implemented ✓)
-
-**LLM-emitted plans, full E2E on LIBERO-Long.**
-
-**Scope**
-
-- `src/core/plan/llm_planner.py`: `LLMPlanner(model, max_plan_retries=3)` — real LLM call via tool-calling with a single tool `emit_plan(plan_json: str)`; validates with `validate_plan`; retries on `ValidationError` with the error fed back, capped at `max_plan_retries`.
-- `src/core/plan/llm_feedback.py`: `LLMFeedbackEvaluator(model)` — sends RGB snapshot + description to LLM via `emit_decision(decision, reason?)` tool-call; returns `FeedbackDecision`.
-- `src/core/plan/trace.py`: `TraceWriter(trace_dir, goal)` — appends JSONL events (`plan_start`, `skill_call`, `skill_result`, `feedback`, `replan`, `plan_end`) to a per-run file named `{timestamp}_{goal_slug}.jsonl` in `trace_dir`.
-- `src/core/plan/interpreter.py` *(minimal change)*: add optional `trace: TraceWriter | None` param; emit `skill_call`/`skill_result`/`feedback` events when set.
-- `src/core/plan/executor.py` *(minimal change)*: add optional `trace_dir: str | None` param; create/pass `TraceWriter` per run; emit `plan_start`/`replan`/`plan_end` events.
-- Skill catalog in LLM prompt auto-rendered from `SkillRegistry.render_catalog()` — single source of truth.
-- `examples/long_horizon_llm_libero.py`: full E2E on **LIBERO-Long / LIBERO-10** with `LLMPlanner` + `LLMFeedbackEvaluator` + LIBERO sim-GT skills + arm skills + `Runner`. Target task: LIBERO-10 task 0 (implementing agent confirms exact task name at scoping). Trace written to `traces/` by default.
-
-**Acceptance**
-
-- On **Linux + LIBERO-Long**: LLM emits a valid plan from the task language goal, the executor runs it with the VLA in the loop, and the run reaches at least one happy-path completion of the chosen task.
-- Schema-violating LLM output triggers a bounded retry with the validation error injected into the next prompt.
-- Replan and step-budget caps are enforced.
-- On **Windows**: `pytest` passes (256 passed, 2 skipped, 3 deselected).
-- Per-run trace file written to `traces/` and contains all expected event types.
-
-**Colab validation results (Python 3.12, A100 GPU — June 2026)**
-
-- [x] LLM-emitted plan (gpt-4o): valid plan generated, executor ran skills, VLA HTTP contract confirmed.
-- [x] `LLMFeedbackEvaluator`: RGB snapshot + description sent to LLM, decision returned and respected.
-- [x] Trace file written to `traces/` with `plan_start`, `skill_call`, `plan_end` events confirmed.
-- [x] `pytest` (non-integration, Linux): **256 passed, 2 skipped, 3 deselected**.
-- [x] Happy-path task completion: **LIBERO-10 task 0 — PASS**. `examples/long_horizon_llm_libero.py` exit 0, LIBERO env `is_success=True`, `status=done`, 0 replans, 4 skill steps. Pi0.5 placed the soup can; LIBERO's physics contact detector confirmed task success. LIBERO's internal success gate (contact-based) is the authoritative criterion — the basket body-origin XY distance metric is not used for acceptance.
-
-Notes: bare-primitive args coercion added to `CallNode` schema (`src/core/plan/schema.py`) to handle LLM output where args are plain strings instead of `{"kind": "literal", "value": ...}` expressions. Episode-horizon observability (`env_step_count`, `episode_done` early-abort with `is_success` propagation as `reason=task_success`) added to `LiberoArm`/`vla/tools.py`; `LONGOR_RUN_LOG` scoped file logging added to smoke scripts for diagnostics.
-
-**Post-M6 fix (done ✓)**
-
-- Default `LLM_MODEL` updated from `gpt-4o-mini` → `gpt-4.1-mini` in `.env.example` and validation notebooks. `gpt-4o` and `gpt-4o-mini` are legacy as of 2026; `gpt-4.1-mini` has stronger instruction-following at a comparable price point.
-- `LLMFeedbackEvaluator` system prompt reordered to lead with the STOP-semantics constraint: STOP = entire goal done or permanently failed; a positive intermediate sub-goal check = CONTINUE. Root cause: `gpt-4o-mini` called STOP after placing only the first of two objects, terminating the plan early.
-
-**Post-M6 Runner / Backend refactor (done ✓)**
-
-Inverted the execution stack so example scripts are a thin application layer and all wiring lives in core + backends.
-
-- **`Executor`** (`src/core/plan/executor.py`) is now the single-plan walker: `run(plan) -> ExecutionResult` (`done` / `stopped` / `replan` / `step_budget`), catching its own signals. It holds **no planner**. (This is the former `Interpreter`, renamed; the old `run_task` function is gone.)
-- **`Runner`** (`src/core/runner.py`) is the top-level loop: builds the `SkillRegistry`, calls `backend.register_skills`, enriches the goal with scene objects, then drives `plan → execute → replan` (bounded) calling the **planner**, writes the trace, computes the success verdict, logs status, closes the backend, and returns a `RunResult`. Planner/feedback default to the LLM implementations (lazy-imported so the handcrafted path never loads langchain); `StaticPlanner` + `AlwaysContinueEvaluator` (in `core/plan`) drive handcrafted/no-LLM runs.
-- **`Backend`** protocol (`src/core/backend.py`): `register_skills(registry, goal)`, `capture_image()`, `success()`, `close()`. `LiberoBackend` / `ManiSkillBackend` (in `src/sim/`) own all sim + VLA wiring and tuning defaults. Examples just build a backend, define a goal, and call `Runner().run(backend, goal)`.
-- `src/vla/arm_skills.py` is backend-agnostic: LIBERO-specific object-name mapping and place-result upgrade are injected as `name_mapper` / `place_result_hook` from `LiberoBackend`. `src/vla/**` no longer imports `sim`.
-- `core/plan/__init__.py` lazy-imports `LLMPlanner` / `LLMFeedbackEvaluator` (PEP 562 `__getattr__`). No schema, VLA HTTP, or skill-contract changes.
-
-**Out of scope for M6**
-
-- Real perception, success across all LIBERO-10 tasks (one task is enough), recursive sub-planning.
-
-### Post-Linux-validation cleanup (done ✓)
-
-Retire the legacy sim-loop path; consolidate tests and notebooks.
-
-**Scope (completed)**
-
-- Deleted `src/sim/runner.py`, `src/sim/tools.py`, `src/sim/policy_stub_tools.py` (sim-loop helpers; no surviving dependents).
-- `src/core/llm_agent.py` **stays** — still used by `src/robots/XLeRobot/` HW agents.
-- Deleted `examples/libero_object.py` and legacy `maniskill_pickcube.py` wrappers; M1/M3 acceptance criteria updated to reference `examples/maniskill_pickcube.py` / `tests/test_libero_integration.py`.
-- Deleted legacy test files (`test_e2e_sim_loop.py`, `test_sim_loop.py`, `test_sim_runner.py`, `test_policy_stub_tool.py`); merged overlapping test files (`test_arm_tools` → `test_maniskill_arm_adapter`, `test_e2e_handcrafted_plan` → `test_plan_executor`, `test_vla_adaptive_scaling` → `test_vla_action`, `test_sim_tools_contract` → `test_maniskill_backend`).
-- Notebooks reduced from 5 to 2: deleted `m1_maniskill_octo.ipynb`, `m2_pi05_vla.ipynb`, `m3_libero_object.ipynb`; compacted `m5_handcrafted_libero.ipynb` and `m6_llm_libero.ipynb`.
-
----
-
-### M7 (implementation complete — E2E acceptance pending)
-
-**Real perception, no sim-GT cheating.** Replace sim-ground-truth perception in the long-horizon LIBERO path with RGB-based perception and keep the same planner/executor/arm contracts. M7 targets exactly the same scenario as `examples/long_horizon_llm_libero.py`: **LIBERO-10 (`libero_10`) task 0**.
-
-**Scope (implemented)**
-
-- `src/sim/libero_perception.py`: config-based perception selection (`PERCEPTION_BACKEND=sim_gt|real`; default `sim_gt` until M9).
-- `src/sim/libero_real_perception.py`: task-0 RGB perception (`state.list_objects`, `perception.detect`, `perception.locate`) from camera frames only.
-- `src/sim/libero_backend.py`: wires perception mode at skill registration; guard tests prevent real-mode fallback to sim-GT registration.
-- `colab/m7_real_perception_libero.ipynb`: M7 Colab validator (`PERCEPTION_BACKEND=real`, `GITHUB_BRANCH` required); SmolVLA server wiring and health checks are in the same notebook.
-- VLA HTTP contract, planner schema, executor loop, and `Runner` public behavior unchanged.
-
-**Acceptance (E2E gate — manual / Colab)**
-
-- **Prerequisite:** M8 (SmolVLA VLA backend) complete ✓. M7 E2E is **not** run against Pi0.5 — Pi0.5 remains an optional reference backend only (A100-class hardware).
-- On Linux + **Colab T4-class GPU** with SmolVLA VLA service running, `PERCEPTION_BACKEND=real VLA_POLICY=smolvla python examples/long_horizon_llm_libero.py` on `libero_10` task 0 reaches **full success** (`RunResult.success=True`, process exit code 0).
-- The successful run must not register sim-GT perception skills (`sim/libero_skills.py` perception path).
-- Evidence to record per acceptance run:
-  - `GITHUB_BRANCH` / commit SHA,
-  - full `.env` vars (`PERCEPTION_BACKEND`, `VLA_POLICY`, `SMOLVLA_*` if set, `LLM_MODEL`, etc.),
-  - subprocess stdout containing `Task succeeded:` and `Run summary: success=True`,
-  - trace file under `traces/` and optional video under `videos/`.
-- **Colab procedure:** run `colab/m7_real_perception_libero.ipynb` (SmolVLA path included) on T4; `GITHUB_BRANCH` required.
-- On Windows: `pytest` green with perception tested via mocks/fakes (no Linux-only runtime deps in unit tests).
+- Every gate (M7.1–M7.6) has a dedicated script entrypoint and artifact folder under `artifacts/colab/m7/**`.
+- `pytest` is green on Windows after M7.1 cleanup.
+- M7.2 and M7.3 show consistent EE motion and no runtime crashes.
+- M7.4–M7.6 produce at least one successful simple-task run each.
 
 **Out of scope for M7**
 
-- Success across all LIBERO-10 tasks (task 0 only).
-- SmolVLA VLA backend (M8) ✓.
-- Full sim-GT removal (M9).
-- Changes to backend success criteria semantics or VLA wire format.
-- Recursive sub-planning.
+- LIBERO-10 breadth (campaign).
+- Hardware backend milestones.
+- Changing VLA HTTP wire format.
 
-### M8 (implemented — Linux validated ✓)
+### M9 (planned; former M7) — Real perception E2E on LIBERO-10 task 0
 
-**SmolVLA VLA backend for LIBERO (Colab-cost path).** Add a lightweight VLA service so long-horizon LIBERO runs do not depend on Pi0.5 (A100 + ~12 GiB checkpoint). Longor's LLM planner already decomposes work into short `arm.grab` / `arm.place` sub-tasks; SmolVLA (~450M) is sufficient for those chunks and runs on **T4 16GB** Colab alongside LIBERO.
+**Goal**
 
-**Rationale**
-
-- Pi0.5 (`VLA_POLICY=pi05`, `pi05_libero`) is the current LIBERO default in Colab notebooks but is too costly for routine dev/acceptance.
-- SmolVLA shares the **LeRobot** stack already used for LIBERO env wiring.
-- Octo-small remains wired but is DROID-trained and a poor LIBERO manipulator without fine-tuning.
-
-**Scope (implemented)**
-
-- `services/smolvla_service.py`: FastAPI service, same `/health` + `POST /predict` contract as `octo_service.py` / `pi05_service.py`.
-- `services/run_vla_server.py`: add `VLA_POLICY=smolvla`.
-- `services/requirements-vla-smolvla-linux.txt`: SmolVLA + LeRobot inference deps (Linux only; lazy/heavy imports).
-- Load **`HuggingFaceVLA/smolvla_libero`** as the default checkpoint (LIBERO fine-tuned); document override via env (e.g. `SMOLVLA_CHECKPOINT`).
-- Server maps SmolVLA outputs to the existing LIBERO wire format consumed by `LiberoArm.apply_vla_action` (7-DOF OSC deltas + gripper).
-- Accept agentview JPEG + optional wrist JPEG + 8-dim proprio (`agent_state`) on `/predict` — same client path as Pi0.5 (`vla/client.py`, `vla/tools.py`).
-- `README.md` §3: SmolVLA venv setup; mark as **primary LIBERO VLA** for Colab.
-- SmolVLA validation consolidated into `colab/m7_real_perception_libero.ipynb` (server health + end-to-end LIBERO run in one flow).
-- `LiberoBackend` / `.env.example`: document `VLA_POLICY=smolvla` as the recommended LIBERO default after M8.
-- No planner, executor, skill-schema, or perception changes.
-
-**Acceptance**
-
-- `.vla-venv` on Linux: `python services/run_vla_server.py` with `VLA_POLICY=smolvla` starts; `GET /health` returns OK on **T4 16GB** (no A100 required).
-- `POST /predict` with agentview JPEG + task text (+ wrist/proprio when provided) returns valid action chunks in the format `vla/tools.py` already consumes.
-- `pytest` green on Windows (service unit tests mock SmolVLA; no live GPU).
-- Optional integration (`pytest -m integration`): LIBERO-Object task 0 arm smoke with SmolVLA server running — wiring correctness; task success not required for M8 pass.
-- Pi0.5 path remains available but is **not** the acceptance backend for M7+ milestones.
-
-**Validated (Colab T4, 2026-07-12 via `colab/m7_real_perception_libero.ipynb`)**
-
-- `.vla-venv` + `GET /health` → `{"status":"ok","model":"smolvla"}`.
-- `POST /predict` smoke → HTTP 200, 50×7-DOF action rows (`M8 SmolVLA wiring smoke PASS`).
-- `pytest -m "not integration"` → 294 passed, 2 skipped.
-- Windows `services/tests/test_smolvla_service.py` → 10 passed (mocked policy; no live GPU).
-- Fix: `_prepare_observation_for_inference` converts HWC uint8 JPEG → BCHW float32 before LeRobot preprocessor (without `lerobot` import on Windows test path).
-
-**Out of scope for M8**
-
-- M7 full E2E success (M8 prerequisite complete; separate M7 acceptance gate).
-- LIBERO-10 campaign (M10).
-- Fine-tuning SmolVLA from scratch (use published `smolvla_libero` checkpoint; fine-tune only if checkpoint underperforms on chunked sub-tasks).
-- OpenVLA / Octo policy changes.
-
-### M9 (planned)
-
-**Sim-GT perception removal (strict).** Delete sim-ground-truth perception so no runtime script can accidentally use it. After M9, perception for LIBERO long-horizon runs is RGB-only.
+After M7 proves wiring, run the original M7 target: `examples/long_horizon_llm_libero.py` on `libero_10` task 0 with real perception and SmolVLA.
 
 **Scope**
 
-- **Delete runtime sim-GT perception modules and registration:**
-  - `src/sim/libero_skills.py` — remove `LiberoListObjectsSkill`, `LiberoDetectSkill`, `LiberoLocateSkill`, and `register_libero_skills()` (perception surface only).
-  - `src/sim/maniskill_skills.py` — remove `ManiSkillListObjectsSkill`, `ManiSkillDetectSkill`, `ManiSkillLocateSkill`, and `register_maniskill_skills()` (entire file if nothing else remains).
-  - `src/sim/libero_perception.py` — remove `sim_gt` mode; collapse to real-only registration (or delete dispatcher if redundant).
-  - `src/sim/libero_backend.py` / `src/sim/maniskill_backend.py` — stop registering sim-GT perception skills.
-- **Remove config that re-enables sim-GT perception:**
-  - Drop `PERCEPTION_BACKEND=sim_gt` from `.env.example` and runtime resolution; real perception becomes the only LIBERO perception path.
-- **Test rewrites (deletion map):**
-  - Delete or replace: `tests/test_libero_skills.py` (perception unit tests), `tests/test_maniskill_skills.py`, sim-GT branches in `tests/test_libero_real_perception.py`, sim-GT wiring tests in `tests/test_libero_backend.py`.
-  - Update `tests/test_libero_integration.py::test_handcrafted_libero_pick` to use real-perception mocks or a faked RGB backend (no MuJoCo body-name skills).
-  - Update `colab/m5_handcrafted_libero.ipynb` and `colab/m6_llm_libero.ipynb` to real perception + SmolVLA or retire if superseded by M7/M10 notebooks.
-  - Add a repo grep/test guard: no import of sim-GT perception registration in any `examples/` or backend `register_skills` path.
-- **Explicitly out of M9 deletion (follow-up within M9 or M12):** sim-internal helpers still used by arm motion (`libero_body_position`, `libero_place_result_hook`, `prepare_for_grab` xy approach). These are not `perception.*` skills but are still simulator ground truth; document and either remove or gate behind a separate `LIBERO_ARM_GT_HELPERS=0` default-off flag.
+- Real-perception skill path (`PERCEPTION_BACKEND=real`) only.
+- SmolVLA service path (`VLA_POLICY=smolvla`) only for acceptance.
+- Preserve planner/executor/VLA contracts.
 
 **Acceptance**
 
-- No runnable path exposes sim-GT `state.list_objects` / `perception.detect` / `perception.locate`.
-- `PERCEPTION_BACKEND=sim_gt` is gone (unset env uses real perception).
-- `pytest` green on Windows; Linux LIBERO smoke still runs with real-perception wiring.
-- Grep guard test fails if `register_libero_skills` or `register_maniskill_skills` is called from runtime backend wiring.
+- Linux + Colab T4 run reaches `RunResult.success=True` on task 0.
+- Runtime path used for success does not register sim-GT perception skills.
+- Artifacts include branch/SHA, config snapshot, run log, trace path, and optional video path.
 
-**Out of scope for M9**
+### M10 (planned; former M9) — Sim-GT perception removal (strict)
 
-- LIBERO-10 breadth campaign (M10).
-- XLeRobot sim backend (M11).
+Delete runnable sim-GT perception registration and config fallbacks. Real perception becomes the only LIBERO runtime path.
 
-### M10 (planned)
+### M11 (planned; former M10) — LIBERO-10 campaign
 
-**LIBERO-10 campaign — per-task independent success.** Prove long-horizon capability across all ten LIBERO-10 tasks, one task per run (not one monolithic sequential session).
+Run independent per-task evaluations (`task_idx` 0..9), with ledgered artifacts and at least one success per task.
 
-**Scope**
+### M12 (planned; former M11) — XLeRobot-like simulation backend
 
-- Parameterize task selection on the existing long-horizon path (env `LIBERO_TASK_IDX` and/or CLI arg on `examples/long_horizon_llm_libero.py`); default remains task 0 for backward compatibility.
-- Add `examples/libero_10_campaign.py` (or equivalent thin harness) that:
-  - runs **one** task per invocation (`--task-idx N`),
-  - writes per-run artifacts under `campaigns/libero_10/task_<N>/<timestamp>/` (trace, stdout log, config snapshot),
-  - appends/updates a campaign ledger file.
-- Add `colab/m10_libero_10_campaign.ipynb` to launch tasks independently and aggregate results (no requirement to run 0..9 in one Colab session).
-- Perception: real only (post-M9); VLA: SmolVLA (`VLA_POLICY=smolvla`); extend `libero_real_perception.py` object catalogs/heuristics per task as needed.
+Add a simulation backend that mirrors XLeRobot capabilities while preserving the `Runner` + `Backend` contracts.
 
-**Campaign ledger format** (`campaigns/libero_10/ledger.jsonl` — one JSON object per line):
+### M13 (planned; former M12) — Architecture hardening and cleanup
 
-```json
-{
-  "task_suite": "libero_10",
-  "task_idx": 3,
-  "goal": "<task language goal>",
-  "timestamp": "2026-07-09T18:30:00Z",
-  "commit": "<git sha>",
-  "perception_backend": "real",
-  "llm_model": "gpt-4.1-mini",
-  "vla_policy": "smolvla",
-  "status": "done",
-  "success": true,
-  "replans": 0,
-  "steps": 12,
-  "trace_path": "campaigns/libero_10/task_3/20260709_183000/trace.jsonl",
-  "log_path": "campaigns/libero_10/task_3/20260709_183000/run.log",
-  "notes": ""
-}
-```
+Deep architecture review + targeted redundancy deletion before physical hardware milestones.
 
-**Acceptance**
+### M14 (planned; former M13) — Real XLeRobot hardware backend
 
-- **10/10 ledger:** each `task_idx` 0..9 has at least one row with `"success": true`.
-- Tasks are validated independently (re-run/debug one task without rerunning others).
-- Failures remain in the ledger with `"success": false` and `notes` for diagnosis.
+Implement production hardware backend with strict pre-flight and safety gates.
 
-**Out of scope for M10**
+### M15 (planned; former M14) — Real-world XLeRobot task validation
 
-- XLeRobot sim (M11).
-- Open-vocab perception quality beyond task-scoped heuristics.
-
-### M11 (planned)
-
-**XLeRobot-like simulation backend.** Add a sim backend close enough to physical XLeRobot to de-risk hardware bring-up, using the same `Runner` + `Backend` + skill contracts as LIBERO.
-
-**Target platform (from existing HW code)**
-
-- Mobile base (forward/back/turn/strafe) + SO-100 follower arm(s) — see `src/robots/XLeRobot/` (`ServoController`, LeRobot `SOFollowerConfig`, `RobotClient`).
-- Existing HW demos (`examples/0_xlerobot_*.py`–`examples/3_xlerobot_*.py`) use the legacy `LLMAgent` tool loop; M11 adds a **`Backend` implementation** so the M4–M10 planner/executor path can run on XLeRobot-like sim.
-
-**Proposed scope**
-
-- `src/sim/xlerobot_sim_backend.py` (name TBD): implements `Backend` — `register_skills`, `capture_image`, `success`, `close`.
-- Reuse or wrap a sim whose kinematics/control resemble XLeRobot (candidate: LeRobot/ManiSkill env with mobile manipulator; exact env id chosen at implementation scoping).
-- Skills: navigation + arm manipulation via VLA HTTP (same contract as LIBERO); perception from RGB only (no sim-GT).
-- `examples/long_horizon_xlerobot_sim.py`: thin script mirroring `long_horizon_llm_libero.py`.
-
-**First success task (initial target)**
-
-- **Pick-and-deliver on a tabletop:** "pick up the object in front of the robot and place it in the bin" — single object, fixed layout, success via sim contact/placement checker (backend-owned, same pattern as `LiberoSuccessChecker`).
-
-**Acceptance**
-
-- At least one end-to-end success on the first success task with `Runner` + LLM planner + real-perception skills + VLA in the loop.
-- LIBERO path unchanged and still passing `pytest`.
-- Colab notebook optional; Linux + GPU primary.
-
-**Out of scope for M11**
-
-- Real hardware (M13–M14).
-- Voice/wakeword stack from existing XLeRobot demos.
-
-### M12 (planned)
-
-**Architecture hardening + redundancy cleanup.** Deep agent-based review and targeted deletion before hardware milestones.
-
-**Scope**
-
-- Run structured architecture review on the branch diff since M8 (agent subagent, readonly) against:
-  - `src/core/**` OS/HW agnosticism,
-  - `src/vla/**` sim-agnostic rule,
-  - backend boundary (`Backend` protocol, skill registration),
-  - no dead wrappers left from M9–M11.
-- Triage findings into: fix now / defer with SRD note / reject.
-- Remove redundant code identified in review (not broad rewrites).
-- Resolve or gate remaining sim-GT arm helpers flagged in M9.
-
-**Review loop (per milestone boundary + deep pass at M12)**
-
-1. Implementer lands milestone diff.
-2. Spawn readonly architecture reviewer on `git diff` vs base; prompt includes workspace rules from `.cursor/rules/*.mdc` and milestone acceptance criteria.
-3. Blocking findings → Implementer fix pass → re-review until no blockers.
-4. Record deferred items in SRD or a short `docs/architecture-debt.md` (create only if needed).
-
-**Acceptance**
-
-- No known `core` → sim/robot import violations.
-- Review findings triaged; all blockers fixed or explicitly deferred with rationale.
-- `pytest` green; no new dead registration paths.
-
-**Out of scope for M12**
-
-- Feature additions beyond cleanup/guards.
-
-### M13 (planned)
-
-**Real XLeRobot hardware backend.** Productionize physical robot integration behind the `Backend` protocol.
-
-**Scope**
-
-- `src/robots/XLeRobot/xlerobot_backend.py` (or `src/robots/xlerobot_backend.py`): `Backend` implementation wrapping existing `ServoController`, cameras (`RobotCamera` / OpenCV), and arm VLA client (`create_vla_single_arm_manipulation` patterns from `examples/3_xlerobot_arm_manipulation.py`).
-- Config-driven device paths (`ROBOCREW_CAMERA`, `ROBOCREW_USB_*`) — no hard-coded `/dev/*` in `core`.
-- Optional HW deps lazy-imported; Linux-only.
-- Migrate one example to `Runner().run(XLeRobotBackend(), goal)` (keep legacy demos until deprecated explicitly).
-
-**Safety protocol (required before any motion test)**
-
-1. **Pre-flight checklist (manual, logged):** estop reachable, workspace clear, battery OK, cameras/stream alive, arm/home within soft limits, VLA/LLM services healthy (`/health`).
-2. **Speed/mode gates:** first runs in precision/low-speed mode (`go_to_precision_mode`); no strafe/fast navigation until dry-runs pass.
-3. **Bounded motion:** env caps on max distance/angle per skill call; step budget and replan caps unchanged from planner defaults.
-4. **Abort conditions:** human estop, watchdog timeout, repeated VLA stagnation, perception empty for N consecutive steps → `status=stopped`, log reason.
-5. **Logging:** mandatory trace + video/frame capture for every HW run under `traces/hw/` and `videos/hw/`.
-
-**Acceptance**
-
-- Controlled dry-run: base moves + arm VLA loop complete without safety abort.
-- `pytest` green on Windows (HW paths mocked); Linux HW integration marked `pytest -m integration` and skipped without robot.
-
-**Out of scope for M13**
-
-- Full task success in the real world (M14).
-
-### M14 (planned)
-
-**Real-world XLeRobot task validation.**
-
-**Scope**
-
-- Define one concrete task aligned with M11 sim task: **pick object from table, place in bin** (same language goal where possible).
-- Repeatability protocol: 3 attempted runs minimum; report success rate; single full success required for milestone pass.
-- Evidence bundle per run: trace JSONL, stdout log, video, config snapshot, failure taxonomy if unsuccessful.
-
-**Pass/fail rubric**
-
-| Criterion | Pass |
-|-----------|------|
-| Task completion | Object in bin, stable placement ≥ 2 s |
-| Safety | No estop, no manual intervention mid-run |
-| Autonomy | Single `Runner` invocation; replans ≤ default cap |
-| Perception | No sim-GT; RGB-only skills |
-| Evidence | Trace + video archived under `campaigns/xlerobot_hw/` |
-
-**Acceptance**
-
-- At least **one** full success run under the protocol above.
-- Ledger row in `campaigns/xlerobot_hw/ledger.jsonl` (same schema as M10 with `task_suite: "xlerobot_hw"`).
-
-**Out of scope for M14**
-
-- Multi-task HW campaign.
-- Production deployment / CI on robot.
+At least one full autonomous success on the physical robot with archived evidence.
 
 ---
 
 ## Validation tooling (Colab)
 
-Linux milestone acceptance runs via notebooks in `colab/`:
+Colab notebooks are **launchers only**.
 
-| Notebook | Milestone |
-|----------|-----------|
-| `colab/m5_handcrafted_libero.ipynb` | M5 handcrafted plan |
-| `colab/m6_llm_libero.ipynb` | M6 LLM plan (sim-GT perception; legacy) |
-| `colab/m7_real_perception_libero.ipynb` | M7 real perception E2E + SmolVLA VLA validation (task 0) |
-| `colab/m10_libero_10_campaign.ipynb` | M10 per-task campaign (planned) |
+- Notebook responsibilities:
+  1. collect secrets/env,
+  2. clone/sync repo and install deps,
+  3. start/poll required services,
+  4. run exactly one script under `scripts/colab/**`,
+  5. print artifact locations and pass/fail summary.
+- Experiment orchestration, sweeps, and verdict logic belong in Python scripts, not notebook cells.
 
-Each notebook is self-contained and ephemeral-safe: no Google Drive dependency; the repo is cloned to `/content/Longor` on the Colab VM and deps are installed into the VM's local disk on each session. `.venv` is created with `--system-site-packages` to inherit Colab's pre-installed CUDA PyTorch; `.vla-venv` is fully isolated. The VLA server runs as a background subprocess; the notebook polls `/health` before proceeding. M7+ notebooks require `GITHUB_BRANCH` and sync to `origin/<GITHUB_BRANCH>` (not silent `main` when validating a pre-merge branch).
+**Script artifact contract**
 
-**How to run (default: Cursor IDE + Colab GPU runtime)**
+Every Colab-launched script must emit:
 
-Most development runs these notebooks from **Cursor** connected to a remote Colab Linux+CUDA kernel — not the colab.google.com web UI. Cursor has **no Colab Secrets panel**; section 1 reads `os.environ` and prompts for secrets inline.
+- artifact root: `artifacts/colab/<milestone>/<run_id>/`,
+- `summary.json` with: `run_id`, `milestone`, `timestamp_utc`, `git_branch`, `git_sha`, `entrypoint`, `argv`, non-secret `env_snapshot`, `status`, `reason`, metrics, artifact paths,
+- `run.log`,
+- process exit code `0` on pass, non-zero on fail.
 
-| Variable | Cursor IDE (default) | colab.google.com (secondary) |
-|----------|----------------------|------------------------------|
-| `GITHUB_BRANCH` | Edit the `GITHUB_BRANCH = '…'` line at the top of section 1 in the notebook | Colab Secrets, or the same inline line |
-| `GITHUB_TOKEN` | `getpass` prompt when section 1 runs | Colab Secrets, or the same `getpass` prompt |
-| Other API keys (e.g. `OPENAI_API_KEY`) | `getpass` or `os.environ[…]` in section 1 | Colab Secrets, or the same inline pattern |
+**Notebook-to-script mapping (planned target state)**
 
-Never commit tokens into notebook cells. When the milestone under test is already on `origin/main`, set `GITHUB_BRANCH='main'`. Use a feature branch only when validating unpushed or pre-merge work.
+| Notebook | Script |
+|----------|--------|
+| `colab/m7_wiring_probe.ipynb` | `scripts/colab/m7_wiring_probe.py` |
+| `colab/m9_real_perception_task0.ipynb` | `scripts/colab/m9_real_perception_task0.py` |
+| `colab/m11_libero_10_campaign.ipynb` | `scripts/colab/m11_libero_10_campaign.py` |
+
+Legacy notebooks remain temporary until migration to the launcher model is complete.
 
 ## VLA integration — architecture
 

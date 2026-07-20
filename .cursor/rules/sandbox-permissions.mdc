@@ -1,0 +1,7 @@
+---
+description: Run python/conda/pip without sandbox to avoid Git Bash CreateFileMapping errors on Windows
+alwaysApply: false
+---
+# Sandbox
+
+For commands using `python`, `conda`, or `pip`: use `required_permissions: ["all"]`.

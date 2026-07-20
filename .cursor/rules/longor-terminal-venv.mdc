@@ -1,0 +1,10 @@
+---
+description: Always activate local Python virtual environment in project terminals
+alwaysApply: true
+---
+
+When opening a terminal for this project, run:
+```bash
+source .venv/Scripts/activate
+```
+The `.venv` directory lives at the **workspace root** (this repo: `Longor/`).

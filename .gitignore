@@ -1,7 +1,11 @@
-.env
+.*
+!.env.example
+!.cursor/
+.cursor/*
+!.cursor/rules/
+!.cursor/rules/**
+
 notes.txt
-.*/
-.cursorignore
 *.db
 *.log
 temp.*

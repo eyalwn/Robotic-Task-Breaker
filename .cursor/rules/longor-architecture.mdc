@@ -1,0 +1,21 @@
+---
+description: Longor architecture boundaries and backend contract guardrails
+alwaysApply: true
+---
+
+# Longor architecture boundaries
+
+- `SRD.md` is the single source of truth for milestones and backend contract.
+- If a change needs a backend contract change, stop and propose the contract update first.
+- `src/core/**` must stay OS/HW-agnostic: no `/dev/*`, `/sys/*`, `udevadm`, `sudo`, serial ports, or direct hardware SDK calls.
+- Hardware/simulation integrations live in backend packages (`src/**/robots/**`, `src/sim/**`, or dedicated `backends/`).
+- Select backend via config/env (for example `BACKEND=maniskill`). Do not hard-code device paths or Linux-only runtime commands in runnable examples.
+- HW-only dependencies must stay optional (lazy imports and optional requirements files).
+- When adding a new robot/sim, implement backend adapters + tool factories first; keep core orchestration unchanged unless strictly necessary.
+
+## Debugging boundaries (strict)
+
+- During debugging milestones, treat `src/core/**` as frozen by default. Change it only after a minimal reproducer proves the defect is in core.
+- Keep backend-specific motion heuristics, perception heuristics, and evaluator tuning in backend/service layers (`src/sim/**`, `src/robots/**`, `services/**`), not in `src/core/**`.
+- `src/vla/**` must remain a thin client/tool layer; do not add benchmark-specific verdict engines or campaign logic there.
+- If a milestone claims real-perception behavior, runtime paths must not silently fall back to sim-GT. Any temporary fallback must be explicit, opt-in, and documented in `SRD.md`.
