@@ -159,46 +159,143 @@ def _gripper_qpos_for_state(grip: "np.ndarray", target_len: int = 2) -> "np.ndar
     return padded
 
 
-def _agent_state_from_obs(obs: Any) -> "np.ndarray | None":
-    """Extract the 8-dim proprioceptive state from a LIBERO obs dict.
+# SmolVLA LIBERO (HuggingFaceVLA/smolvla_libero) trains on 8D proprio from
+# LeRobot LiberoProcessorStep: eef_pos(3) + axis_angle(3) + gripper_qpos(2).
+# Default ``eef_axis_angle`` matches that layout; axis[0]≈π can be a valid EE pose.
+_VALID_LIBERO_VLA_STATE_MODES = ("eef_axis_angle", "agent_pos", "joints_gripper")
 
-    Matches OpenPI libero eval: concat(eef_pos[3], quat2axisangle(quat)[3], gripper_qpos).
-    Priority:
-      1. robot_state eef pos (3) + axis-angle (3) + gripper qpos (2, padded if needed)
-      2. LeRobot top-level ``agent_pos`` when already 8-dim (legacy)
-    Returns None if neither format is available.
-    """
+
+def _libero_vla_state_debug_enabled() -> bool:
+    raw = os.environ.get("LIBERO_VLA_STATE_DEBUG", "").strip().lower()
+    return raw in ("1", "true", "yes", "on")
+
+
+def _libero_vla_state_mode() -> str:
+    raw = os.environ.get("LIBERO_VLA_STATE_MODE", "eef_axis_angle").strip().lower()
+    if raw in _VALID_LIBERO_VLA_STATE_MODES:
+        return raw
+    logger.warning(
+        "Unknown LIBERO_VLA_STATE_MODE=%r; using eef_axis_angle", raw
+    )
+    return "eef_axis_angle"
+
+
+def _agent_state_eef_axis_angle(obs: dict) -> "np.ndarray | None":
+    """eef_pos(3) + axis-angle(3) + gripper qpos(2) — OpenPI-style proprio."""
     import numpy as np
 
+    rs = obs.get("robot_state")
+    if not isinstance(rs, dict):
+        return None
+    gripper = rs.get("gripper") or {}
+    eef = rs.get("eef") or {}
+    pos = np.asarray(eef.get("pos", []), dtype=np.float32).flatten()
+    quat = np.asarray(eef.get("quat", []), dtype=np.float32).flatten()
+    grip = np.asarray(gripper.get("qpos", []), dtype=np.float32).flatten()
+    if pos.size == 3 and quat.size == 4:
+        axis = _quat2axisangle(quat)
+        grip_part = _gripper_qpos_for_state(grip, target_len=2)
+        return np.concatenate([pos, axis, grip_part])
+    return None
+
+
+def _agent_state_agent_pos(obs: dict) -> "np.ndarray | None":
+    """LeRobot top-level ``agent_pos`` when already 8-dim."""
+    import numpy as np
+
+    agent_pos = obs.get("agent_pos")
+    if agent_pos is None:
+        return None
+    arr = np.asarray(agent_pos, dtype=np.float32).flatten()
+    if arr.size == 8:
+        return arr
+    return None
+
+
+def _agent_state_joints_gripper(obs: dict) -> "np.ndarray | None":
+    """7 joint angles + 1 gripper qpos — LeRobot/OpenPI LIBERO training layout."""
+    import numpy as np
+
+    rs = obs.get("robot_state")
+    if not isinstance(rs, dict):
+        return None
+    joints = rs.get("joints") or {}
+    gripper = rs.get("gripper") or {}
+    jpos = np.asarray(joints.get("pos", []), dtype=np.float32).flatten()
+    grip = np.asarray(gripper.get("qpos", []), dtype=np.float32).flatten()
+    if jpos.size != 7:
+        return None
+    grip_val = float(grip[0]) if grip.size >= 1 else 0.0
+    return np.concatenate([jpos, [grip_val]]).astype(np.float32)
+
+
+def _compare_agent_state_sources(obs: Any) -> dict[str, Any]:
+    """Compare eef_axis_angle (robot_state) vs top-level agent_pos when present."""
+    import numpy as np
+
+    active_mode = _libero_vla_state_mode()
+    if not isinstance(obs, dict):
+        return {
+            "active_mode": active_mode,
+            "eef_axis_angle": None,
+            "agent_pos": None,
+            "max_abs_diff": None,
+            "l2_diff": None,
+        }
+
+    u = _unbatch_obs(obs)
+    eef = _agent_state_eef_axis_angle(u)
+    ap = _agent_state_agent_pos(u)
+    result: dict[str, Any] = {
+        "active_mode": active_mode,
+        "eef_axis_angle": None if eef is None else eef.astype(np.float32).tolist(),
+        "agent_pos": None if ap is None else ap.astype(np.float32).tolist(),
+        "max_abs_diff": None,
+        "l2_diff": None,
+    }
+    if eef is not None and ap is not None:
+        diff = np.asarray(eef, dtype=np.float64) - np.asarray(ap, dtype=np.float64)
+        result["max_abs_diff"] = float(np.max(np.abs(diff)))
+        result["l2_diff"] = float(np.linalg.norm(diff))
+    return result
+
+
+def _log_agent_state_source_comparison(obs: Any) -> None:
+    """Log side-by-side proprio sources when LIBERO_VLA_STATE_DEBUG=1."""
+    cmp = _compare_agent_state_sources(obs)
+    fmt = lambda v: "?" if v is None else [f"{x:+.4f}" for x in v]
+    logger.info(
+        "LIBERO state parity mode=%s eef_axis_angle=%s agent_pos=%s "
+        "max_abs_diff=%s l2_diff=%s",
+        cmp["active_mode"],
+        fmt(cmp["eef_axis_angle"]),
+        fmt(cmp["agent_pos"]),
+        "?" if cmp["max_abs_diff"] is None else f"{cmp['max_abs_diff']:.6f}",
+        "?" if cmp["l2_diff"] is None else f"{cmp['l2_diff']:.6f}",
+    )
+
+
+def _agent_state_from_obs(
+    obs: Any,
+    mode: str | None = None,
+) -> "np.ndarray | None":
+    """Extract 8-dim proprio for VLA conditioning (mode via LIBERO_VLA_STATE_MODE)."""
     if not isinstance(obs, dict):
         return None
 
-    rs = obs.get("robot_state")
-    if isinstance(rs, dict):
-        gripper = rs.get("gripper") or {}
-        eef = rs.get("eef") or {}
-        pos = np.asarray(eef.get("pos", []), dtype=np.float32).flatten()
-        quat = np.asarray(eef.get("quat", []), dtype=np.float32).flatten()
-        grip = np.asarray(gripper.get("qpos", []), dtype=np.float32).flatten()
-        if pos.size == 3 and quat.size == 4:
-            axis = _quat2axisangle(quat)
-            grip_part = _gripper_qpos_for_state(grip, target_len=2)
-            return np.concatenate([pos, axis, grip_part])
-
-    agent_pos = obs.get("agent_pos")
-    if agent_pos is not None:
-        arr = np.asarray(agent_pos, dtype=np.float32).flatten()
-        if arr.size == 8:
-            return arr
-
-    return None
+    selected = mode if mode is not None else _libero_vla_state_mode()
+    if selected == "agent_pos":
+        return _agent_state_agent_pos(obs)
+    if selected == "joints_gripper":
+        return _agent_state_joints_gripper(obs)
+    return _agent_state_eef_axis_angle(obs)
 
 
 _HORIZON_ATTRS = ("_max_episode_steps", "horizon", "max_episode_steps")
 
 
-def _log_episode_horizon(vec: Any) -> None:
-    """Discover episode length limit by walking the env wrapper chain."""
+def _discover_episode_horizon(vec: Any) -> tuple[int | None, str | None]:
+    """Return (horizon, source_path) by walking env wrappers."""
     env = vec
     if hasattr(env, "envs") and env.envs:
         env = env.envs[0]
@@ -210,15 +307,11 @@ def _log_episode_horizon(vec: Any) -> None:
             if hasattr(env, attr):
                 value = getattr(env, attr, None)
                 if value is not None:
-                    source = (
-                        ".".join(path_parts + [attr]) if path_parts else attr
-                    )
-                    logger.debug(
-                        "LIBERO episode horizon: %s (source=%s)",
-                        value,
-                        source,
-                    )
-                    return
+                    source = ".".join(path_parts + [attr]) if path_parts else attr
+                    try:
+                        return int(value), source
+                    except Exception:
+                        return None, source
         oid = id(env)
         if oid in visited:
             break
@@ -232,8 +325,23 @@ def _log_episode_horizon(vec: Any) -> None:
         if inner is None:
             break
         env = inner
+    return None, None
 
-    logger.debug("LIBERO episode horizon: unknown (source=none)")
+
+def _log_episode_horizon(vec: Any) -> None:
+    """Discover episode length limit by walking the env wrapper chain."""
+    value, source = _discover_episode_horizon(vec)
+    if value is not None:
+        logger.debug(
+            "LIBERO episode horizon: %s (source=%s)",
+            value,
+            source,
+        )
+        return
+    logger.debug(
+        "LIBERO episode horizon: unknown (source=%s)",
+        source or "none",
+    )
 
 
 def create_env(
@@ -397,6 +505,7 @@ class LiberoArm:
         scale = float(os.environ.get("LIBERO_EE_DELTA_SCALE", "1.0"))
         self._pos_scale = scale
         self.last_ik_debug: dict = {}
+        self.last_osc_action: "np.ndarray | None" = None
         self.last_info: dict[str, Any] = {}
         self.last_tcp_pos: list[float] | None = None
         self.last_obj_pos: list[float] | None = None
@@ -404,6 +513,8 @@ class LiberoArm:
         self.last_obs: Any = None
         self.episode_done = False
         self.env_step_count = 0
+        self._episode_horizon, self._episode_horizon_source = _discover_episode_horizon(env)
+        self._episode_reset_margin = int(os.environ.get("LIBERO_EPISODE_RESET_MARGIN", "20"))
         video_path = os.environ.get("LONGOR_VIDEO_OUT", "").strip()
         self._video: VideoRecorder | None = (
             VideoRecorder(video_path) if video_path else None
@@ -419,6 +530,25 @@ class LiberoArm:
             dummy[0, 6] = -1.0
             self._rollout(dummy, steps=settle_steps)
         logger.debug("LiberoArm: pos_scale=%.3f settle_steps=%d", self._pos_scale, settle_steps)
+
+    def _reset_episode(self, reason: str) -> None:
+        seed = getattr(self._env, "_longor_seed", 0)
+        try:
+            obs, info = self._env.reset(seed=seed)
+        except TypeError:
+            obs, info = self._env.reset(seed=[seed])
+        self.episode_done = False
+        self.env_step_count = 0
+        self.last_obs = _unbatch_obs(obs)
+        self.last_info = _first_env_info(info) if isinstance(info, dict) else {}
+        self._update_positions_from_obs(self.last_obs)
+        logger.info(
+            "LiberoArm: reset episode (%s) seed=%s horizon=%s source=%s",
+            reason,
+            seed,
+            self._episode_horizon if self._episode_horizon is not None else "?",
+            self._episode_horizon_source or "unknown",
+        )
 
     def _record(self, obs: Any) -> None:
         if self._video is None:
@@ -468,6 +598,13 @@ class LiberoArm:
         state = _agent_state_from_obs(_unbatch_obs(self.last_obs))
         return state if state is not None else np.zeros(8, dtype=np.float32)
 
+    def maybe_log_vla_state_parity(self, step: int) -> None:
+        """At VLA step 0, log eef_axis_angle vs agent_pos when debug env is set."""
+        if step != 0 or not _libero_vla_state_debug_enabled():
+            return
+        if self.last_obs is not None:
+            _log_agent_state_source_comparison(self.last_obs)
+
     def move_ee(self, dx: float, dy: float, dz: float, steps: int | None = None) -> None:
         import numpy as np
 
@@ -481,6 +618,26 @@ class LiberoArm:
         act[0, :3] = d
         act[0, 3:6] = 0.0
         act[0, 6] = self._gripper_value
+        self.last_osc_action = act[0].copy()
+        self._rollout(act, steps=steps or self._STEPS_PER_CALL)
+
+    def apply_policy_action(
+        self,
+        action: "Sequence[float]",
+        steps: int | None = None,
+    ) -> None:
+        """Apply a 7-dim policy action exactly as LeRobot eval passes to env.step."""
+        import numpy as np
+
+        self.last_ik_debug = {"cause": "policy_direct"}
+        act = self._zero_act.copy()
+        clipped = np.clip(
+            np.asarray(action, dtype=np.float32).reshape(-1)[:7],
+            -1.0,
+            1.0,
+        )
+        act[0, :7] = clipped
+        self.last_osc_action = act[0].copy()
         self._rollout(act, steps=steps or self._STEPS_PER_CALL)
 
     def apply_vla_action(
@@ -497,17 +654,15 @@ class LiberoArm:
         """Apply a full 7-DOF OSC delta action (OpenPI LIBERO eval path)."""
         import numpy as np
 
-        self.last_ik_debug = {"cause": "osc_direct"}
-        act = self._zero_act.copy()
         deltas = np.clip(
             self._pos_scale
             * np.array([dx, dy, dz, drx, dry, drz], dtype=np.float32),
             -1.0,
             1.0,
         )
-        act[0, :6] = deltas
-        act[0, 6] = float(np.clip(grip, -1.0, 1.0))
-        self._rollout(act, steps=steps or self._STEPS_PER_CALL)
+        grip_clipped = float(np.clip(grip, -1.0, 1.0))
+        self.apply_policy_action([*deltas, grip_clipped], steps=steps)
+        self.last_ik_debug = {"cause": "osc_direct"}
 
     def set_gripper(self, state: str, steps: int | None = None) -> None:
         if state not in ("open", "close"):
@@ -773,7 +928,20 @@ class LiberoArm:
             self._rollout(self._open_gripper_act(), steps=settle_steps)
 
     def reset_to_initial(self) -> None:
-        logger.warning("LiberoArm.reset_to_initial() not implemented for LIBERO")
+        if self.episode_done:
+            self._reset_episode("episode_done")
+            return
+        if self._episode_horizon is not None:
+            threshold = max(0, self._episode_horizon - self._episode_reset_margin)
+            if self.env_step_count >= threshold:
+                self._reset_episode("near_horizon")
+                return
+        logger.debug(
+            "LiberoArm.reset_to_initial(): no-op (step=%d horizon=%s done=%s)",
+            self.env_step_count,
+            self._episode_horizon if self._episode_horizon is not None else "?",
+            self.episode_done,
+        )
 
 
 class LiberoBackend:
@@ -802,15 +970,16 @@ class LiberoBackend:
         os.environ.setdefault("VLA_STEPS_PER_ACTION", "1")
         os.environ.setdefault("VLA_ADAPTIVE_SCALE", "false")
         os.environ.setdefault("VLA_CHUNK_STEPS", "5")
-        os.environ.setdefault("VLA_STAGNATION_CHUNKS", "20")
+        # Keep LIBERO loops responsive: fail fast on non-improving motion.
+        os.environ.setdefault("VLA_STAGNATION_CHUNKS", "8")
         os.environ.setdefault("LIBERO_SETTLE_STEPS", "10")
-        os.environ.setdefault("VLA_FAIL_WORSENING_STEPS", "200")
+        os.environ.setdefault("VLA_FAIL_WORSENING_STEPS", "40")
         os.environ.setdefault("VLA_PROXIMITY_GRASP", "false")
         os.environ.setdefault("VLA_GRIPPER_CONFIDENCE", "0.5")
-        os.environ.setdefault("VLA_MAX_INNER_STEPS", "200")
-        os.environ.setdefault("VLA_FAIL_DIST_CONSECUTIVE_STEPS", "200")
-        os.environ.setdefault("VLA_FAIL_IK_SATURATION_STEPS", "200")
-        os.environ.setdefault("VLA_MAX_TOOL_SECONDS", "180")
+        os.environ.setdefault("VLA_MAX_INNER_STEPS", "80")
+        os.environ.setdefault("VLA_FAIL_DIST_CONSECUTIVE_STEPS", "40")
+        os.environ.setdefault("VLA_FAIL_IK_SATURATION_STEPS", "20")
+        os.environ.setdefault("VLA_MAX_TOOL_SECONDS", "45")
 
     def register_skills(self, registry, goal: str) -> None:
         from sim.libero_perception import register_libero_perception_skills

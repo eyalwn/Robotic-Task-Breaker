@@ -36,6 +36,16 @@ class _LLM:
         return resp
 
 
+class _SpyLLM(_LLM):
+    def __init__(self, responses):
+        super().__init__(responses)
+        self.calls = []
+
+    def invoke(self, messages):
+        self.calls.append(messages)
+        return super().invoke(messages)
+
+
 def _mock_llm(plan_dict):
     return _LLM([_Response(json.dumps(plan_dict))])
 
@@ -56,6 +66,28 @@ def test_planner_retry_on_invalid(monkeypatch) -> None:
     planner = LLMPlanner(model="fake", max_plan_retries=2)
     plan = planner.plan("pick cube", "catalog")
     assert isinstance(plan, Plan)
+
+
+def test_planner_retry_prompt_does_not_echo_invalid_ai_message(monkeypatch) -> None:
+    invalid = {
+        "goal": "pick the cube",
+        "body": {"kind": "seq", "steps": ["else_branch"]},
+    }
+    spy = _SpyLLM(
+        [
+            _Response(json.dumps(invalid)),
+            _Response(json.dumps(VALID_PLAN)),
+        ]
+    )
+    monkeypatch.setattr("core.plan.llm_planner.init_chat_model", lambda _model: spy)
+    planner = LLMPlanner(model="fake", max_plan_retries=2)
+    plan = planner.plan("pick cube", "catalog")
+
+    assert isinstance(plan, Plan)
+    assert len(spy.calls) == 2
+    second_attempt = spy.calls[1]
+    assert all(type(message).__name__ != "AIMessage" for message in second_attempt)
+    assert "never a bare string like 'else_branch'" in second_attempt[-1].content
 
 
 def test_planner_exhausts_retries(monkeypatch) -> None:

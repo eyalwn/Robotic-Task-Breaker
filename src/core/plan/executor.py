@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 from dataclasses import dataclass
 from typing import Any, Callable
@@ -25,6 +26,45 @@ from .schema import (
 
 
 logger = logging.getLogger(__name__)
+_STATUS_TERMS = {"success", "stopped", "failed", "failure", "done", "error"}
+
+
+def _status_from_value(value: Any) -> str | None:
+    if isinstance(value, dict):
+        status = value.get("status")
+        if isinstance(status, str):
+            return status.strip().lower()
+        return None
+
+    if not isinstance(value, str):
+        return None
+
+    text = value.strip()
+    if not text:
+        return None
+    low = text.lower()
+    if low in _STATUS_TERMS:
+        return low
+    if not (text.startswith("{") and text.endswith("}")):
+        return None
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError:
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    status = parsed.get("status")
+    if isinstance(status, str):
+        return status.strip().lower()
+    return None
+
+
+def _coerce_status_comparison(left: Any, right: Any) -> tuple[Any, Any]:
+    left_status = _status_from_value(left)
+    right_status = _status_from_value(right)
+    if left_status is None or right_status is None:
+        return left, right
+    return left_status, right_status
 
 
 def _log_feedback(node_description: str, prompt: str, outcome: FeedbackOutcome) -> None:
@@ -236,8 +276,10 @@ class Executor:
             right = self._eval(expr.right, ctx)
 
             if expr.op == "==":
+                left, right = _coerce_status_comparison(left, right)
                 return left == right
             if expr.op == "!=":
+                left, right = _coerce_status_comparison(left, right)
                 return left != right
 
             try:

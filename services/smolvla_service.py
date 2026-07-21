@@ -15,8 +15,9 @@ import logging
 import os
 import sys
 import time
+from collections import deque
 from contextlib import asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 import numpy as np
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
@@ -34,6 +35,60 @@ SMOLVLA_CHECKPOINT = os.environ.get(
 IMAGE_SIZE = 256
 
 _policy_bundle: "PolicyBundle | None" = None
+_first_predict_debug_logged = False
+
+def _inactivity_timeout_sec() -> float:
+    return float(os.environ.get("SMOLVLA_INACTIVITY_TIMEOUT_SEC", "60"))
+
+
+def _episode_boundary(task: str, now_mono: float) -> bool:
+    state = _action_queue_state
+    if state.last_task and task != state.last_task:
+        return True
+    timeout = _inactivity_timeout_sec()
+    if (
+        state.last_activity_mono > 0
+        and timeout > 0
+        and now_mono - state.last_activity_mono >= timeout
+    ):
+        return True
+    return False
+
+
+@dataclass
+class _ActionQueueState:
+    """Server-side action queue mirroring lerobot-eval select_action buffering."""
+
+    pending: deque[list[float]] = field(default_factory=deque)
+    last_task: str = ""
+    last_activity_mono: float = 0.0
+
+
+_action_queue_state = _ActionQueueState()
+
+
+def _smolvla_debug_first_predict_enabled() -> bool:
+    raw = os.environ.get("SMOLVLA_DEBUG_FIRST_PREDICT", "").strip().lower()
+    return raw in ("1", "true", "yes", "on")
+
+
+def _maybe_log_first_predict_debug(state_arr: np.ndarray, chunk_np: np.ndarray) -> None:
+    global _first_predict_debug_logged
+    if _first_predict_debug_logged or not _smolvla_debug_first_predict_enabled():
+        return
+    _first_predict_debug_logged = True
+    log.info(
+        "SmolVLA first predict state min=%.4f max=%.4f mean=%.4f",
+        float(state_arr.min()),
+        float(state_arr.max()),
+        float(state_arr.mean()),
+    )
+    log.info(
+        "SmolVLA first predict action chunk min=%.4f max=%.4f mean=%.4f",
+        float(chunk_np.min()),
+        float(chunk_np.max()),
+        float(chunk_np.mean()),
+    )
 
 
 @dataclass
@@ -78,6 +133,45 @@ def build_smolvla_observation(
         "observation.state": state.astype(np.float32, copy=False),
         "task": task,
     }
+
+
+def _serve_batch_size() -> int | None:
+    """Actions to return per /predict; None = drain entire pending queue."""
+    override = os.environ.get("SMOLVLA_ACTIONS_PER_PREDICT", "").strip()
+    if override:
+        value = int(override)
+        return None if value <= 0 else value
+    raw = os.environ.get("VLA_CHUNK_STEPS", "").strip()
+    if not raw or raw == "0":
+        return None
+    return int(raw)
+
+
+def _reset_episode(bundle: PolicyBundle) -> None:
+    bundle.policy.reset()
+    _action_queue_state.pending.clear()
+    log.info("SmolVLA episode reset (task/inactivity boundary)")
+
+
+def _clear_action_queue_state() -> None:
+    """Reset queue/session state (tests and cold-start)."""
+    _action_queue_state.pending.clear()
+    _action_queue_state.last_task = ""
+    _action_queue_state.last_activity_mono = 0.0
+
+
+def _pop_pending_actions(batch_size: int | None) -> list[list[float]]:
+    state = _action_queue_state
+    if not state.pending:
+        return []
+    if batch_size is None:
+        actions = list(state.pending)
+        state.pending.clear()
+        return actions
+    actions: list[list[float]] = []
+    for _ in range(min(batch_size, len(state.pending))):
+        actions.append(state.pending.popleft())
+    return actions
 
 
 def actions_to_wire_format(chunk: np.ndarray) -> list[list[float]]:
@@ -150,7 +244,15 @@ def _prepare_observation_for_inference(
     device: object,
     task: str = "",
 ) -> dict:
-    """HWC uint8 numpy → BCHW float32 tensors (LeRobot inference contract)."""
+    """HWC uint8 numpy → BCHW float32 tensors for LeRobot SmolVLA inference.
+
+    Contract (matches HuggingFaceVLA/smolvla_libero + make_pre_post_processors):
+    - ``observation.images.*``: uint8 HWC → float32 BCHW in [0,1] before preprocessor
+      (preprocessor may apply dataset mean/std on top).
+    - ``observation.state``: float32 (8,) proprio — layout from client (see
+      LIBERO_VLA_STATE_MODE on the sim backend).
+    - ``task`` / ``robot_type``: plain strings; preprocessor tokenizes task.
+    """
     import torch
 
     prepared = {}
@@ -170,7 +272,6 @@ def _prepare_observation_for_inference(
 def _run_inference(bundle: PolicyBundle, obs: dict) -> np.ndarray:
     import torch
 
-    bundle.policy.reset()
     task = obs.pop("task", "")
     obs = _prepare_observation_for_inference(obs, bundle.device, task=task)
     batch = bundle.preprocessor(obs)
@@ -193,6 +294,29 @@ def _run_inference(bundle: PolicyBundle, obs: dict) -> np.ndarray:
         processed.append(bundle.postprocessor(chunk[:, idx, :]))
     stacked = torch.stack(processed, dim=1).squeeze(0)
     return stacked.detach().cpu().numpy()
+
+
+def _predict_actions(bundle: PolicyBundle, obs: dict, task: str) -> np.ndarray:
+    """Serve from queue when possible; infer only on empty queue."""
+    now_mono = time.monotonic()
+    if _episode_boundary(task, now_mono):
+        _reset_episode(bundle)
+
+    batch_size = _serve_batch_size()
+    pending = _pop_pending_actions(batch_size)
+    if pending:
+        _action_queue_state.last_task = task
+        _action_queue_state.last_activity_mono = now_mono
+        return np.array(pending, dtype=np.float32)
+
+    chunk_np = _run_inference(bundle, obs)
+    wire = actions_to_wire_format(chunk_np)
+    _action_queue_state.pending.extend(wire)
+
+    served = _pop_pending_actions(batch_size)
+    _action_queue_state.last_task = task
+    _action_queue_state.last_activity_mono = now_mono
+    return np.array(served, dtype=np.float32)
 
 
 @asynccontextmanager
@@ -254,11 +378,15 @@ async def predict(
     obs = build_smolvla_observation(img_np, task, state_arr, wrist_img_rgb=wrist_np)
 
     try:
-        chunk_np = await asyncio.to_thread(_run_inference, _policy_bundle, obs)
+        chunk_np = await asyncio.to_thread(
+            _predict_actions, _policy_bundle, obs, task
+        )
     except ValueError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"Inference error: {exc}") from exc
+
+    _maybe_log_first_predict_debug(state_arr, chunk_np)
 
     try:
         wire = actions_to_wire_format(chunk_np)

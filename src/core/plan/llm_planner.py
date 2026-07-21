@@ -7,7 +7,7 @@ import re
 from typing import Any
 
 from langchain.chat_models import init_chat_model
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import ValidationError
 
 from .schema import Plan, validate_plan
@@ -40,6 +40,7 @@ Rules:
 - For listing scene objects, use state.list_objects (not list_objects).
 - Insert "feedback" nodes after major actions (grabbing, placing) to evaluate progress.
 - Bind return values with "assign_to" to use in later conditions or the final return.
+- DO NOT compare arm.grab/arm.place outputs to literal strings like "success"; those tools return JSON payload strings. Use feedback nodes to decide success/failure after actions.
 - Keep plans concise (≤20 call nodes). The executor enforces a 30-step hard budget.
 - The plan must be valid JSON matching the schema above.
 
@@ -94,6 +95,17 @@ Replanning notes:
 - CONTINUE means "keep executing this plan", not "verification passed".
 - After a successful grab, proceed to place remaining objects — only return failure in an explicit else branch.\
 """
+
+
+def _retry_prompt(raw: str, error_msg: str) -> str:
+    return (
+        "The plan you emitted is invalid.\n"
+        f"Invalid plan JSON:\n{raw}\n\n"
+        f"Validation error:\n{error_msg}\n\n"
+        "Fix the JSON and respond with ONLY the corrected plan object.\n"
+        "Important: every item in any 'steps' array must be a statement object "
+        "with a 'kind' field (never a bare string like 'else_branch')."
+    )
 
 
 def _strip_code_fences(raw: str) -> str:
@@ -232,13 +244,9 @@ class LLMPlanner:
                         f"Last error: {error_msg}"
                     ) from exc
 
-                messages.append(AIMessage(content=response.content))
                 messages.append(
                     HumanMessage(
-                        content=(
-                            f"The plan you emitted is invalid. Error:\n{error_msg}\n\n"
-                            "Please fix the error and respond with ONLY the corrected plan JSON."
-                        )
+                        content=_retry_prompt(raw=raw, error_msg=error_msg)
                     )
                 )
 

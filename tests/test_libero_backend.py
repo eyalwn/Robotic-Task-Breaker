@@ -17,11 +17,14 @@ from sim.libero_backend import (
     LiberoBackend,
     LiberoCamera,
     _agent_state_from_obs,
+    _compare_agent_state_sources,
+    _libero_vla_state_mode,
     _log_episode_horizon,
     _maybe_flip_libero_vla_frame,
     _quat2axisangle,
     create_env,
 )
+from sim.libero_smoke import apply_smoke_env_defaults
 from sim.libero_success_checker import LiberoSuccessChecker
 
 
@@ -43,6 +46,28 @@ class FakeLiberoEnv(FakeEnv):
 
 def _flatten_act(entry) -> np.ndarray:
     return np.asarray(entry, dtype=np.float64).reshape(-1)
+
+
+def test_apply_policy_action_clips_and_passes_7dim(monkeypatch):
+    monkeypatch.setenv("LIBERO_EE_DELTA_SCALE", "1.0")
+    env = FakeLiberoEnv()
+    arm = LiberoArm(env)
+    arm.apply_policy_action([0.1, 0.2, 0.3, 0.4, 0.5, 0.6, -0.8], steps=1)
+    act = _flatten_act(env.step_calls[-1])
+    assert act[:6] == pytest.approx([0.1, 0.2, 0.3, 0.4, 0.5, 0.6])
+    assert act[6] == pytest.approx(-0.8)
+    assert arm.last_ik_debug == {"cause": "policy_direct"}
+
+
+def test_apply_policy_action_clips_out_of_range(monkeypatch):
+    monkeypatch.setenv("LIBERO_EE_DELTA_SCALE", "1.0")
+    env = FakeLiberoEnv()
+    arm = LiberoArm(env)
+    arm.apply_policy_action([2.0, -3.0, 0.0, 0.0, 0.0, 0.0, 1.5], steps=1)
+    act = _flatten_act(env.step_calls[-1])
+    assert act[0] == pytest.approx(1.0)
+    assert act[1] == pytest.approx(-1.0)
+    assert act[6] == pytest.approx(1.0)
 
 
 def test_apply_vla_action_full_osc_with_rotation(monkeypatch):
@@ -432,6 +457,71 @@ def test_env_step_count_matches_env_steps(monkeypatch):
     assert arm.env_step_count == len(env.step_calls)
 
 
+def test_reset_to_initial_resets_when_episode_done(monkeypatch):
+    monkeypatch.setenv("LIBERO_EE_DELTA_SCALE", "1.0")
+    env = FakeLiberoEnv()
+    reset_calls: list[object] = []
+
+    def _reset(*, seed=None):
+        reset_calls.append(seed)
+        return {"robot_state": {"eef": {"pos": [0.1, 0.2, 0.3], "quat": [0.0, 0.0, 0.0, 1.0]}}}, {}
+
+    env.reset = _reset
+    arm = LiberoArm(env)
+    arm.episode_done = True
+    arm.env_step_count = 123
+
+    arm.reset_to_initial()
+
+    assert reset_calls
+    assert arm.episode_done is False
+    assert arm.env_step_count == 0
+
+
+def test_reset_to_initial_resets_near_horizon(monkeypatch):
+    monkeypatch.setenv("LIBERO_EE_DELTA_SCALE", "1.0")
+    monkeypatch.setenv("LIBERO_EPISODE_RESET_MARGIN", "10")
+    env = FakeLiberoEnv()
+    env.max_episode_steps = 100
+    reset_calls: list[object] = []
+
+    def _reset(*, seed=None):
+        reset_calls.append(seed)
+        return {"robot_state": {"eef": {"pos": [0.0, 0.0, 0.4], "quat": [0.0, 0.0, 0.0, 1.0]}}}, {}
+
+    env.reset = _reset
+    arm = LiberoArm(env)
+    arm.env_step_count = 90
+
+    arm.reset_to_initial()
+
+    assert reset_calls
+    assert arm.env_step_count == 0
+    assert arm.episode_done is False
+
+
+def test_reset_to_initial_noop_when_not_done_and_far_from_horizon(monkeypatch):
+    monkeypatch.setenv("LIBERO_EE_DELTA_SCALE", "1.0")
+    monkeypatch.setenv("LIBERO_EPISODE_RESET_MARGIN", "10")
+    env = FakeLiberoEnv()
+    env.max_episode_steps = 100
+    reset_calls: list[object] = []
+
+    def _reset(*, seed=None):
+        reset_calls.append(seed)
+        return {}, {}
+
+    env.reset = _reset
+    arm = LiberoArm(env)
+    arm.episode_done = False
+    arm.env_step_count = 20
+
+    arm.reset_to_initial()
+
+    assert not reset_calls
+    assert arm.env_step_count == 20
+
+
 def test_rollout_stops_on_episode_termination(monkeypatch):
     monkeypatch.setenv("LIBERO_EE_DELTA_SCALE", "1.0")
     env = FakeLiberoEnv()
@@ -517,7 +607,73 @@ def test_quat2axisangle_90deg_about_z():
     np.testing.assert_allclose(axis, [0.0, 0.0, math.pi / 2], atol=1e-5)
 
 
-def test_agent_state_from_obs_prefers_eef_axis_angle_over_joints_and_agent_pos():
+def test_quat2axisangle_180deg_about_x():
+    """Matches OpenPI/robosuite: π rad about +X → axis-angle [π, 0, 0]."""
+    import math
+
+    axis = _quat2axisangle([1.0, 0.0, 0.0, 0.0])
+    np.testing.assert_allclose(axis, [math.pi, 0.0, 0.0], atol=1e-5)
+
+
+def test_compare_agent_state_sources_matching():
+    state = np.array(
+        [-0.0452, -0.0067, 0.7031, 0.0, 0.0, 0.0, 0.0393, -0.0393],
+        dtype=np.float32,
+    )
+    obs = {
+        "agent_pos": state.tolist(),
+        "robot_state": {
+            "eef": {
+                "pos": state[:3].tolist(),
+                "quat": [0.0, 0.0, 0.0, 1.0],
+            },
+            "gripper": {"qpos": state[6:8].tolist()},
+        },
+    }
+    cmp = _compare_agent_state_sources(obs)
+    assert cmp["eef_axis_angle"] is not None
+    assert cmp["agent_pos"] is not None
+    assert cmp["max_abs_diff"] == pytest.approx(0.0, abs=1e-4)
+    assert cmp["l2_diff"] == pytest.approx(0.0, abs=1e-4)
+
+
+def test_compare_agent_state_sources_agent_pos_absent():
+    obs = {
+        "robot_state": {
+            "eef": {
+                "pos": [0.0, 0.0, 0.5],
+                "quat": [0.0, 0.0, 0.0, 1.0],
+            },
+            "gripper": {"qpos": [0.01, 0.02]},
+        }
+    }
+    cmp = _compare_agent_state_sources(obs)
+    assert cmp["eef_axis_angle"] is not None
+    assert cmp["agent_pos"] is None
+    assert cmp["max_abs_diff"] is None
+    assert cmp["l2_diff"] is None
+
+
+def test_compare_agent_state_sources_reports_diff():
+    obs = {
+        "agent_pos": [0.0] * 8,
+        "robot_state": {
+            "eef": {
+                "pos": [1.0, 0.0, 0.0],
+                "quat": [0.0, 0.0, 0.0, 1.0],
+            },
+            "gripper": {"qpos": [0.0, 0.0]},
+        },
+    }
+    cmp = _compare_agent_state_sources(obs)
+    assert cmp["max_abs_diff"] == pytest.approx(1.0)
+    assert cmp["l2_diff"] == pytest.approx(float(np.sqrt(1.0)))
+
+
+def test_agent_state_from_obs_prefers_eef_axis_angle_over_joints_and_agent_pos(
+    monkeypatch,
+):
+    monkeypatch.setenv("LIBERO_VLA_STATE_MODE", "eef_axis_angle")
     joints = np.array([0.1, -0.2, 0.3, -0.4, 0.5, -0.6, 0.7], dtype=np.float32)
     gripper_qpos = np.array([0.0123, 0.0456], dtype=np.float32)
     agent_pos = np.array([1.0, 2.0, 3.0, 0.0, 0.0, 0.0, 1.0, 0.99], dtype=np.float32)
@@ -541,7 +697,8 @@ def test_agent_state_from_obs_prefers_eef_axis_angle_over_joints_and_agent_pos()
     np.testing.assert_allclose(got, expected)
 
 
-def test_agent_state_from_obs_uses_agent_pos_when_no_joints():
+def test_agent_state_from_obs_uses_agent_pos_when_no_joints(monkeypatch):
+    monkeypatch.setenv("LIBERO_VLA_STATE_MODE", "agent_pos")
     expected = np.arange(8, dtype=np.float32)
     obs = {"agent_pos": expected.tolist()}
     got = _agent_state_from_obs(obs)
@@ -602,6 +759,105 @@ def test_agent_state_from_obs_returns_none_for_missing_or_invalid(obs):
     assert _agent_state_from_obs(obs) is None
 
 
+def test_libero_vla_state_mode_defaults_to_eef_axis_angle(monkeypatch):
+    monkeypatch.delenv("LIBERO_VLA_STATE_MODE", raising=False)
+    assert _libero_vla_state_mode() == "eef_axis_angle"
+
+
+def test_libero_vla_state_mode_unknown_falls_back(monkeypatch):
+    monkeypatch.setenv("LIBERO_VLA_STATE_MODE", "bogus")
+    assert _libero_vla_state_mode() == "eef_axis_angle"
+
+
+def test_libero_arm_maybe_log_vla_state_parity(monkeypatch, caplog):
+    monkeypatch.setenv("LIBERO_EE_DELTA_SCALE", "1.0")
+    monkeypatch.setenv("LIBERO_SETTLE_STEPS", "0")
+    monkeypatch.setenv("LIBERO_VLA_STATE_DEBUG", "1")
+    env = FakeLiberoEnv()
+    arm = LiberoArm(env)
+    arm.last_obs = {
+        "agent_pos": [0.1, 0.2, 0.3, 0.0, 0.0, 0.0, 1.0, -1.0],
+        "robot_state": {
+            "eef": {"pos": [0.1, 0.2, 0.3], "quat": [0.0, 0.0, 0.0, 1.0]},
+            "gripper": {"qpos": [1.0, -1.0]},
+        },
+    }
+    with caplog.at_level(logging.INFO, logger="sim.libero_backend"):
+        arm.maybe_log_vla_state_parity(0)
+        arm.maybe_log_vla_state_parity(1)
+    parity = [r.message for r in caplog.records if "LIBERO state parity" in r.message]
+    assert len(parity) == 1
+    assert "eef_axis_angle=" in parity[0]
+    assert "agent_pos=" in parity[0]
+
+
+def test_agent_state_joints_gripper_mode():
+    joints = np.array([0.1, -0.2, 0.3, -0.4, 0.5, -0.6, 0.7], dtype=np.float32)
+    gripper_qpos = np.array([0.0123, 0.0456], dtype=np.float32)
+    obs = {
+        "robot_state": {
+            "joints": {"pos": joints},
+            "gripper": {"qpos": gripper_qpos},
+        }
+    }
+    got = _agent_state_from_obs(obs, mode="joints_gripper")
+    assert got is not None
+    expected = np.concatenate([joints, [gripper_qpos[0]]]).astype(np.float32)
+    np.testing.assert_allclose(got, expected)
+
+
+def test_agent_state_joints_gripper_mode_ignores_eef():
+    obs = {
+        "robot_state": {
+            "eef": {
+                "pos": [9.0, 9.0, 9.0],
+                "quat": [0.0, 0.0, 0.0, 1.0],
+            },
+            "joints": {"pos": [0.0] * 7},
+            "gripper": {"qpos": [0.5]},
+        }
+    }
+    got = _agent_state_from_obs(obs, mode="joints_gripper")
+    assert got is not None
+    np.testing.assert_allclose(
+        got,
+        np.array([0.0] * 7 + [0.5], dtype=np.float32),
+    )
+
+
+def test_agent_state_agent_pos_mode_ignores_robot_state_eef():
+    agent_pos = np.arange(8, dtype=np.float32)
+    obs = {
+        "agent_pos": agent_pos.tolist(),
+        "robot_state": {
+            "eef": {
+                "pos": [9.0, 9.0, 9.0],
+                "quat": [0.0, 0.0, 0.0, 1.0],
+            },
+            "gripper": {"qpos": [0.0, 0.0]},
+        },
+    }
+    got = _agent_state_from_obs(obs, mode="agent_pos")
+    np.testing.assert_allclose(got, agent_pos)
+
+
+def test_libero_arm_agent_state_respects_env_mode(monkeypatch):
+    monkeypatch.setenv("LIBERO_EE_DELTA_SCALE", "1.0")
+    monkeypatch.setenv("LIBERO_VLA_STATE_MODE", "joints_gripper")
+    env = FakeLiberoEnv()
+    arm = LiberoArm(env)
+    joints = np.array([0.1, -0.2, 0.3, -0.4, 0.5, -0.6, 0.7], dtype=np.float32)
+    arm.last_obs = {
+        "robot_state": {
+            "joints": {"pos": joints},
+            "gripper": {"qpos": [0.42, 0.43]},
+        }
+    }
+    got = arm.agent_state
+    expected = np.concatenate([joints, [0.42]]).astype(np.float32)
+    np.testing.assert_allclose(got, expected)
+
+
 def test_libero_arm_agent_state_returns_zeros_when_last_obs_none(monkeypatch):
     monkeypatch.setenv("LIBERO_EE_DELTA_SCALE", "1.0")
     env = FakeLiberoEnv()
@@ -623,6 +879,23 @@ def test_set_target_object_sets_last_obj_pos(monkeypatch):
     assert arm.last_obj_pos == pytest.approx([0.1, 0.2, 0.448])
     arm._update_positions_from_obs(arm.last_obs)
     assert arm.last_obj_pos == pytest.approx([0.1, 0.2, 0.448])
+
+
+def test_apply_smoke_env_defaults(monkeypatch):
+    for key in (
+        "LIBERO_OBSERVATION_HEIGHT",
+        "LIBERO_OBSERVATION_WIDTH",
+        "VLA_CHUNK_STEPS",
+        "LIBERO_VLA_IMAGE_FLIP",
+        "LIBERO_VLA_STATE_MODE",
+    ):
+        monkeypatch.delenv(key, raising=False)
+    apply_smoke_env_defaults()
+    assert os.environ.get("LIBERO_OBSERVATION_HEIGHT") == "256"
+    assert os.environ.get("LIBERO_OBSERVATION_WIDTH") == "256"
+    assert os.environ.get("VLA_CHUNK_STEPS") == "10"
+    assert os.environ.get("LIBERO_VLA_IMAGE_FLIP") == "1"
+    assert os.environ.get("LIBERO_VLA_STATE_MODE") is None
 
 
 def test_libero_backend_apply_env_defaults(monkeypatch):
@@ -655,15 +928,15 @@ def test_libero_backend_apply_env_defaults(monkeypatch):
     assert os.environ.get("VLA_STEPS_PER_ACTION") == "1"
     assert os.environ.get("VLA_ADAPTIVE_SCALE") == "false"
     assert os.environ.get("VLA_CHUNK_STEPS") == "5"
-    assert os.environ.get("VLA_STAGNATION_CHUNKS") == "20"
+    assert os.environ.get("VLA_STAGNATION_CHUNKS") == "8"
     assert os.environ.get("LIBERO_SETTLE_STEPS") == "10"
-    assert os.environ.get("VLA_FAIL_WORSENING_STEPS") == "200"
+    assert os.environ.get("VLA_FAIL_WORSENING_STEPS") == "40"
     assert os.environ.get("VLA_PROXIMITY_GRASP") == "false"
     assert os.environ.get("VLA_GRIPPER_CONFIDENCE") == "0.5"
-    assert os.environ.get("VLA_MAX_INNER_STEPS") == "200"
-    assert os.environ.get("VLA_FAIL_DIST_CONSECUTIVE_STEPS") == "200"
-    assert os.environ.get("VLA_FAIL_IK_SATURATION_STEPS") == "200"
-    assert os.environ.get("VLA_MAX_TOOL_SECONDS") == "180"
+    assert os.environ.get("VLA_MAX_INNER_STEPS") == "80"
+    assert os.environ.get("VLA_FAIL_DIST_CONSECUTIVE_STEPS") == "40"
+    assert os.environ.get("VLA_FAIL_IK_SATURATION_STEPS") == "20"
+    assert os.environ.get("VLA_MAX_TOOL_SECONDS") == "45"
     assert "VLA_AXIS_SIGNS" not in os.environ
     assert "VLA_AXIS_REMAP" not in os.environ
 

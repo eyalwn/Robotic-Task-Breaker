@@ -4,6 +4,7 @@ import itertools
 import json
 import logging
 import math
+import os
 import time
 from dataclasses import dataclass
 from typing import Any, Protocol
@@ -18,6 +19,100 @@ from .config import VLAConfig
 logger = logging.getLogger(__name__)
 
 _obs_keys_dumped = False
+_VLA_DEBUG_TELEMETRY_MAX_STEPS = 20
+
+
+def _vla_debug_action_telemetry_enabled() -> bool:
+    raw = os.environ.get("VLA_DEBUG_ACTION_TELEMETRY", "").strip().lower()
+    return raw in ("1", "true", "yes", "on")
+
+
+def _preview_osc_action(
+    arm: Any,
+    dx: float,
+    dy: float,
+    dz: float,
+    drx: float = 0.0,
+    dry: float = 0.0,
+    drz: float = 0.0,
+    grip: float | None = None,
+) -> list[float]:
+    """Mirror LiberoArm OSC clip logic when last_osc_action is unavailable."""
+    import numpy as np
+
+    sent = getattr(arm, "last_osc_action", None)
+    if sent is not None:
+        flat = np.asarray(sent, dtype=np.float32).reshape(-1)
+        if flat.size >= 7:
+            return flat[:7].tolist()
+
+    pos_scale = float(getattr(arm, "_pos_scale", 1.0))
+    deltas = np.clip(
+        pos_scale * np.array([dx, dy, dz, drx, dry, drz], dtype=np.float32),
+        -1.0,
+        1.0,
+    )
+    grip_val = float(grip if grip is not None else getattr(arm, "_gripper_value", 0.0))
+    return [*deltas.tolist(), float(np.clip(grip_val, -1.0, 1.0))]
+
+
+def _log_action_telemetry(
+    step: int,
+    raw_action: list[float],
+    scaled: tuple[float, float, float],
+    rot_grip: tuple[float, float, float, float] | None,
+    arm: Any,
+    state: "_RunState",
+    eef: list[float] | None,
+    dist: float | None,
+) -> None:
+    if not _vla_debug_action_telemetry_enabled() or step >= _VLA_DEBUG_TELEMETRY_MAX_STEPS:
+        return
+
+    if step == 0:
+        agent_state = getattr(arm, "agent_state", None)
+        if agent_state is not None:
+            import numpy as np
+
+            flat = np.asarray(agent_state, dtype=np.float32).reshape(-1)[:8]
+            logger.info(
+                "VLA telem step=00 agent_state=%s",
+                [f"{v:+.4f}" for v in flat.tolist()],
+            )
+
+    dx, dy, dz = scaled
+    if rot_grip is not None:
+        drx, dry, drz, grip = rot_grip
+    else:
+        drx = dry = drz = 0.0
+        grip = raw_action[3] if len(raw_action) >= 4 else 0.0
+
+    osc = _preview_osc_action(arm, dx, dy, dz, drx, dry, drz, grip)
+    eef_delta = "?"
+    if state.prev_eef and eef:
+        eef_delta = (
+            f"[{eef[0] - state.prev_eef[0]:+.4f},"
+            f"{eef[1] - state.prev_eef[1]:+.4f},"
+            f"{eef[2] - state.prev_eef[2]:+.4f}]"
+        )
+    min_dist_str = f"{state.min_dist:.4f}" if state.min_dist is not None else "?"
+
+    logger.info(
+        "VLA telem step=%02d raw=%s scaled=[%+.4f,%+.4f,%+.4f] "
+        "rot=[%+.4f,%+.4f,%+.4f] grip=%+.4f osc=%s eef_d=%s min_dist=%s",
+        step,
+        [f"{v:+.4f}" for v in raw_action],
+        dx,
+        dy,
+        dz,
+        drx,
+        dry,
+        drz,
+        grip,
+        [f"{v:+.4f}" for v in osc[:6]],
+        eef_delta,
+        min_dist_str,
+    )
 
 
 def _round_floats(obj: Any, ndigits: int = 4) -> Any:
@@ -148,17 +243,32 @@ def _apply_raw_action_to_arm(
     state: _RunState,
     chunk: _ChunkState,
     raw_action: list[float],
-) -> tuple[float, float, float, float, list[float]]:
-    """Apply one raw VLA action; returns (dx, dy, dz, sf, raw_xyz_for_calibration)."""
+) -> tuple[float, float, float, float, list[float], tuple[float, float, float, float] | None]:
+    """Apply one raw VLA action; returns (dx, dy, dz, sf, raw_xyz, rot_grip_or_none)."""
     if len(raw_action) == 7:
         raw_dx, raw_dy, raw_dz, raw_drx, raw_dry, raw_drz, raw_grip = raw_action
         raw_xyz = [raw_dx, raw_dy, raw_dz]
+        apply_policy = getattr(arm, "apply_policy_action", None)
         apply_vla = getattr(arm, "apply_vla_action", None)
-        if not callable(apply_vla):
+
+        if not callable(apply_vla) and not callable(apply_policy):
             raise RuntimeError(
-                "VLA returned 7-dim actions but arm has no apply_vla_action()"
+                "VLA returned 7-dim actions but arm has no apply_policy_action() "
+                "or apply_vla_action()"
             )
+
         if _use_raw_openpi_action_path(cfg):
+            if callable(apply_policy):
+                clipped = [_clip_action(v, cfg) for v in raw_action]
+                apply_policy(clipped, steps=cfg.steps_per_action)
+                return (
+                    clipped[0],
+                    clipped[1],
+                    clipped[2],
+                    1.0,
+                    clipped[:3],
+                    tuple(clipped[3:7]),
+                )
             dx, dy, dz = [_clip_action(v, cfg) for v in raw_xyz]
             drx = _clip_action(raw_drx, cfg)
             dry = _clip_action(raw_dry, cfg)
@@ -174,7 +284,7 @@ def _apply_raw_action_to_arm(
                 grip,
                 steps=cfg.steps_per_action,
             )
-            return dx, dy, dz, 1.0, raw_xyz
+            return dx, dy, dz, 1.0, raw_xyz, (drx, dry, drz, grip)
 
         _maybe_autocalibrate_axes(state, cfg, raw_xyz)
         dx, dy, dz = process_raw_action(
@@ -184,17 +294,21 @@ def _apply_raw_action_to_arm(
             axis_signs=state.active_axis_signs,
         )
         dx, dy, dz, sf = _apply_adaptive_scaling(dx, dy, dz, cfg, state.pre_dist)
-        apply_vla(
-            dx,
-            dy,
-            dz,
-            raw_drx,
-            raw_dry,
-            raw_drz,
-            raw_grip,
-            steps=cfg.steps_per_action,
-        )
-        return dx, dy, dz, sf, raw_xyz
+        action_vec = [dx, dy, dz, raw_drx, raw_dry, raw_drz, raw_grip]
+        if callable(apply_policy):
+            apply_policy(action_vec, steps=cfg.steps_per_action)
+        else:
+            apply_vla(
+                dx,
+                dy,
+                dz,
+                raw_drx,
+                raw_dry,
+                raw_drz,
+                raw_grip,
+                steps=cfg.steps_per_action,
+            )
+        return dx, dy, dz, sf, raw_xyz, (raw_drx, raw_dry, raw_drz, raw_grip)
 
     if len(raw_action) != 4:
         raise ValueError(
@@ -214,7 +328,7 @@ def _apply_raw_action_to_arm(
     arm.move_ee(dx, dy, dz, steps=cfg.steps_per_action)
     eef, obj, dist = _eef_obj_dist(arm)
     _maybe_apply_gripper(arm, cfg, state, chunk, raw_gripper, dist)
-    return dx, dy, dz, sf, raw_xyz
+    return dx, dy, dz, sf, raw_xyz, None
 
 
 def _clamp(value: float, lo: float, hi: float) -> float:
@@ -838,11 +952,26 @@ def create_vla_manipulation(
                 if raw_mag > chunk_state.max_raw_mag:
                     chunk_state.max_raw_mag = raw_mag
 
-                dx, dy, dz, sf, _raw_xyz = _apply_raw_action_to_arm(
+                dx, dy, dz, sf, _raw_xyz, rot_grip = _apply_raw_action_to_arm(
                     arm, cfg, state, chunk_state, raw_action
                 )
 
                 eef, obj, dist = _eef_obj_dist(arm)
+                if dist is not None and (state.min_dist is None or dist < state.min_dist):
+                    state.min_dist = dist
+                state_parity = getattr(arm, "maybe_log_vla_state_parity", None)
+                if callable(state_parity):
+                    state_parity(state.steps_applied)
+                _log_action_telemetry(
+                    state.steps_applied,
+                    raw_action,
+                    (dx, dy, dz),
+                    rot_grip,
+                    arm,
+                    state,
+                    eef,
+                    dist,
+                )
                 dist_str = f" dist={dist:.3f}m" if dist is not None else ""
                 actual_delta_str, chunk_ik_saturation = _actual_delta_and_ik_ratio(
                     state,

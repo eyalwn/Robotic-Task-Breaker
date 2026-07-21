@@ -279,6 +279,62 @@ def test_binop_equality() -> None:
     assert false_result.value is False
 
 
+def test_binop_equality_parses_status_from_json_string() -> None:
+    skill = MockSkill('{"status":"success","reason":"ok"}')
+    executor = build_executor(skill)
+    plan = Plan.model_validate(
+        {
+            "goal": "g",
+            "body": {
+                "kind": "seq",
+                "steps": [
+                    {"kind": "call", "skill": "mock.skill", "assign_to": "grab_outcome"},
+                    {
+                        "kind": "return",
+                        "value": {
+                            "kind": "binop",
+                            "op": "==",
+                            "left": {"kind": "var", "name": "grab_outcome"},
+                            "right": {"kind": "literal", "value": "success"},
+                        },
+                    },
+                ],
+            },
+        }
+    )
+    result = executor.run(plan)
+    assert result.status == "done"
+    assert result.value is True
+
+
+def test_binop_inequality_parses_status_from_json_string() -> None:
+    skill = MockSkill('{"status":"stopped","reason":"stagnation"}')
+    executor = build_executor(skill)
+    plan = Plan.model_validate(
+        {
+            "goal": "g",
+            "body": {
+                "kind": "seq",
+                "steps": [
+                    {"kind": "call", "skill": "mock.skill", "assign_to": "grab_outcome"},
+                    {
+                        "kind": "return",
+                        "value": {
+                            "kind": "binop",
+                            "op": "!=",
+                            "left": {"kind": "var", "name": "grab_outcome"},
+                            "right": {"kind": "literal", "value": "success"},
+                        },
+                    },
+                ],
+            },
+        }
+    )
+    result = executor.run(plan)
+    assert result.status == "done"
+    assert result.value is True
+
+
 def test_binop_and_short_circuit() -> None:
     skill = MockSkill("ok")
     executor = build_executor(skill)

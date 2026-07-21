@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import io
 import sys
+import time
 from pathlib import Path
 from unittest.mock import MagicMock
 
@@ -42,6 +43,21 @@ def _mock_bundle(chunk_np: np.ndarray) -> PolicyBundle:
         postprocessor=postprocessor,
         device=torch.device("cpu"),
     )
+
+
+def _post_predict(client, jpeg: bytes, task: str = "pick up the cube", **extra):
+    return client.post(
+        "/predict",
+        files={"image": ("frame.jpg", jpeg, "image/jpeg")},
+        data={"task": task, **extra},
+    )
+
+
+@pytest.fixture(autouse=True)
+def _reset_smolvla_queue_state():
+    svc._clear_action_queue_state()
+    yield
+    svc._clear_action_queue_state()
 
 
 def test_health():
@@ -82,9 +98,107 @@ def test_predict_with_mock_policy():
     for row in actions:
         assert isinstance(row, list) and len(row) == 7
         assert all(isinstance(v, float) for v in row)
-    bundle.policy.reset.assert_called_once()
+    bundle.policy.reset.assert_not_called()
     bundle.preprocessor.assert_called_once()
     bundle.policy.predict_action_chunk.assert_called_once()
+
+
+def test_queue_consumed_over_consecutive_calls(monkeypatch):
+    chunk = np.array(
+        [
+            [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6],
+            [0.1, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6],
+            [0.2, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6],
+            [0.3, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6],
+        ],
+        dtype=np.float32,
+    )
+    bundle = _mock_bundle(chunk)
+    monkeypatch.setenv("SMOLVLA_ACTIONS_PER_PREDICT", "2")
+
+    original = svc._policy_bundle
+    svc._policy_bundle = bundle
+    try:
+        client = TestClient(app, raise_server_exceptions=True)
+        jpeg = make_jpeg()
+        first = _post_predict(client, jpeg)
+        second = _post_predict(client, jpeg)
+        third = _post_predict(client, jpeg)
+    finally:
+        svc._policy_bundle = original
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert third.status_code == 200
+    assert first.json()["actions"][0][0] == pytest.approx(0.0)
+    assert first.json()["actions"][1][0] == pytest.approx(0.1)
+    assert second.json()["actions"][0][0] == pytest.approx(0.2)
+    assert second.json()["actions"][1][0] == pytest.approx(0.3)
+    assert third.json()["actions"][0][0] == pytest.approx(0.0)
+    bundle.policy.reset.assert_not_called()
+    assert bundle.policy.predict_action_chunk.call_count == 2
+    assert bundle.preprocessor.call_count == 2
+
+
+def test_task_change_triggers_reset_and_clears_queue(monkeypatch):
+    chunk = np.array(
+        [
+            [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6],
+            [0.1, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6],
+            [0.2, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6],
+            [0.3, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6],
+        ],
+        dtype=np.float32,
+    )
+    bundle = _mock_bundle(chunk)
+    monkeypatch.setenv("SMOLVLA_ACTIONS_PER_PREDICT", "2")
+
+    original = svc._policy_bundle
+    svc._policy_bundle = bundle
+    try:
+        client = TestClient(app, raise_server_exceptions=True)
+        jpeg = make_jpeg()
+        first = _post_predict(client, jpeg, task="pick up the cube")
+        changed = _post_predict(client, jpeg, task="put cube in basket")
+    finally:
+        svc._policy_bundle = original
+
+    assert first.status_code == 200
+    assert changed.status_code == 200
+    bundle.policy.reset.assert_called_once()
+    assert bundle.policy.predict_action_chunk.call_count == 2
+    assert changed.json()["actions"][0][0] == pytest.approx(0.0)
+
+
+def test_inactivity_timeout_triggers_reset(monkeypatch):
+    chunk = np.array(
+        [
+            [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6],
+            [0.1, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6],
+            [0.2, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6],
+            [0.3, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6],
+        ],
+        dtype=np.float32,
+    )
+    bundle = _mock_bundle(chunk)
+    monkeypatch.setenv("SMOLVLA_ACTIONS_PER_PREDICT", "2")
+    monkeypatch.setenv("SMOLVLA_INACTIVITY_TIMEOUT_SEC", "0.01")
+
+    original = svc._policy_bundle
+    svc._policy_bundle = bundle
+    try:
+        client = TestClient(app, raise_server_exceptions=True)
+        jpeg = make_jpeg()
+        first = _post_predict(client, jpeg)
+        time.sleep(0.02)
+        second = _post_predict(client, jpeg)
+    finally:
+        svc._policy_bundle = original
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    bundle.policy.reset.assert_called_once()
+    assert bundle.policy.predict_action_chunk.call_count == 2
 
 
 def test_predict_with_wrist_image():
@@ -148,6 +262,27 @@ def test_build_smolvla_observation_zeros_wrist_when_missing():
     np.testing.assert_array_equal(obs["observation.state"], state)
 
 
+def test_prepare_observation_for_inference_tensor_layout():
+    import torch
+
+    main = np.full((256, 256, 3), 128, dtype=np.uint8)
+    state = np.arange(8, dtype=np.float32)
+    obs = svc.build_smolvla_observation(main, "pick cube", state)
+    task = obs.pop("task")
+    prepared = svc._prepare_observation_for_inference(
+        obs, torch.device("cpu"), task=task
+    )
+    img = prepared["observation.images.image"]
+    assert img.shape == (1, 3, 256, 256)
+    assert img.dtype == torch.float32
+    assert 0.0 <= float(img.min()) <= float(img.max()) <= 1.0
+    st = prepared["observation.state"]
+    assert st.shape == (1, 8)
+    assert st.dtype == torch.float32
+    assert prepared["task"] == "pick cube"
+    assert prepared["robot_type"] == ""
+
+
 def test_predict_model_not_loaded():
     original = svc._policy_bundle
     svc._policy_bundle = None
@@ -208,3 +343,41 @@ def test_predict_invalid_action_shape_returns_500():
 
     assert resp.status_code == 500
     assert "7" in resp.json()["detail"]
+
+
+def test_first_predict_debug_logging(monkeypatch, caplog):
+    import logging
+
+    chunk = np.array([[0.1, -0.2, 0.3, 0.4, 0.5, 0.6, -0.9]], dtype=np.float32)
+    bundle = _mock_bundle(chunk)
+
+    monkeypatch.setenv("SMOLVLA_DEBUG_FIRST_PREDICT", "1")
+    svc._first_predict_debug_logged = False
+
+    original = svc._policy_bundle
+    svc._policy_bundle = bundle
+    try:
+        with caplog.at_level(logging.INFO, logger="smolvla_service"):
+            client = TestClient(app, raise_server_exceptions=True)
+            jpeg = make_jpeg()
+            client.post(
+                "/predict",
+                files={"image": ("frame.jpg", jpeg, "image/jpeg")},
+                data={"task": "pick up the cube", "state": "[1,2,3,4,5,6,7,8]"},
+            )
+            client.post(
+                "/predict",
+                files={"image": ("frame.jpg", jpeg, "image/jpeg")},
+                data={"task": "pick up the cube"},
+            )
+    finally:
+        svc._policy_bundle = original
+
+    debug_msgs = [
+        r.message
+        for r in caplog.records
+        if r.message.startswith("SmolVLA first predict")
+    ]
+    assert len(debug_msgs) == 2
+    assert "state min=" in debug_msgs[0]
+    assert "action chunk min=" in debug_msgs[1]

@@ -315,7 +315,52 @@ def test_maybe_apply_gripper_absolute_mode_applies_close():
     assert state.gripper_state == "close"
 
 
-def test_tool_impl_uses_7dim_apply_vla_action_with_rotation():
+def test_tool_impl_uses_7dim_apply_policy_action_with_rotation():
+    class _LiberoArm(_FakeArm):
+        def __init__(self) -> None:
+            super().__init__(eef_xyz=[0.0, 0.0, 0.0], obj_xyz=[0.1, 0.0, 0.0])
+            self.policy_calls: list[tuple] = []
+
+        def apply_policy_action(self, action, steps=1) -> None:
+            self.policy_calls.append((list(action), steps))
+            self.move_ee(action[0], action[1], action[2], steps=steps)
+
+    arm = _LiberoArm()
+    camera = _FakeCamera()
+    cfg = VLAConfig(
+        action_scale=1.0,
+        axis_remap=None,
+        axis_signs=None,
+        adaptive_scale=False,
+        grasp_dist=0.0,
+        max_inner_steps=1,
+        steps_per_action=1,
+        sim_pickcube_gripper_profile=False,
+    )
+    tool = create_vla_manipulation(
+        tool_name="pick_cube_with_policy",
+        tool_description="test",
+        task_prompt="pick the cube",
+        server_address="http://localhost:8765",
+        arm=arm,
+        camera=camera,
+        max_steps=1,
+        cfg=cfg,
+    )
+
+    with patch(
+        "vla.client.requests.post",
+        return_value=_make_response([[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, -0.7]]),
+    ):
+        tool.invoke({})
+
+    assert len(arm.policy_calls) == 1
+    action, steps = arm.policy_calls[0]
+    assert action == pytest.approx([0.1, 0.2, 0.3, 0.4, 0.5, 0.6, -0.7])
+    assert steps == 1
+
+
+def test_tool_impl_falls_back_to_apply_vla_action_without_policy_method():
     class _LiberoArm(_FakeArm):
         def __init__(self) -> None:
             super().__init__(eef_xyz=[0.0, 0.0, 0.0], obj_xyz=[0.1, 0.0, 0.0])
@@ -768,4 +813,149 @@ def test_adaptive_scaling_can_be_disabled():
     dxs = [dx for dx, _, _ in arm.moves]
     assert len(dxs) == 3
     assert dxs[0] == dxs[1] == dxs[2] == cfg.action_scale
+
+
+def test_vla_debug_action_telemetry_logs_first_steps(monkeypatch, caplog):
+    class _LiberoArm(_FakeArm):
+        def __init__(self) -> None:
+            super().__init__(eef_xyz=[0.0, 0.0, 0.5], obj_xyz=[0.1, 0.0, 0.448])
+            self._pos_scale = 1.0
+            self._gripper_value = 1.0
+            self.last_osc_action = None
+            self.policy_calls: list[tuple] = []
+
+        @property
+        def agent_state(self):
+            import numpy as np
+
+            return np.array(
+                [0.1, 0.2, 0.3, 0.0, 0.0, 0.0, 1.0, -1.0],
+                dtype=np.float32,
+            )
+
+        def apply_policy_action(self, action, steps=1) -> None:
+            import numpy as np
+
+            self.policy_calls.append((list(action), steps))
+            self.last_osc_action = np.array(action, dtype=np.float32)
+            self.move_ee(action[0], action[1], action[2], steps=steps)
+
+    monkeypatch.setenv("VLA_DEBUG_ACTION_TELEMETRY", "1")
+    arm = _LiberoArm()
+    camera = _FakeCamera()
+    cfg = VLAConfig(
+        action_scale=1.0,
+        axis_remap=None,
+        axis_signs=None,
+        adaptive_scale=False,
+        grasp_dist=0.0,
+        max_inner_steps=1,
+        sim_pickcube_gripper_profile=False,
+    )
+    tool = create_vla_manipulation(
+        tool_name="pick_cube_with_policy",
+        tool_description="test",
+        task_prompt="pick the cube",
+        server_address="http://localhost:8765",
+        arm=arm,
+        camera=camera,
+        max_steps=1,
+        cfg=cfg,
+    )
+
+    with caplog.at_level(logging.INFO, logger="vla.tools"):
+        with patch(
+            "vla.client.requests.post",
+            return_value=_make_response(
+                [[0.5, 0.0, -0.3, 0.1, 0.0, 0.0, -1.0]]
+            ),
+        ):
+            tool.invoke({})
+
+    telem = [r.message for r in caplog.records if "VLA telem step=" in r.message]
+    assert len(telem) == 2
+    assert "agent_state=" in telem[0]
+    assert "raw=" in telem[1] and "osc=" in telem[1] and "eef_d=" in telem[1]
+
+
+def test_vla_state_debug_logs_parity_at_step_zero(monkeypatch, caplog):
+    class _LiberoArm(_FakeArm):
+        def __init__(self) -> None:
+            super().__init__(eef_xyz=[0.0, 0.0, 0.5], obj_xyz=[0.1, 0.0, 0.448])
+            self._pos_scale = 1.0
+            self._gripper_value = 1.0
+            self.last_osc_action = None
+            self.last_obs = {
+                "agent_pos": [0.1, 0.2, 0.3, 0.0, 0.0, 0.0, 1.0, -1.0],
+                "robot_state": {
+                    "eef": {
+                        "pos": [0.1, 0.2, 0.3],
+                        "quat": [0.0, 0.0, 0.0, 1.0],
+                    },
+                    "gripper": {"qpos": [1.0, -1.0]},
+                },
+            }
+
+        @property
+        def agent_state(self):
+            import numpy as np
+
+            return np.array(
+                [0.1, 0.2, 0.3, 0.0, 0.0, 0.0, 1.0, -1.0],
+                dtype=np.float32,
+            )
+
+        def apply_policy_action(self, action, steps=1) -> None:
+            import numpy as np
+
+            self.last_osc_action = np.array(action, dtype=np.float32)
+            self.move_ee(action[0], action[1], action[2], steps=steps)
+
+        def maybe_log_vla_state_parity(self, step: int) -> None:
+            from sim.libero_backend import (
+                _libero_vla_state_debug_enabled,
+                _log_agent_state_source_comparison,
+            )
+
+            if step != 0 or not _libero_vla_state_debug_enabled():
+                return
+            if self.last_obs is not None:
+                _log_agent_state_source_comparison(self.last_obs)
+
+    monkeypatch.setenv("LIBERO_VLA_STATE_DEBUG", "1")
+    arm = _LiberoArm()
+    camera = _FakeCamera()
+    cfg = VLAConfig(
+        action_scale=1.0,
+        axis_remap=None,
+        axis_signs=None,
+        adaptive_scale=False,
+        grasp_dist=0.0,
+        max_inner_steps=1,
+        sim_pickcube_gripper_profile=False,
+    )
+    tool = create_vla_manipulation(
+        tool_name="pick_cube_state_debug",
+        tool_description="test",
+        task_prompt="pick the cube",
+        server_address="http://localhost:8765",
+        arm=arm,
+        camera=camera,
+        max_steps=1,
+        cfg=cfg,
+    )
+
+    with caplog.at_level(logging.INFO):
+        with patch(
+            "vla.client.requests.post",
+            return_value=_make_response(
+                [[0.5, 0.0, -0.3, 0.1, 0.0, 0.0, -1.0]]
+            ),
+        ):
+            tool.invoke({})
+
+    parity = [r.message for r in caplog.records if "LIBERO state parity" in r.message]
+    assert len(parity) == 1
+    assert "eef_axis_angle=" in parity[0]
+    assert "agent_pos=" in parity[0]
 
