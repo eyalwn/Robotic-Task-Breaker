@@ -9,7 +9,7 @@
 # Setup:
 #   py -3.11 -m venv .vla-venv
 #   .vla-venv/Scripts/python -m pip install -U pip
-#   .vla-venv/Scripts/python -m pip install -r services/requirements-vla-octo-small-1.5-windows.txt
+#   .vla-venv/Scripts/python -m pip install -r deps/requirements-vla-octo-small-1.5-windows.txt
 #   .vla-venv/Scripts/python -m pip install -e %USERPROFILE%/octo --no-deps
 #   (clone https://github.com/octo-models/octo.git into ~/octo first)
 

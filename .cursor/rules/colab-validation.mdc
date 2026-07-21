@@ -52,11 +52,11 @@ Use Jupyter magics for kernel-env installs/commands:
 
 ```python
 # ✅
-%pip install -r requirements.txt
+%pip install -r deps/requirements.txt
 !apt-get install -y cmake
 
 # ❌
-subprocess.run([sys.executable, "-m", "pip", "install", "-r", "requirements.txt"], check=True)
+subprocess.run([sys.executable, "-m", "pip", "install", "-r", "deps/requirements.txt"], check=True)
 ```
 
 Exception: use `subprocess` when targeting a different interpreter (for example `.vla-venv`). Keep that logic minimal and helper-based.

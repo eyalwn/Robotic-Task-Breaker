@@ -102,7 +102,7 @@ def _load_openpi_policy():
             "OpenPI is not installed or its dependencies failed to import. "
             "On Linux: clone https://github.com/Physical-Intelligence/openpi, "
             "run `uv sync` / `pip install -e .` per upstream docs, then "
-            "`pip install -r services/requirements-vla-pi05-linux.txt` in the same venv."
+            "`pip install -r deps/requirements-vla-pi05-linux.txt` in the same venv."
         ) from exc
 
     ckpt = (os.environ.get("OPENPI_CHECKPOINT") or "").strip() or _default_checkpoint_uri(

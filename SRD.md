@@ -1,6 +1,6 @@
 # Longor SRD
 
-Private codebase: dependencies in `requirements.txt`; install the repo editable with `pip install -e .` so `core`, `sim`, `vla`, and `robots` import without `PYTHONPATH`. Source packages live under `src/`. Tests use `pytest.ini` `pythonpath = src`.
+Private codebase: dependencies in `deps/requirements.txt`; install the repo editable with `pip install -e .` so `core`, `sim`, `vla`, and `robots` import without `PYTHONPATH`. Source packages live under `src/`. Tests use `pyproject.toml` `[tool.pytest.ini_options]` `pythonpath = src`.
 
 ## Goal
 
@@ -193,7 +193,7 @@ Implementation details (ports, batching, chunking, inner-step limits) live in co
 - `**core/**`** stays **OS- and backend-agnostic** (no device paths, no sim imports, no robot SDKs).
 - **Simulation and hardware** live in `**sim/`**,** `robots/`****,** or dedicated backend modules; select backend via **config/env**. Each backend implements the `Backend` protocol (`src/core/backend.py`) and owns its own sim/VLA wiring so example scripts stay a thin application layer (`Runner().run(backend, goal)`).
 - `**vla/**`** is sim-agnostic (no `sim` imports); backend-specific behavior is injected via hooks (e.g. `name_mapper` / `place_result_hook` on `register_arm_skills`).
-- **Optional** heavy or HW-only dependencies: **lazy imports** and/or `requirements-optional.txt` so minimal sim dev does not install everything.
+- **Optional** heavy or HW-only dependencies: **lazy imports** and/or `deps/requirements-optional.txt` so minimal sim dev does not install everything.
 - **Plan representation:** structured JSON AST (schema in `src/core/plan/schema.py`); the executor walks it with a restricted expression evaluator. **No** `exec` of generated code; **no** `eval` of arbitrary expressions.
 - **Skills:** `Skill` base + `SkillRegistry` live in `src/core/skills.py` (interfaces only). Concrete skill implementations live in their backend packages (`src/sim/*_skills.py`, `src/vla/arm_skills.py`, future `src/robots/*_skills.py`) and self-register at import time.
 - Adding a new sim, robot, or capability: add a `Backend` implementation + skill implementations in the relevant backend package; `Runner`, the planner, and the `Executor` stay unchanged.
@@ -216,5 +216,5 @@ Exact names evolve in code; the SRD only requires **config-driven** selection, n
 
 - **Unit tests** hermetic where possible (no live sim, no network); use fakes/mocks for backends and VLA HTTP.
 - Shared fixtures: `tests/conftest.py`.
-- `**pytest.ini`** sets `pythonpath = src`.
+- `**pyproject.toml`** `[tool.pytest.ini_options]` sets `pythonpath = src`.
 

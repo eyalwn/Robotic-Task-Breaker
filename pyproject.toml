@@ -11,3 +11,9 @@ requires-python = ">=3.10"
 
 [tool.setuptools.packages.find]
 where = ["src"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+markers = [
+    "integration: live-server tests (run with pytest -m integration)",
+]

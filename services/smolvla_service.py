@@ -98,7 +98,7 @@ def _import_smolvla():
     except ImportError as exc:
         raise ImportError(
             "PyTorch is not installed. On Linux + NVIDIA (T4-class Colab): "
-            "pip install -r services/requirements-vla-smolvla-linux.txt in .vla-venv."
+            "pip install -r deps/requirements-vla-smolvla-linux.txt in .vla-venv."
         ) from exc
 
     try:
@@ -109,7 +109,7 @@ def _import_smolvla():
         except ImportError as exc:
             raise ImportError(
                 "LeRobot SmolVLA is not installed. On Linux: "
-                "pip install -r services/requirements-vla-smolvla-linux.txt "
+                "pip install -r deps/requirements-vla-smolvla-linux.txt "
                 "in the same .vla-venv used for services/run_vla_server.py."
             ) from exc
 

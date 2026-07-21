@@ -1,6 +1,6 @@
 """Text-to-speech synthesis using the Piper TTS engine, played back via pygame.
 
-Requires pygame + piper-tts (see requirements-optional.txt).
+Requires pygame + piper-tts (see deps/requirements-optional.txt).
 """
 import os
 import sys
@@ -36,7 +36,7 @@ def speak_and_play(text):
         import pygame as _pygame
     except ImportError:
         raise RuntimeError(
-            "TTS playback requires pygame. pip install -r requirements-optional.txt (tts lines) or install pygame manually."
+            "TTS playback requires pygame. pip install -r deps/requirements-optional.txt (tts lines) or install pygame manually."
         )
     setup_voice()
     subprocess.run(

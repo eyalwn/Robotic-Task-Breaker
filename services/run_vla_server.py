@@ -49,11 +49,11 @@ def main() -> None:
                 file=sys.stderr,
             )
             print(
-                "  Windows: pip install -r services/requirements-vla-octo-small-1.5-windows.txt && pip install -e ~/octo --no-deps",
+                "  Windows: pip install -r deps/requirements-vla-octo-small-1.5-windows.txt && pip install -e ~/octo --no-deps",
                 file=sys.stderr,
             )
             print(
-                "  Linux: Octo requirements.txt + pip install -r services/requirements-vla-octo-small-1.5-linux.txt",
+                "  Linux: Octo requirements.txt + pip install -r deps/requirements-vla-octo-small-1.5-linux.txt",
                 file=sys.stderr,
             )
             print(
@@ -82,7 +82,7 @@ def main() -> None:
                 file=sys.stderr,
             )
             print(
-                "    pip install -r services/requirements-vla-pi05-linux.txt",
+                "    pip install -r deps/requirements-vla-pi05-linux.txt",
                 file=sys.stderr,
             )
             print(
@@ -110,7 +110,7 @@ def main() -> None:
                 file=sys.stderr,
             )
             print(
-                "    pip install -r services/requirements-vla-smolvla-linux.txt",
+                "    pip install -r deps/requirements-vla-smolvla-linux.txt",
                 file=sys.stderr,
             )
             print(

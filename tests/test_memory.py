@@ -1,6 +1,6 @@
 import unittest
 import os
-# pytest.ini sets pythonpath = src
+# pyproject.toml [tool.pytest.ini_options] sets pythonpath = src
 
 from core.memory import Memory
 

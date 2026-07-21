@@ -49,7 +49,7 @@ def _load_env() -> None:
 @pytest.fixture(scope="module")
 def require_libero_and_vla() -> str:
     if not _libero_deps_available():
-        pytest.skip("LIBERO deps not installed (see requirements-libero.txt)")
+        pytest.skip("LIBERO deps not installed (see deps/requirements-libero.txt)")
     url = _vla_url()
     try:
         requests.get(f"{url}/health", timeout=2)

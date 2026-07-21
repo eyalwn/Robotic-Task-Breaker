@@ -21,12 +21,12 @@ From the repo root:
 
 **Linux (with CUDA)**
 
-GPU PyTorch for ManiSkill: **do not** run `pip install -r requirements-maniskill.txt` here; that file pins **CPU** `torch`/`torchvision`. Install **CUDA** PyTorch first (use the `pip` command from [pytorch.org/get-started](https://pytorch.org/get-started/locally/) for your CUDA version), then ManiSkill:
+GPU PyTorch for ManiSkill: **do not** run `pip install -r deps/requirements-maniskill.txt` here; that file pins **CPU** `torch`/`torchvision`. Install **CUDA** PyTorch first (use the `pip` command from [pytorch.org/get-started](https://pytorch.org/get-started/locally/) for your CUDA version), then ManiSkill:
 
 ```bash
 python3 -m venv .venv
 .venv/bin/python -m pip install -U pip
-.venv/bin/python -m pip install -r requirements.txt
+.venv/bin/python -m pip install -r deps/requirements.txt
 .venv/bin/python -m pip install -e .
 # Then run the PyTorch+CUDA install line from pytorch.org (not shown here — it varies by CUDA).
 .venv/bin/python -m pip install "mani-skill>=3.0.0b20"
@@ -37,20 +37,20 @@ python3 -m venv .venv
 ```bash
 python -m venv .venv
 .venv/Scripts/python -m pip install -U pip
-.venv/Scripts/python -m pip install -r requirements.txt
+.venv/Scripts/python -m pip install -r deps/requirements.txt
 .venv/Scripts/python -m pip install -e .
-.venv/Scripts/python -m pip install -r requirements-maniskill.txt
+.venv/Scripts/python -m pip install -r deps/requirements-maniskill.txt
 ```
 
-**Note:** Rationale for `requirements-maniskill.txt` vs CUDA is in the header of `requirements-maniskill.txt`.
+**Note:** Rationale for `deps/requirements-maniskill.txt` vs CUDA is in the header of that file.
 **Note:** ManiSkill examples pass `env_id` explicitly (e.g. `PickCube-v1`); `MANISKILL_ENV` is only used by `maniskill_rgbd_diag`.
 
 #### LIBERO (Linux only)
 
-LIBERO requires **Linux** + MuJoCo. `requirements-libero.txt` is self-contained (`-r requirements.txt` included), so it works as a standalone install or on top of an existing `.venv`:
+LIBERO requires **Linux** + MuJoCo. `deps/requirements-libero.txt` is self-contained (`-r requirements.txt` included), so it works as a standalone install or on top of an existing `.venv`:
 
 ```bash
-.venv/bin/python -m pip install -r requirements-libero.txt
+.venv/bin/python -m pip install -r deps/requirements-libero.txt
 export MUJOCO_GL=egl  # headless rendering (add to .bashrc)
 ```
 
@@ -71,7 +71,7 @@ Requires **Linux + NVIDIA GPU** (Colab T4 is sufficient).
 ```bash
 python3 -m venv .vla-venv
 .vla-venv/bin/python -m pip install -U pip
-.vla-venv/bin/python -m pip install -r services/requirements-vla-smolvla-linux.txt
+.vla-venv/bin/python -m pip install -r deps/requirements-vla-smolvla-linux.txt
 ```
 
 Default checkpoint is `HuggingFaceVLA/smolvla_libero`. Override with `SMOLVLA_CHECKPOINT` in `.env` if needed.
@@ -90,7 +90,7 @@ Use **Python 3.11** (`py -3.11`).
 py -3.11 -m venv .vla-venv
 .vla-venv/Scripts/python -m pip install -U pip
 git clone https://github.com/octo-models/octo.git ~/octo
-.vla-venv/Scripts/python -m pip install -r services/requirements-vla-octo-small-1.5-windows.txt
+.vla-venv/Scripts/python -m pip install -r deps/requirements-vla-octo-small-1.5-windows.txt
 .vla-venv/Scripts/python -m pip install -e ~/octo --no-deps
 ```
 
@@ -106,7 +106,7 @@ python3 -m venv .vla-venv
 git clone https://github.com/octo-models/octo.git ~/octo
 .vla-venv/bin/python -m pip install -e ~/octo
 .vla-venv/bin/python -m pip install -r ~/octo/requirements.txt
-.vla-venv/bin/python -m pip install -r services/requirements-vla-octo-small-1.5-linux.txt
+.vla-venv/bin/python -m pip install -r deps/requirements-vla-octo-small-1.5-linux.txt
 ```
 
 Same Hugging Face weights as on Windows. If Octo's pins fight your JAX install, recreate the venv and follow Octo's README / issues.
@@ -124,7 +124,7 @@ python3 -m venv .vla-venv
 .vla-venv/bin/python -m pip install -U pip
 git clone --recurse-submodules https://github.com/Physical-Intelligence/openpi.git ~/openpi
 .vla-venv/bin/python -m pip install -e ~/openpi
-.vla-venv/bin/python -m pip install -r services/requirements-vla-pi05-linux.txt
+.vla-venv/bin/python -m pip install -r deps/requirements-vla-pi05-linux.txt
 ```
 
 Checkpoints download automatically on first service start from `gs://openpi-assets` (cached in `~/.cache/openpi`). If OpenPI's deps conflict, see [OpenPI installation](https://github.com/Physical-Intelligence/openpi?tab=readme-ov-file#installation) for `uv`-based setup.
@@ -184,7 +184,7 @@ with '.venv' activated, run:
 pytest
 ```
 
-`pytest.ini` sets `pythonpath = src`.
+`pyproject.toml` `[tool.pytest.ini_options]` sets `pythonpath = src`.
 
 **Integration tests:**
 `pytest -m integration` (needs a running VLA server).
