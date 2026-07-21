@@ -17,7 +17,7 @@ alwaysApply: false
   1. collect secrets / env vars,
   2. clone/sync repo + install deps,
   3. start background services and poll `/health`,
-  4. run **exactly one** Python entrypoint under `scripts/colab/**`,
+  4. run **exactly one** Python entrypoint under `validation/**`,
   5. show summary/artifact paths.
 - Disallowed inside notebooks:
   - policy sweeps, matrix experiments, verdict engines,
@@ -26,9 +26,10 @@ alwaysApply: false
 
 ## One notebook ↔ one script
 
-- Each notebook must declare one explicit script path (for example `RUN_SCRIPT="scripts/colab/m7_probe.py"`).
+- Each notebook must declare one explicit script path (for example `RUN_SCRIPT="validation/m7_wiring_probe.py"`).
 - Variants use CLI args/env passed to the same script, not notebook cell branching.
-- For test/debug on Colab, use a dedicated tiny notebook that calls a dedicated script (for example `scripts/colab/run_pytest.py` or `scripts/colab/m7_debug_smoke.py`).
+- For test/debug on Colab, use a dedicated tiny notebook that calls a dedicated script (for example `validation/run_pytest.py` or `validation/m7_debug_smoke.py`).
+- Do not use `GITHUB_BRANCH` in validation notebooks. Clone the repository default branch only.
 
 ## Script output contract (required)
 
@@ -64,5 +65,6 @@ Exception: use `subprocess` when targeting a different interpreter (for example 
 
 - No `google.colab` imports (notebooks must run from Cursor-connected kernels too).
 - Never write secrets/tokens into notebook cells or repo files.
+- If a notebook execution error prints credentials (for example PAT in a traceback), clear cell outputs before saving.
 - SmolVLA baseline checks must start with closed-loop `n_action_steps=1` before testing larger horizons.
-- If notebook logic grows beyond setup + one script call, move that logic into `scripts/colab/**`.
+- If notebook logic grows beyond setup + one script call, move that logic into `validation/**`.

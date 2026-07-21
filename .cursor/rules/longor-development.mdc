@@ -17,7 +17,7 @@ alwaysApply: true
 
 - During milestone debugging, default to **small, reversible passes**. Per pass: touch at most 2 source files under `src/**` or `services/**` and keep diffs under ~200 changed LOC.
 - If the expected change exceeds that budget, stop and get user approval first with: hypothesis, file list, and rollback plan.
-- Put experiments, sweeps, and diagnostics in `scripts/debug/**` or `scripts/colab/**` first. Do not embed experiment harnesses into production modules.
+- Put experiments, sweeps, and diagnostics in `scripts/debug/**` or `validation/**` first. Do not embed experiment harnesses into production modules.
 - Temporary debug instrumentation in runtime code must be behind env flags defaulting to off and removed once the root cause is confirmed.
 - New env vars/config knobs require one of: (1) mapped SRD acceptance criterion, or (2) demonstrated root-cause evidence.
 - For Colab validation, notebooks are launchers only; orchestration and verdict logic live in Python scripts (see `colab-validation.mdc`).

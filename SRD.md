@@ -17,6 +17,8 @@ Enable robots to perform **long-horizon** tasks by separating **planning** (LLM)
 
 ## Milestones
 
+
+
 ### Completed foundations (historical, unchanged IDs)
 
 - **M1 (done):** Linux parity for the existing sim + VLA + test stack.
@@ -27,14 +29,20 @@ Enable robots to perform **long-horizon** tasks by separating **planning** (LLM)
 - **M6 (done):** LLM planner + LLM feedback + trace writer + `Runner`/`Backend` architecture.
 - **M8 (done):** SmolVLA backend (`VLA_POLICY=smolvla`) validated on Colab T4.
 
+
+
 ### Evaluation doctrine (applies to all future milestones)
 
 - Do **not** conclude policy incapability from monolithic LIBERO-10 runs alone.
 - Always prove wiring on simpler isolated conditions before long-horizon target tasks.
 - For SmolVLA baseline checks, closed-loop `n_action_steps=1` is mandatory before trying larger horizons.
-- Keep debug scope contained: experiments and sweeps belong in scripts (`scripts/debug/**`, `scripts/colab/**`), not in production runtime modules.
+- Keep debug scope contained: experiments and sweeps scripts belong in `validation/**`, not in production runtime modules.
+
+
 
 ### Current execution order (replanned)
+
+
 
 ### M7 (planned) — Wiring correctness ladder (isolation first)
 
@@ -44,22 +52,23 @@ Prove Longor wiring is correct in progressively harder, isolated stages before r
 
 **Scope**
 
-1. **M7.1 cleanup pass**
-   - Remove non-essential post-M8 debug drift from hot-path files (`src/vla/tools.py`, `src/sim/libero_backend.py`, `services/smolvla_service.py`) while preserving validated contract behavior.
-   - Keep runtime logic thin; move experiment orchestration to `scripts/debug/**` or `scripts/colab/**`.
-2. **M7.2 isolated arm-control probe (sim-GT)**
-   - Simplest LIBERO environment, no planner/executor/LLM loop.
-   - Ask VLA to move EE to a target pose/region; verify deterministic motion and termination behavior.
+1. **M7.1 cleanup pass (done)**
+  - Remove non-essential post-M8 debug drift from hot-path files (`src/vla/tools.py`, `src/sim/libero_backend.py`, `services/smolvla_service.py`) while preserving validated contract behavior.
+  - Keep runtime logic thin; move experiment orchestration to `validation/**`.
+2. **M7.2 isolated arm-control probe (sim-GT) (done)**
+  - Simplest LIBERO environment, no planner/executor/LLM loop.
+  - Entrypoint: `validation/m7_wiring_probe.py --gate m7.2` (default suite `libero_object`, task 0).
+  - Ask VLA to move EE to a target pose/region; verify deterministic motion and termination behavior.
 3. **M7.3 isolated arm-control probe (real-perception mode)**
-   - Same probe as M7.2 with `PERCEPTION_BACKEND=real`.
-   - Ensure no silent fallback to sim-GT registration.
+  - Same probe as M7.2 with `PERCEPTION_BACKEND=real`.
+  - Ensure no silent fallback to sim-GT registration.
 4. **M7.4 direct task probe, no planner decomposition**
-   - Simplest LIBERO pick/place task.
-   - Pass only task text + required env observation to VLA tool path (no LLM planning loop).
+  - Simplest LIBERO pick/place task.
+  - Pass only task text + required env observation to VLA tool path (no LLM planning loop).
 5. **M7.5 structured-plan probe without LLM**
-   - Inject a static JSON plan (`StaticPlanner`) and validate executor/skill orchestration on the same simple task.
+  - Inject a static JSON plan (`StaticPlanner`) and validate executor/skill orchestration on the same simple task.
 6. **M7.6 full decomposition probe**
-   - Re-enable LLM planner+feedback on the simple task and confirm decomposition succeeds before moving back to LIBERO-10.
+  - Re-enable LLM planner+feedback on the simple task and confirm decomposition succeeds before moving back to LIBERO-10.
 
 **Acceptance**
 
@@ -73,6 +82,8 @@ Prove Longor wiring is correct in progressively harder, isolated stages before r
 - LIBERO-10 breadth (campaign).
 - Hardware backend milestones.
 - Changing VLA HTTP wire format.
+
+
 
 ### M9 (planned; former M7) — Real perception E2E on LIBERO-10 task 0
 
@@ -91,6 +102,8 @@ After M7 proves wiring, run the original M7 target: `examples/long_horizon_llm_l
 - Linux + Colab T4 run reaches `RunResult.success=True` on task 0.
 - Runtime path used for success does not register sim-GT perception skills.
 - Artifacts include branch/SHA, config snapshot, run log, trace path, and optional video path.
+
+
 
 ### M10 (planned; former M9) — Sim-GT perception removal (strict)
 
@@ -118,6 +131,8 @@ At least one full autonomous success on the physical robot with archived evidenc
 
 ---
 
+
+
 ## Validation tooling (Colab)
 
 Colab notebooks are **launchers only**.
@@ -126,9 +141,10 @@ Colab notebooks are **launchers only**.
   1. collect secrets/env,
   2. clone/sync repo and install deps,
   3. start/poll required services,
-  4. run exactly one script under `scripts/colab/**`,
+  4. run exactly one script under `validation/**`,
   5. print artifact locations and pass/fail summary.
 - Experiment orchestration, sweeps, and verdict logic belong in Python scripts, not notebook cells.
+- Validation notebooks clone the repository default branch only (no `GITHUB_BRANCH` flow).
 
 **Script artifact contract**
 
@@ -141,11 +157,13 @@ Every Colab-launched script must emit:
 
 **Notebook-to-script mapping (planned target state)**
 
-| Notebook | Script |
-|----------|--------|
-| `colab/m7_wiring_probe.ipynb` | `scripts/colab/m7_wiring_probe.py` |
-| `colab/m9_real_perception_task0.ipynb` | `scripts/colab/m9_real_perception_task0.py` |
-| `colab/m11_libero_10_campaign.ipynb` | `scripts/colab/m11_libero_10_campaign.py` |
+
+| Notebook                               | Script                                   |
+| -------------------------------------- | ---------------------------------------- |
+| `colab/m7_wiring_probe.ipynb`          | `validation/m7_wiring_probe.py`          |
+| `colab/m9_real_perception_task0.ipynb` | `validation/m9_real_perception_task0.py` |
+| `colab/m11_libero_10_campaign.ipynb`   | `validation/m11_libero_10_campaign.py`   |
+
 
 Legacy notebooks remain temporary until migration to the launcher model is complete.
 
@@ -173,13 +191,15 @@ Implementation details (ports, batching, chunking, inner-step limits) live in co
 ## Architecture constraints
 
 - `**core/**`** stays **OS- and backend-agnostic** (no device paths, no sim imports, no robot SDKs).
-- **Simulation and hardware** live in `**sim/`**, `robots/**`,** or dedicated backend modules; select backend via **config/env**. Each backend implements the `Backend` protocol (`src/core/backend.py`) and owns its own sim/VLA wiring so example scripts stay a thin application layer (`Runner().run(backend, goal)`).
+- **Simulation and hardware** live in `**sim/`**,** `robots/`****,** or dedicated backend modules; select backend via **config/env**. Each backend implements the `Backend` protocol (`src/core/backend.py`) and owns its own sim/VLA wiring so example scripts stay a thin application layer (`Runner().run(backend, goal)`).
 - `**vla/**`** is sim-agnostic (no `sim` imports); backend-specific behavior is injected via hooks (e.g. `name_mapper` / `place_result_hook` on `register_arm_skills`).
 - **Optional** heavy or HW-only dependencies: **lazy imports** and/or `requirements-optional.txt` so minimal sim dev does not install everything.
-- **Plan representation:** structured JSON AST (schema in `src/core/plan/schema.py`); the executor walks it with a restricted expression evaluator. **No `exec`** of generated code; **no `eval`** of arbitrary expressions.
+- **Plan representation:** structured JSON AST (schema in `src/core/plan/schema.py`); the executor walks it with a restricted expression evaluator. **No** `exec` of generated code; **no** `eval` of arbitrary expressions.
 - **Skills:** `Skill` base + `SkillRegistry` live in `src/core/skills.py` (interfaces only). Concrete skill implementations live in their backend packages (`src/sim/*_skills.py`, `src/vla/arm_skills.py`, future `src/robots/*_skills.py`) and self-register at import time.
 - Adding a new sim, robot, or capability: add a `Backend` implementation + skill implementations in the relevant backend package; `Runner`, the planner, and the `Executor` stay unchanged.
-- **`core/llm_agent.py`** — the general-purpose LLM tool-call loop used by HW robot agents (`XLeRobot`). Not a sim concern; retained as-is.
+- `core/llm_agent.py` — the general-purpose LLM tool-call loop used by HW robot agents (`XLeRobot`). Not a sim concern; retained as-is.
+
+
 
 ## Configuration
 
