@@ -1,55 +1,108 @@
-"""M7.2 sim-GT isolated VLA→arm wiring probe (no planner/executor/LLM)."""
+"""M7.2/M7.3 isolated VLA→arm wiring probe (no planner/executor/LLM)."""
 from __future__ import annotations
 
 import argparse
 import importlib.util
-import json
 import logging
 import math
 import os
-import subprocess
 import sys
 import traceback
-from datetime import datetime, timezone
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterator
 
 from dotenv import find_dotenv, load_dotenv
 
-REPO_ROOT = Path(__file__).resolve().parents[1]
-MILESTONE = "m7"
 DEFAULT_GATE = "m7.2"
+SUPPORTED_GATES = ("m7.2", "m7.3")
+REAL_PERCEPTION_SKILLS = (
+    "state.list_objects",
+    "perception.detect",
+    "perception.locate",
+)
 DEFAULT_SUITE = "libero_object"
 DEFAULT_TASK_IDX = 0
 DEFAULT_STEPS = 8
 DEFAULT_MIN_DISPLACEMENT = 0.001
 DEFAULT_TASK_PROMPT = "pick up the object"
 
-_SECRET_SUBSTRINGS = ("TOKEN", "SECRET", "PASSWORD", "API_KEY", "PAT", "CREDENTIAL")
-_ENV_SNAPSHOT_KEYS = (
-    "BACKEND",
-    "GITHUB_BRANCH",
-    "LIBERO_CONTROL_MODE",
-    "LIBERO_EE_DELTA_SCALE",
-    "LIBERO_OBS_TYPE",
-    "LIBERO_OBSERVATION_HEIGHT",
-    "LIBERO_OBSERVATION_WIDTH",
-    "LIBERO_SETTLE_STEPS",
-    "LIBERO_VLA_IMAGE_FLIP",
-    "LOG_LEVEL",
-    "M7_PROBE_TASK",
-    "MUJOCO_GL",
-    "PERCEPTION_BACKEND",
-    "PYOPENGL_PLATFORM",
-    "ROBOCREW_SIM_SEED",
-    "VLA_CHUNK_STEPS",
-    "VLA_GRIPPER_MODE",
-    "VLA_POLICY",
-    "VLA_PORT",
-    "VLA_STEPS_PER_ACTION",
-)
-
 logger = logging.getLogger(__name__)
+
+
+class SimGtFallbackError(RuntimeError):
+    """Raised when sim-GT perception registration is attempted in real mode."""
+
+
+def validate_gate(gate: str) -> None:
+    """Reject unsupported M7 gate ids."""
+    if gate not in SUPPORTED_GATES:
+        supported = ", ".join(SUPPORTED_GATES)
+        raise ValueError(f"Unsupported gate {gate!r}; supported: {supported}")
+
+
+def require_real_perception_backend() -> str:
+    """Fail fast unless PERCEPTION_BACKEND resolves to real."""
+    from sim.libero_perception import resolve_perception_backend
+
+    mode = resolve_perception_backend()
+    if mode != "real":
+        raise ValueError(
+            f"M7.3 requires PERCEPTION_BACKEND=real, got {mode!r}"
+        )
+    return mode
+
+
+@contextmanager
+def sim_gt_fallback_guard() -> Iterator[None]:
+    """Block sim-GT perception registration for the guarded scope."""
+    import sim.libero_skills as libero_skills_mod
+
+    original = libero_skills_mod.register_libero_skills
+
+    def _blocked(*_args: Any, **_kwargs: Any) -> None:
+        raise SimGtFallbackError(
+            "sim-GT perception registration attempted while PERCEPTION_BACKEND=real"
+        )
+
+    libero_skills_mod.register_libero_skills = _blocked
+    try:
+        yield
+    finally:
+        libero_skills_mod.register_libero_skills = original
+
+
+def verify_real_perception_wiring(*, vec_env: Any, camera: Any) -> dict[str, Any]:
+    """Register perception skills and assert the real path is used."""
+    from core.skills import SkillRegistry
+    from sim.libero_perception import register_libero_perception_skills
+
+    registry = SkillRegistry()
+    mode = register_libero_perception_skills(
+        registry,
+        vec_env=vec_env,
+        camera=camera,
+        mode="real",
+    )
+    sources = {
+        name: getattr(registry.get(name), "perception_source", None)
+        for name in REAL_PERCEPTION_SKILLS
+    }
+    if mode != "real":
+        raise RuntimeError(
+            f"expected real perception registration, got mode={mode!r}"
+        )
+    bad = {name: source for name, source in sources.items() if source != "real"}
+    if bad:
+        raise RuntimeError(
+            "expected real perception skills, got non-real sources: "
+            + ", ".join(f"{name}={source!r}" for name, source in bad.items())
+        )
+    return {
+        "perception_mode": mode,
+        "perception_sources": sources,
+        "verified": True,
+    }
 
 
 def eef_displacement(
@@ -83,42 +136,22 @@ def evaluate_m7_2(
     return "pass", f"EE displaced {displacement:.6f}m (>= {min_displacement:.6f}m)"
 
 
-def _is_secret_env_key(key: str) -> bool:
-    upper = key.upper()
-    return any(part in upper for part in _SECRET_SUBSTRINGS)
-
-
-def collect_env_snapshot(env: dict[str, str] | None = None) -> dict[str, str]:
-    """Collect non-secret env keys for artifact summary."""
-    source = env if env is not None else os.environ
-    snapshot: dict[str, str] = {}
-    for key in _ENV_SNAPSHOT_KEYS:
-        value = source.get(key)
-        if value is not None and not _is_secret_env_key(key):
-            snapshot[key] = value
-    return snapshot
-
-
-def git_metadata() -> tuple[str, str]:
-    """Return (branch, sha) best-effort from git."""
-    branch = "unknown"
-    sha = "unknown"
-    try:
-        branch = subprocess.check_output(
-            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-            cwd=REPO_ROOT,
-            text=True,
-            stderr=subprocess.DEVNULL,
-        ).strip()
-        sha = subprocess.check_output(
-            ["git", "rev-parse", "HEAD"],
-            cwd=REPO_ROOT,
-            text=True,
-            stderr=subprocess.DEVNULL,
-        ).strip()
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        pass
-    return branch, sha
+def evaluate_m7_3(
+    *,
+    completed_without_error: bool,
+    displacement: float | None,
+    min_displacement: float,
+    perception_verified: bool,
+    perception_reason: str | None = None,
+) -> tuple[str, str]:
+    """Return (status, reason) for the M7.3 gate."""
+    if not perception_verified:
+        return "fail", perception_reason or "real perception registration not verified"
+    return evaluate_m7_2(
+        completed_without_error=completed_without_error,
+        displacement=displacement,
+        min_displacement=min_displacement,
+    )
 
 
 def ensure_libero_config() -> str:
@@ -151,18 +184,6 @@ def ensure_libero_config() -> str:
     )
     logger.info("Created LIBERO config file at %s", config_path)
     return str(config_path)
-
-
-def write_summary(run_dir: Path, summary: dict[str, Any]) -> Path:
-    """Write summary.json under the run directory."""
-    run_dir.mkdir(parents=True, exist_ok=True)
-    path = run_dir / "summary.json"
-    path.write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    return path
-
-
-def _utc_run_id() -> str:
-    return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
 
 def _apply_action(arm: Any, cfg: Any, raw_action: list[float]) -> None:
@@ -207,6 +228,7 @@ def run_wiring_probe(
     task_prompt: str,
     server_url: str,
     seed: int | None,
+    gate: str = DEFAULT_GATE,
 ) -> dict[str, Any]:
     """Run one bounded predict/apply loop and return metrics."""
     from sim.libero_backend import LiberoArm, LiberoCamera, create_env
@@ -223,52 +245,84 @@ def run_wiring_probe(
     client = VLAClient(server_url, timeout=cfg.request_timeout)
     client.health_check()
 
-    env = create_env(task_suite=task_suite, task_idx=task_idx)
-    arm = LiberoArm(env)
-    camera = LiberoCamera(env, arm=arm)
+    perception_metrics: dict[str, Any] | None = None
+    perception_error: str | None = None
 
-    ee_before = list(arm.last_tcp_pos) if arm.last_tcp_pos else None
-    steps_applied = 0
-    last_error: str | None = None
+    with sim_gt_fallback_guard() if gate == "m7.3" else _noop_context():
+        env = create_env(task_suite=task_suite, task_idx=task_idx)
+        arm = LiberoArm(env)
+        camera = LiberoCamera(env, arm=arm)
 
-    try:
-        chunk_limit = max(1, int(cfg.chunk_steps or 1))
-        while steps_applied < steps:
-            if getattr(arm, "episode_done", False):
-                logger.warning("Episode ended early at step %d", steps_applied)
-                break
+        if gate == "m7.3":
+            try:
+                perception_metrics = verify_real_perception_wiring(
+                    vec_env=env,
+                    camera=camera,
+                )
+            except (SimGtFallbackError, RuntimeError, ValueError) as exc:
+                perception_error = str(exc)
+                logger.error("M7.3 perception verification failed: %s", exc)
+                _close_env(env)
+                return {
+                    "ee_before": None,
+                    "ee_after": None,
+                    "displacement_m": None,
+                    "steps_applied": 0,
+                    "seed": seed,
+                    "task_prompt": task_prompt,
+                    "error": perception_error,
+                    "completed_without_error": False,
+                    "perception": {
+                        "verified": False,
+                        "error": perception_error,
+                    },
+                }
 
-            image_bytes = camera.capture_image()
-            wrist_image_bytes = None
-            capture_wrist = getattr(camera, "capture_wrist_image", None)
-            if callable(capture_wrist):
-                wrist_image_bytes = capture_wrist()
+        ee_before = list(arm.last_tcp_pos) if arm.last_tcp_pos else None
+        steps_applied = 0
+        last_error: str | None = None
 
-            arm_state = getattr(arm, "agent_state", None)
-            state_list = arm_state.tolist() if arm_state is not None else None
-            chunk = client.predict(
-                image_bytes,
-                task_prompt,
-                state=state_list,
-                wrist_image_bytes=wrist_image_bytes,
-            )
-
-            for raw_action in chunk[:chunk_limit]:
-                if steps_applied >= steps:
-                    break
+        try:
+            chunk_limit = max(1, int(cfg.chunk_steps or 1))
+            while steps_applied < steps:
                 if getattr(arm, "episode_done", False):
+                    logger.warning("Episode ended early at step %d", steps_applied)
                     break
-                _apply_action(arm, cfg, list(raw_action))
-                steps_applied += 1
-    except VLAServiceError as exc:
-        last_error = str(exc)
-        logger.error("VLA service error: %s", exc)
-    finally:
-        ee_after = list(arm.last_tcp_pos) if arm.last_tcp_pos else None
-        _close_env(env)
+
+                image_bytes = camera.capture_image()
+                wrist_image_bytes = None
+                capture_wrist = getattr(camera, "capture_wrist_image", None)
+                if callable(capture_wrist):
+                    wrist_image_bytes = capture_wrist()
+
+                arm_state = getattr(arm, "agent_state", None)
+                state_list = arm_state.tolist() if arm_state is not None else None
+                chunk = client.predict(
+                    image_bytes,
+                    task_prompt,
+                    state=state_list,
+                    wrist_image_bytes=wrist_image_bytes,
+                )
+
+                for raw_action in chunk[:chunk_limit]:
+                    if steps_applied >= steps:
+                        break
+                    if getattr(arm, "episode_done", False):
+                        break
+                    _apply_action(arm, cfg, list(raw_action))
+                    steps_applied += 1
+        except SimGtFallbackError as exc:
+            last_error = str(exc)
+            logger.error("M7.3 sim-GT fallback guard tripped: %s", exc)
+        except VLAServiceError as exc:
+            last_error = str(exc)
+            logger.error("VLA service error: %s", exc)
+        finally:
+            ee_after = list(arm.last_tcp_pos) if arm.last_tcp_pos else None
+            _close_env(env)
 
     displacement = eef_displacement(ee_before, ee_after)
-    return {
+    result = {
         "ee_before": ee_before,
         "ee_after": ee_after,
         "displacement_m": displacement,
@@ -278,6 +332,17 @@ def run_wiring_probe(
         "error": last_error,
         "completed_without_error": last_error is None,
     }
+    if gate == "m7.3":
+        result["perception"] = perception_metrics or {
+            "verified": False,
+            "error": perception_error,
+        }
+    return result
+
+
+@contextmanager
+def _noop_context() -> Iterator[None]:
+    yield
 
 
 def _drift_between_runs(first: dict[str, Any], second: dict[str, Any]) -> float | None:
@@ -286,7 +351,11 @@ def _drift_between_runs(first: dict[str, Any], second: dict[str, Any]) -> float 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="M7 wiring probe (isolated VLA→arm).")
-    parser.add_argument("--gate", default=DEFAULT_GATE, help="M7 gate id (default: m7.2)")
+    parser.add_argument(
+        "--gate",
+        default=DEFAULT_GATE,
+        help="M7 gate id (default: m7.2; m7.3 requires PERCEPTION_BACKEND=real)",
+    )
     parser.add_argument("--task-suite", default=DEFAULT_SUITE)
     parser.add_argument("--task-idx", type=int, default=DEFAULT_TASK_IDX)
     parser.add_argument("--steps", type=int, default=DEFAULT_STEPS)
@@ -321,30 +390,43 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def _configure_logging(run_log: Path) -> None:
-    from sim.libero_smoke import attach_run_log_file, configure_smoke_logging
-
-    os.environ["LONGOR_RUN_LOG"] = str(run_log)
-    configure_smoke_logging()
-    attach_run_log_file(extra_logger_names=("__main__",))
+def _print_final_result(
+    *,
+    gate: str,
+    status: str,
+    reason: str,
+    primary: dict[str, Any] | None,
+    drift_m: float | None,
+    min_displacement: float,
+) -> None:
+    label = "PASS" if status == "pass" else "FAIL"
+    print(f"{gate.upper()} probe {label}: {reason}")
+    if primary is not None:
+        print(
+            f"displacement_m={primary.get('displacement_m')} "
+            f"steps_applied={primary.get('steps_applied')} "
+            f"min_displacement_m={min_displacement}"
+        )
+        if gate == "m7.3":
+            perception = primary.get("perception") or {}
+            print(f"perception_verified={perception.get('verified', False)}")
+    if drift_m is not None:
+        print(f"drift_m={drift_m}")
 
 
 def main(argv: list[str] | None = None) -> int:
     load_dotenv(find_dotenv())
     args = parse_args(argv)
 
-    if args.gate != "m7.2":
-        print(f"Unsupported gate {args.gate!r}; only m7.2 is implemented", file=sys.stderr)
+    try:
+        validate_gate(args.gate)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
         return 2
 
-    run_id = _utc_run_id()
-    run_dir = REPO_ROOT / "artifacts" / "colab" / MILESTONE / run_id
-    run_log = run_dir / "run.log"
-    _configure_logging(run_log)
+    from sim.libero_smoke import configure_smoke_logging
 
-    branch, sha = git_metadata()
-    entrypoint = str(Path(__file__).resolve().relative_to(REPO_ROOT)).replace("\\", "/")
-    argv_list = sys.argv if argv is None else [entrypoint] + list(argv)
+    configure_smoke_logging()
 
     seed = args.seed
     if seed is None:
@@ -353,12 +435,16 @@ def main(argv: list[str] | None = None) -> int:
 
     status = "fail"
     reason = "not started"
-    metrics: dict[str, Any] = {}
+    primary: dict[str, Any] | None = None
     drift_m: float | None = None
 
     try:
+        if args.gate == "m7.3":
+            require_real_perception_backend()
+
         logger.info(
-            "M7.2 probe start: suite=%s task_idx=%s steps=%s seed=%s",
+            "%s probe start: suite=%s task_idx=%s steps=%s seed=%s",
+            args.gate.upper(),
             args.task_suite,
             args.task_idx,
             args.steps,
@@ -371,8 +457,8 @@ def main(argv: list[str] | None = None) -> int:
             task_prompt=args.task_prompt,
             server_url=args.vla_url,
             seed=seed,
+            gate=args.gate,
         )
-        metrics["primary"] = primary
 
         if args.drift_check:
             repeat_steps = max(3, min(args.steps, 5))
@@ -383,49 +469,40 @@ def main(argv: list[str] | None = None) -> int:
                 task_prompt=args.task_prompt,
                 server_url=args.vla_url,
                 seed=seed,
+                gate=args.gate,
             )
-            metrics["repeat"] = repeat
             drift_m = _drift_between_runs(primary, repeat)
-            metrics["drift_m"] = drift_m
 
-        status, reason = evaluate_m7_2(
-            completed_without_error=primary.get("completed_without_error", False),
-            displacement=primary.get("displacement_m"),
-            min_displacement=args.min_displacement,
-        )
+        if args.gate == "m7.3":
+            perception = primary.get("perception") or {}
+            status, reason = evaluate_m7_3(
+                completed_without_error=primary.get("completed_without_error", False),
+                displacement=primary.get("displacement_m"),
+                min_displacement=args.min_displacement,
+                perception_verified=bool(perception.get("verified")),
+                perception_reason=perception.get("error"),
+            )
+        else:
+            status, reason = evaluate_m7_2(
+                completed_without_error=primary.get("completed_without_error", False),
+                displacement=primary.get("displacement_m"),
+                min_displacement=args.min_displacement,
+            )
+    except ValueError as exc:
+        reason = str(exc)
+        logger.error("%s probe config error: %s", args.gate.upper(), reason)
     except Exception:
         reason = traceback.format_exc(limit=12)
-        logger.error("M7.2 probe failed:\n%s", reason)
+        logger.error("%s probe failed:\n%s", args.gate.upper(), reason)
 
-    summary = {
-        "run_id": run_id,
-        "milestone": MILESTONE,
-        "gate": args.gate,
-        "timestamp_utc": run_id,
-        "git_branch": branch,
-        "git_sha": sha,
-        "entrypoint": entrypoint,
-        "argv": argv_list,
-        "env_snapshot": collect_env_snapshot(),
-        "status": status,
-        "reason": reason,
-        "metrics": {
-            **metrics,
-            "min_displacement_m": args.min_displacement,
-            "task_suite": args.task_suite,
-            "task_idx": args.task_idx,
-            "steps_requested": args.steps,
-        },
-        "artifacts": {
-            "run_dir": str(run_dir.relative_to(REPO_ROOT)).replace("\\", "/"),
-            "run_log": str(run_log.relative_to(REPO_ROOT)).replace("\\", "/"),
-            "summary_json": str((run_dir / "summary.json").relative_to(REPO_ROOT)).replace(
-                "\\", "/"
-            ),
-        },
-    }
-    summary_path = write_summary(run_dir, summary)
-    logger.info("Wrote %s status=%s reason=%s", summary_path, status, reason)
+    _print_final_result(
+        gate=args.gate,
+        status=status,
+        reason=reason,
+        primary=primary,
+        drift_m=drift_m,
+        min_displacement=args.min_displacement,
+    )
     return 0 if status == "pass" else 1
 
 

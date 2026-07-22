@@ -72,7 +72,7 @@ Prove Longor wiring is correct in progressively harder, isolated stages before r
 
 **Acceptance**
 
-- Every gate (M7.1–M7.6) has a dedicated script entrypoint and artifact folder under `artifacts/colab/m7/**`.
+- Every gate (M7.1–M7.6) has a dedicated script entrypoint that prints a concise pass/fail summary with key metrics to stdout and exits 0 on pass.
 - `pytest` is green on Windows after M7.1 cleanup.
 - M7.2 and M7.3 show consistent EE motion and no runtime crashes.
 - M7.4–M7.6 produce at least one successful simple-task run each.
@@ -101,7 +101,7 @@ After M7 proves wiring, run the original M7 target: `examples/long_horizon_llm_l
 
 - Linux + Colab T4 run reaches `RunResult.success=True` on task 0.
 - Runtime path used for success does not register sim-GT perception skills.
-- Artifacts include branch/SHA, config snapshot, run log, trace path, and optional video path.
+- Validation script prints a concise pass/fail summary with key run metrics to stdout and exits 0 on pass.
 
 
 
@@ -111,7 +111,7 @@ Delete runnable sim-GT perception registration and config fallbacks. Real percep
 
 ### M11 (planned; former M10) — LIBERO-10 campaign
 
-Run independent per-task evaluations (`task_idx` 0..9), with ledgered artifacts and at least one success per task.
+Run independent per-task evaluations (`task_idx` 0..9), with per-task pass/fail stdout summaries and at least one success per task.
 
 ### M12 (planned; former M11) — XLeRobot-like simulation backend
 
@@ -142,18 +142,16 @@ Colab notebooks are **launchers only**.
   2. clone/sync repo and install deps,
   3. start/poll required services,
   4. run exactly one script under `validation/**`,
-  5. print artifact locations and pass/fail summary.
+  5. print pass/fail summary from script stdout.
 - Experiment orchestration, sweeps, and verdict logic belong in Python scripts, not notebook cells.
 - Validation notebooks clone the repository default branch only (no `GITHUB_BRANCH` flow).
 
-**Script artifact contract**
+**Script output contract**
 
-Every Colab-launched script must emit:
+Every Colab-launched script must:
 
-- artifact root: `artifacts/colab/<milestone>/<run_id>/`,
-- `summary.json` with: `run_id`, `milestone`, `timestamp_utc`, `git_branch`, `git_sha`, `entrypoint`, `argv`, non-secret `env_snapshot`, `status`, `reason`, metrics, artifact paths,
-- `run.log`,
-- process exit code `0` on pass, non-zero on fail.
+- print a concise pass/fail summary with key metrics to stdout,
+- exit `0` on pass, non-zero on fail.
 
 **Notebook-to-script mapping (planned target state)**
 

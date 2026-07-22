@@ -18,7 +18,7 @@ alwaysApply: false
   2. clone/sync repo + install deps,
   3. start background services and poll `/health`,
   4. run **exactly one** Python entrypoint under `validation/**`,
-  5. show summary/artifact paths.
+  5. show pass/fail summary from script stdout.
 - Disallowed inside notebooks:
   - policy sweeps, matrix experiments, verdict engines,
   - custom metric parsing/comparison logic,
@@ -35,16 +35,8 @@ alwaysApply: false
 
 Every script invoked by a Colab notebook must:
 
-- write run artifacts under `artifacts/colab/<milestone>/<run_id>/`,
-- write `summary.json` with at least:
-  - `run_id`, `milestone`, `timestamp_utc`,
-  - `git_branch`, `git_sha`,
-  - `entrypoint`, `argv`,
-  - `env_snapshot` (non-secret only),
-  - `status` (`pass`/`fail`), `reason`,
-  - key metrics and artifact paths,
-- stream logs to `run.log`,
-- return exit code `0` on pass, non-zero on fail.
+- print a concise pass/fail summary with key metrics to stdout,
+- exit `0` on pass, non-zero on fail.
 
 ## Cell command style
 
