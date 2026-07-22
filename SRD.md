@@ -59,7 +59,7 @@ Prove Longor wiring is correct in progressively harder, isolated stages before r
   - Simplest LIBERO environment, no planner/executor/LLM loop.
   - Entrypoint: `validation/m7_wiring_probe.py --gate m7.2` (default suite `libero_object`, task 0).
   - Ask VLA to move EE to a target pose/region; verify deterministic motion and termination behavior.
-3. **M7.3 isolated arm-control probe (real-perception mode)**
+3. **M7.3 isolated arm-control probe (real-perception mode) (done)**
   - Same probe as M7.2 with `PERCEPTION_BACKEND=real`.
   - Ensure no silent fallback to sim-GT registration.
 4. **M7.4 direct task probe, no planner decomposition**
