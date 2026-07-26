@@ -19,7 +19,7 @@ Enable robots to perform **long-horizon** tasks by separating **planning** (LLM)
 
 
 
-### Completed foundations (historical, unchanged IDs)
+### Completed foundations (historical)
 
 - **M1 (done):** Linux parity for the existing sim + VLA + test stack.
 - **M2 (done):** Pi0.5 backend (`VLA_POLICY=pi05`) validated on Linux GPU.
@@ -27,7 +27,7 @@ Enable robots to perform **long-horizon** tasks by separating **planning** (LLM)
 - **M4 (done):** plan AST + executor + skill registry + safe expression evaluator.
 - **M5 (done):** handcrafted plan E2E with sim-GT perception + arm skills.
 - **M6 (done):** LLM planner + LLM feedback + trace writer + `Runner`/`Backend` architecture.
-- **M8 (done):** SmolVLA backend (`VLA_POLICY=smolvla`) validated on Colab T4.
+- **SmolVLA backend baseline (done; former M8):** `VLA_POLICY=smolvla` validated on Colab T4.
 
 
 
@@ -37,6 +37,7 @@ Enable robots to perform **long-horizon** tasks by separating **planning** (LLM)
 - Always prove wiring on simpler isolated conditions before long-horizon target tasks.
 - For SmolVLA baseline checks, closed-loop `n_action_steps=1` is mandatory before trying larger horizons.
 - Keep debug scope contained: experiments and sweeps scripts belong in `validation/**`, not in production runtime modules.
+- From **M8 onward**, validation entrypoints must have **zero dependency** on `src/sim/libero_smoke.py` (no imports, no helper reuse).
 
 
 
@@ -44,40 +45,107 @@ Enable robots to perform **long-horizon** tasks by separating **planning** (LLM)
 
 
 
-### M7 (planned) — Wiring correctness ladder (isolation first)
+### M7 (done) — Isolated arm-control wiring probe (sim-GT)
 
 **Goal**
 
-Prove Longor wiring is correct in progressively harder, isolated stages before revisiting long-horizon real-perception acceptance.
+Prove the VLA->arm wiring path is alive in isolation.
 
 **Scope**
 
-1. **M7.1 cleanup pass (done)**
-  - Remove non-essential post-M8 debug drift from hot-path files (`src/vla/tools.py`, `src/sim/libero_backend.py`, `services/smolvla_service.py`) while preserving validated contract behavior.
-  - Keep runtime logic thin; move experiment orchestration to `validation/**`.
-2. **M7.2 isolated arm-control probe (sim-GT) (done)**
-  - Simplest LIBERO environment, no planner/executor/LLM loop.
-  - Entrypoint: `validation/m7_wiring_probe.py --gate m7.2` (default suite `libero_object`, task 0).
-  - Ask VLA to move EE to a target pose/region; verify deterministic motion and termination behavior.
-3. **M7.3 isolated arm-control probe (real-perception mode) (done)**
-  - Same probe as M7.2 with `PERCEPTION_BACKEND=real`.
-  - Ensure no silent fallback to sim-GT registration.
-4. **M7.4 direct task probe, no planner decomposition**
-  - Simplest LIBERO pick/place task.
-  - Pass only task text + required env observation to VLA tool path (no LLM planning loop).
-5. **M7.5 structured-plan probe without LLM**
-  - Inject a static JSON plan (`StaticPlanner`) and validate executor/skill orchestration on the same simple task.
-6. **M7.6 full decomposition probe**
-  - Re-enable LLM planner+feedback on the simple task and confirm decomposition succeeds before moving back to LIBERO-10.
+- Simplest LIBERO environment, no planner/executor/LLM loop.
+- Entrypoint: `validation/m7_wiring_probe.py --gate m7.2` (default suite `libero_object`, task 0).
+- Validate wiring only: VLA request/response, action application, and bounded run termination.
+- Explicitly out of scope for M7: policy quality claims (for example, expected EE->target distance-decay magnitude).
 
 **Acceptance**
 
-- Every gate (M7.1–M7.6) has a dedicated script entrypoint that prints a concise pass/fail summary with key metrics to stdout and exits 0 on pass.
-- `pytest` is green on Windows after M7.1 cleanup.
-- M7.2 and M7.3 show consistent EE motion and no runtime crashes.
-- M7.4–M7.6 produce at least one successful simple-task run each.
+- Script prints a concise pass/fail summary with key metrics and exits `0` on pass.
+- Probe shows non-zero EE motion above threshold and no runtime crash.
 
-**Out of scope for M7**
+**Historical note**
+
+- Former **M7.3** (real-perception wiring probe) is complete and remains a wiring gate only; it is not a policy-health proof.
+
+
+
+### M8 (planned) — Isolated SmolVLA health proof (same conditions as M7.2)
+
+**Goal**
+
+Prove policy health under the same isolated setup as M7.2: SmolVLA should approach decisively, close, lift, and finish successfully within a reasonable step budget.
+
+**Scope**
+
+- Use the same isolation constraints as M7.2 (no planner/executor/LLM).
+- Add policy-health diagnostics beyond wiring: per-step EE->target distance, action magnitudes, gripper state transitions, and success reason.
+- Entrypoint: `validation/m8_policy_health_probe.py`.
+- Zero dependency on `src/sim/libero_smoke.py`.
+
+**Acceptance**
+
+- At least one seeded run reaches a successful lift/task-complete outcome within the configured step budget.
+- Output includes a clear per-step distance trace suitable for auditing expected approach behavior.
+- Script prints concise pass/fail metrics and exits `0` on pass.
+
+
+
+### M9 (planned; former M7.4) — Direct task probe, no planner decomposition
+
+**Goal**
+
+Validate direct VLA task success on the simplest LIBERO pick task with no planning layer.
+
+**Scope**
+
+- Pass only task text + required env observation to the VLA tool path.
+- No planner/executor/LLM loop.
+- Zero dependency on `src/sim/libero_smoke.py`.
+
+**Acceptance**
+
+- At least one successful simple-task run (`reason=task_success`, `status=success`).
+- Script prints concise pass/fail metrics and exits `0` on pass.
+
+
+
+### M10 (planned; former M7.5) — Structured-plan probe without LLM
+
+**Goal**
+
+Validate executor/skill orchestration on the same simple task using a static plan only.
+
+**Scope**
+
+- Inject a static JSON plan (`StaticPlanner`) for the simple task.
+- Keep planner LLM disabled; test executor + skill wiring only.
+- Zero dependency on `src/sim/libero_smoke.py`.
+
+**Acceptance**
+
+- At least one successful simple-task run through static-plan execution.
+- Script prints concise pass/fail metrics and exits `0` on pass.
+
+
+
+### M11 (planned; former M7.6) — Full decomposition probe
+
+**Goal**
+
+Re-enable planner+feedback decomposition on the same simple task and verify success before returning to LIBERO-10.
+
+**Scope**
+
+- Re-enable LLM planner + LLM feedback evaluator.
+- Keep task fixed to the simple probe target; no LIBERO-10 breadth yet.
+- Zero dependency on `src/sim/libero_smoke.py`.
+
+**Acceptance**
+
+- At least one successful decomposed run on the simple task.
+- Script prints concise pass/fail metrics and exits `0` on pass.
+
+**Out of scope for M8-M11**
 
 - LIBERO-10 breadth (campaign).
 - Hardware backend milestones.
@@ -85,11 +153,11 @@ Prove Longor wiring is correct in progressively harder, isolated stages before r
 
 
 
-### M9 (planned; former M7) — Real perception E2E on LIBERO-10 task 0
+### M12 (planned; former M9) — Real perception E2E on LIBERO-10 task 0
 
 **Goal**
 
-After M7 proves wiring, run the original M7 target: `examples/long_horizon_llm_libero.py` on `libero_10` task 0 with real perception and SmolVLA.
+After M8-M11 prove policy health + decomposition on the simple task, run the original long-horizon target: `examples/long_horizon_llm_libero.py` on `libero_10` task 0 with real perception and SmolVLA.
 
 **Scope**
 
@@ -105,27 +173,27 @@ After M7 proves wiring, run the original M7 target: `examples/long_horizon_llm_l
 
 
 
-### M10 (planned; former M9) — Sim-GT perception removal (strict)
+### M13 (planned; former M10) — Sim-GT perception removal (strict)
 
 Delete runnable sim-GT perception registration and config fallbacks. Real perception becomes the only LIBERO runtime path.
 
-### M11 (planned; former M10) — LIBERO-10 campaign
+### M14 (planned; former M11) — LIBERO-10 campaign
 
 Run independent per-task evaluations (`task_idx` 0..9), with per-task pass/fail stdout summaries and at least one success per task.
 
-### M12 (planned; former M11) — XLeRobot-like simulation backend
+### M15 (planned; former M12) — XLeRobot-like simulation backend
 
 Add a simulation backend that mirrors XLeRobot capabilities while preserving the `Runner` + `Backend` contracts.
 
-### M13 (planned; former M12) — Architecture hardening and cleanup
+### M16 (planned; former M13) — Architecture hardening and cleanup
 
 Deep architecture review + targeted redundancy deletion before physical hardware milestones.
 
-### M14 (planned; former M13) — Real XLeRobot hardware backend
+### M17 (planned; former M14) — Real XLeRobot hardware backend
 
 Implement production hardware backend with strict pre-flight and safety gates.
 
-### M15 (planned; former M14) — Real-world XLeRobot task validation
+### M18 (planned; former M15) — Real-world XLeRobot task validation
 
 At least one full autonomous success on the physical robot with archived evidence.
 
@@ -156,11 +224,11 @@ Every Colab-launched script must:
 **Notebook-to-script mapping (planned target state)**
 
 
-| Notebook                               | Script                                   |
-| -------------------------------------- | ---------------------------------------- |
-| `colab/m7_wiring_probe.ipynb`          | `validation/m7_wiring_probe.py`          |
-| `colab/m9_real_perception_task0.ipynb` | `validation/m9_real_perception_task0.py` |
-| `colab/m11_libero_10_campaign.ipynb`   | `validation/m11_libero_10_campaign.py`   |
+| Notebook                          | Script                                                    |
+| --------------------------------- | --------------------------------------------------------- |
+| `colab/m7_wiring_probe.ipynb`     | `validation/m7_wiring_probe.py` / `validation/m8_policy_health_probe.py` / `validation/m7_direct_task_probe.py` |
+| `colab/m12_real_perception_task0.ipynb` | `TBD` (planned: `validation/m12_real_perception_task0.py`) |
+| `colab/m14_libero_10_campaign.ipynb`    | `TBD` (planned: `validation/m14_libero_10_campaign.py`)   |
 
 
 Legacy notebooks remain temporary until migration to the launcher model is complete.
