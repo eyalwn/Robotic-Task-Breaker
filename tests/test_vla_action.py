@@ -8,7 +8,13 @@ from unittest.mock import MagicMock, patch
 import pytest
 from vla import VLAConfig, create_vla_manipulation
 from vla.action import process_raw_action, requested_gripper_state, should_flip_gripper
-from vla.tools import _axis_calibration_hint, _use_raw_openpi_action_path
+from vla.tools import (
+    _RunState,
+    _actual_delta_and_ik_ratio,
+    _axis_calibration_hint,
+    _check_failure_heuristics,
+    _use_raw_openpi_action_path,
+)
 
 
 class _FakeCamera:
@@ -38,6 +44,62 @@ def _make_response(actions):
     resp.json.return_value = {"actions": actions}
     resp.raise_for_status.return_value = None
     return resp
+
+
+def test_ik_tracking_warning_skipped_on_raw_openpi_path(caplog):
+    caplog.set_level(logging.WARNING)
+
+    class _Arm:
+        last_ik_debug = {
+            "cause": "clip",
+            "clipped_joints": 2,
+            "jacobian_cond": 1e6,
+        }
+
+    state = _RunState(prev_eef=[0.0, 0.0, 0.0], steps_applied=1, last_ik_warn_step=-999)
+    _, chunk_ik_saturation = _actual_delta_and_ik_ratio(
+        state,
+        [0.01, 0.0, 0.0],
+        0.5,
+        0.0,
+        0.0,
+        ik_ratio_low=0.5,
+        ik_ratio_high=2.0,
+        ik_warn_cooldown_steps=1,
+        arm=_Arm(),
+        check_ik_tracking=False,
+    )
+
+    assert "IK tracking poor" not in caplog.text
+    assert not chunk_ik_saturation
+
+
+def test_ik_tracking_warning_emitted_on_poor_ratio(caplog):
+    caplog.set_level(logging.WARNING)
+
+    class _Arm:
+        last_ik_debug = {
+            "cause": "clip",
+            "clipped_joints": 2,
+            "jacobian_cond": 1e6,
+        }
+
+    state = _RunState(prev_eef=[0.0, 0.0, 0.0], steps_applied=1, last_ik_warn_step=-999)
+    _, chunk_ik_saturation = _actual_delta_and_ik_ratio(
+        state,
+        [0.01, 0.0, 0.0],
+        0.5,
+        0.0,
+        0.0,
+        ik_ratio_low=0.5,
+        ik_ratio_high=2.0,
+        ik_warn_cooldown_steps=1,
+        arm=_Arm(),
+        check_ik_tracking=True,
+    )
+
+    assert "IK tracking poor" in caplog.text
+    assert chunk_ik_saturation
 
 
 def test_unset_axis_signs_enables_raw_openpi_action_path():
@@ -733,6 +795,39 @@ def test_adaptive_scaling_factor_decreases_with_dist():
     assert dxs[0] > dxs[1] > dxs[2]
     min_allowed = cfg.action_scale * cfg.adaptive_min_factor
     assert all(dx >= min_allowed - 1e-12 for dx in dxs)
+
+
+def test_fail_dist_consecutive_not_triggered_when_distance_improves_while_far():
+    cfg = VLAConfig(
+        fail_dist_threshold=0.1,
+        fail_dist_consecutive_steps=3,
+    )
+    state = _RunState()
+    dists = [0.50, 0.40, 0.30, 0.25, 0.20, 0.15, 0.12]
+
+    for dist in dists:
+        reason = _check_failure_heuristics(cfg, state, dist, chunk_ik_saturation=False)
+        assert reason is None
+        state.pre_dist = dist
+
+    assert state.fail_dist_count == 0
+
+
+def test_fail_dist_consecutive_triggered_when_distance_stalls_while_far():
+    cfg = VLAConfig(
+        fail_dist_threshold=0.1,
+        fail_dist_consecutive_steps=3,
+    )
+    state = _RunState(pre_dist=0.50)
+    dists = [0.50, 0.50, 0.51]
+
+    reason = None
+    for dist in dists:
+        reason = _check_failure_heuristics(cfg, state, dist, chunk_ik_saturation=False)
+        state.pre_dist = dist
+
+    assert reason == "fail_dist_consecutive"
+    assert state.fail_dist_count == 3
 
 
 def test_adaptive_scaling_can_be_disabled():

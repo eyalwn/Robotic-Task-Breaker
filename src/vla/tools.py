@@ -18,6 +18,7 @@ from .config import VLAConfig
 logger = logging.getLogger(__name__)
 
 _obs_keys_dumped = False
+_DIST_IMPROVE_EPS = 1e-6
 
 
 def _round_floats(obj: Any, ndigits: int = 4) -> Any:
@@ -444,6 +445,8 @@ def _actual_delta_and_ik_ratio(
     ik_ratio_high: float,
     ik_warn_cooldown_steps: int,
     arm: _ArmLike | Any,
+    *,
+    check_ik_tracking: bool = True,
 ) -> tuple[str, bool]:
     actual_delta_str = "?"
     chunk_ik_saturation = False
@@ -451,6 +454,8 @@ def _actual_delta_and_ik_ratio(
         return actual_delta_str, chunk_ik_saturation
     actual_delta = [a - b for a, b in zip(eef, state.prev_eef)]
     actual_delta_str = [f"{value:.4f}" for value in actual_delta]
+    if not check_ik_tracking:
+        return actual_delta_str, chunk_ik_saturation
     scaled_mag = math.sqrt(dx**2 + dy**2 + dz**2)
     actual_mag = math.sqrt(sum(component**2 for component in actual_delta))
     if scaled_mag > 0.001 and actual_mag > 0.001:
@@ -600,7 +605,14 @@ def _check_failure_heuristics(
 ) -> str | None:
     if dist is not None:
         if dist > cfg.fail_dist_threshold:
-            state.fail_dist_count += 1
+            not_improving = (
+                state.pre_dist is not None
+                and dist >= state.pre_dist - _DIST_IMPROVE_EPS
+            )
+            if not_improving:
+                state.fail_dist_count += 1
+            else:
+                state.fail_dist_count = 0
         else:
             state.fail_dist_count = 0
         if (
@@ -854,6 +866,7 @@ def create_vla_manipulation(
                     ik_ratio_high,
                     cfg.ik_ratio_warn_cooldown_steps,
                     arm,
+                    check_ik_tracking=not _use_raw_openpi_action_path(cfg),
                 )
                 chunk_state.ik_saturation = chunk_state.ik_saturation or chunk_ik_saturation
 
