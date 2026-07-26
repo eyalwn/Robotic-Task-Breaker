@@ -10,8 +10,6 @@ import traceback
 from pathlib import Path
 from typing import Any
 
-from dotenv import find_dotenv, load_dotenv
-
 
 def _ensure_repo_root_on_path() -> None:
     """Allow `python validation/m7_direct_task_probe.py` to import `validation.*`."""
@@ -237,17 +235,12 @@ def _print_final_result(
 
 
 def main(argv: list[str] | None = None) -> int:
-    load_dotenv(find_dotenv())
+    from utils import configure_logging, load_env
+
+    load_env()
     args = parse_args(argv)
 
-    logging.basicConfig(
-        level=os.environ.get("LOG_LEVEL", "INFO").upper(),
-        format="%(levelname)s [%(name)s] %(message)s",
-        stream=sys.stdout,
-        force=True,
-    )
-    for name in ("openai", "httpcore", "httpx", "trimesh", "matplotlib"):
-        logging.getLogger(name).setLevel(logging.WARNING)
+    configure_logging(stream=sys.stdout)
 
     seed = args.seed
     if seed is None:

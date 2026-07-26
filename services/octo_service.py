@@ -20,8 +20,11 @@ from PIL import Image
 # OctoModel.load_pretrained — Hugging Face id (cached after first download).
 OCTO_SMALL_15_MODEL_URI = "hf://rail-berkeley/octo-small-1.5"
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-log = logging.getLogger("octo_service")
+from utils import configure_logging, load_env
+
+load_env()
+configure_logging(fmt="%(asctime)s %(levelname)s %(message)s")
+log = logging.getLogger(__name__)
 
 VLA_PORT = int(os.environ.get("VLA_PORT", "8765"))
 VLA_ACTION_SCALE = float(os.environ.get("VLA_ACTION_SCALE", "0.05"))

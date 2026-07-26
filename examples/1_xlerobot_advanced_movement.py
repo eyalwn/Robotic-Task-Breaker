@@ -18,6 +18,10 @@ from robots.XLeRobot.tools import (
     create_turn_right,
 )
 from robots.XLeRobot.xlerobot_llm_agent import XLeRobotAgent
+from utils import configure_logging, load_env
+
+load_env()
+configure_logging()
 
 system_prompt = """
 ## ROBOT SPECS

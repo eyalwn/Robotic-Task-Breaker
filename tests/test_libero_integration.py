@@ -8,7 +8,6 @@ import os
 
 import pytest
 import requests
-from dotenv import find_dotenv, load_dotenv
 
 from core.plan import (
     AlwaysContinueEvaluator,
@@ -19,6 +18,7 @@ from core.plan import (
 from core.runner import Runner
 from sim.libero_backend import LiberoBackend
 from sim.libero_smoke import run_grasp_smoke, run_place_smoke, run_sequential_smoke
+from utils import load_env
 
 pytestmark = pytest.mark.integration
 
@@ -42,8 +42,8 @@ def _vla_url() -> str:
 
 
 @pytest.fixture(scope="module", autouse=True)
-def _load_env() -> None:
-    load_dotenv(find_dotenv())
+def _load_env_fixture() -> None:
+    load_env()
 
 
 @pytest.fixture(scope="module")

@@ -1,7 +1,7 @@
 """Core LangChain tools available to every robot agent (memory, speech, task control)."""
 from langchain_core.tools import tool
 from core.memory import Memory
-from core.utils import stop_listening_during_tool_execution
+from utils import stop_listening_during_tool_execution
 from core.voice_synth import speak_and_play
 
 

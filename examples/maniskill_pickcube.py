@@ -2,23 +2,15 @@
 
 Requires a running VLA server (see README). Works on Linux or Windows (Git Bash).
 """
-import logging
 import os
-
-from dotenv import find_dotenv, load_dotenv
 
 from core.plan import AlwaysContinueEvaluator, StaticPlanner, grab_object_plan
 from core.runner import Runner
 from sim.maniskill_backend import ManiSkillBackend
+from utils import configure_logging, load_env
 
-load_dotenv(find_dotenv())
-logging.basicConfig(
-    level=os.environ.get("LOG_LEVEL", "INFO").upper(),
-    format="%(levelname)s [%(name)s] %(message)s",
-    force=True,
-)
-for _noisy in ("openai", "httpcore", "httpx", "trimesh", "matplotlib", "numexpr"):
-    logging.getLogger(_noisy).setLevel(logging.WARNING)
+load_env()
+configure_logging()
 
 plan = grab_object_plan("cube", goal="pick the cube")
 backend = ManiSkillBackend(

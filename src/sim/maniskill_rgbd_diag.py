@@ -5,9 +5,9 @@ from __future__ import annotations
 import os
 
 import gymnasium as gym
-from dotenv import find_dotenv, load_dotenv
 
 from sim.maniskill_backend import _default_sim_backend
+from utils import load_env
 
 
 def _has_rgb(obs) -> bool:
@@ -31,7 +31,7 @@ def _has_rgb(obs) -> bool:
 
 
 def run() -> int:
-    load_dotenv(find_dotenv())
+    load_env()
     try:
         import mani_skill.envs  # noqa: F401
     except Exception as exc:

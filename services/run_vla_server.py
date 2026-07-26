@@ -8,17 +8,13 @@ from pathlib import Path
 _SUPPORTED = ("octo-small-1.5", "pi05", "smolvla")
 
 
-def _load_dotenv() -> None:
+def main() -> None:
     try:
-        from dotenv import find_dotenv, load_dotenv
+        from utils import load_env
 
-        load_dotenv(find_dotenv(usecwd=True))
+        load_env(usecwd=True)
     except ImportError:
         pass
-
-
-def main() -> None:
-    _load_dotenv()
     policy = (os.environ.get("VLA_POLICY") or "").strip()
     if not policy:
         print(

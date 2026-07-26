@@ -5,7 +5,7 @@ from lerobot.async_inference.robot_client import RobotClient
 from lerobot.async_inference.configs import RobotClientConfig
 from lerobot.robots.so_follower.config_so_follower import SOFollowerConfig
 from lerobot.cameras.opencv.configuration_opencv import OpenCVCameraConfig
-from core.utils import stop_listening_during_tool_execution
+from utils import stop_listening_during_tool_execution
 import time
 import threading
 

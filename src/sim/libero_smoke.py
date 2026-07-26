@@ -10,19 +10,9 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from dotenv import find_dotenv, load_dotenv
+from utils import configure_logging, load_env
 
 _RUN_LOG_LOGGER_NAMES = ("vla.tools", "sim.libero_backend", "core.plan")
-_NOISY_LOGGERS = (
-    "numba",
-    "numexpr",
-    "OpenGL",
-    "OpenGL.acceleratesupport",
-    "robosuite",
-    "datasets",
-    "jax",
-    "jaxlib",
-)
 _run_log_attached_path: str | None = None
 
 _LIFT_REASONS = frozenset({"grasp_lift", "proximity_grasp", "task_success"})
@@ -89,8 +79,6 @@ def attach_run_log_file(
         if handler not in logger.handlers:
             logger.addHandler(handler)
         logger.setLevel(logging.DEBUG)
-    for noisy in _NOISY_LOGGERS:
-        logging.getLogger(noisy).setLevel(logging.WARNING)
     root = logging.getLogger()
     resolved = str(log_path.resolve())
     for root_handler in list(root.handlers):
@@ -103,19 +91,7 @@ def attach_run_log_file(
 
 
 def configure_smoke_logging() -> None:
-    logging.basicConfig(
-        level=os.environ.get("LOG_LEVEL", "INFO").upper(),
-        format="%(levelname)s [%(name)s] %(message)s",
-        stream=sys.stdout,
-        force=True,
-    )
-    for _h in logging.root.handlers:
-        if isinstance(_h, logging.StreamHandler) and not isinstance(
-            _h, logging.FileHandler
-        ):
-            _h.setLevel(logging.INFO)
-    for name in ("openai", "httpcore", "httpx", "trimesh", "matplotlib"):
-        logging.getLogger(name).setLevel(logging.WARNING)
+    configure_logging(stream=sys.stdout)
     caller_name = "__main__"
     frame = inspect.currentframe()
     if frame is not None and frame.f_back is not None:
@@ -159,7 +135,7 @@ def log_arm_state(arm: Any, label: str) -> None:
 
 
 def _bootstrap_smoke() -> None:
-    load_dotenv(find_dotenv())
+    load_env()
     apply_smoke_env_defaults()
     configure_smoke_logging()
 

@@ -22,8 +22,11 @@ import numpy as np
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from PIL import Image
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-log = logging.getLogger("smolvla_service")
+from utils import configure_logging, load_env
+
+load_env()
+configure_logging(fmt="%(asctime)s %(levelname)s %(message)s")
+log = logging.getLogger(__name__)
 
 VLA_PORT = int(os.environ.get("VLA_PORT", "8765"))
 VLA_ACTION_CLIP = float(os.environ.get("VLA_ACTION_CLIP", "2.0"))

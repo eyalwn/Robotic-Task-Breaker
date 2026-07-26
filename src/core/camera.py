@@ -1,6 +1,6 @@
 """USB camera wrapper that captures and augments JPEG frames for the robot."""
 import cv2
-from core.utils import basic_augmentation
+from utils import basic_augmentation
 
 class RobotCamera:
     """OpenCV-backed camera that reads frames from a USB port and returns augmented JPEG bytes."""

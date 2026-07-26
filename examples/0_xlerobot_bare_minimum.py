@@ -5,6 +5,10 @@ from core.camera import RobotCamera
 from robots.XLeRobot.servo_controls import ServoController
 from robots.XLeRobot.tools import create_move_forward, create_turn_left, create_turn_right
 from robots.XLeRobot.xlerobot_llm_agent import XLeRobotAgent
+from utils import configure_logging, load_env
+
+load_env()
+configure_logging()
 
 main_camera = RobotCamera(os.environ.get("ROBOCREW_CAMERA", "/dev/camera_center"))
 servo_controller = ServoController(

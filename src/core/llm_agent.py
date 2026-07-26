@@ -1,13 +1,11 @@
 """Vision-language agent loop: captures camera/lidar input, calls an LLM, and executes tool responses."""
 from core.capture_compat import capture_main_view
 from core.peripherals import build_peripherals
-from dotenv import find_dotenv, load_dotenv
 import time
 import base64
 import logging
 from langchain_core.messages import HumanMessage, SystemMessage, ToolMessage
 from langchain.chat_models import init_chat_model
-load_dotenv(find_dotenv())
 
 logger = logging.getLogger(__name__)
 

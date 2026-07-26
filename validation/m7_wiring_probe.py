@@ -12,8 +12,6 @@ from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Iterator
 
-from dotenv import find_dotenv, load_dotenv
-
 DEFAULT_GATE = "m7.2"
 SUPPORTED_GATES = ("m7.2", "m7.3")
 REAL_PERCEPTION_SKILLS = (
@@ -415,7 +413,9 @@ def _print_final_result(
 
 
 def main(argv: list[str] | None = None) -> int:
-    load_dotenv(find_dotenv())
+    from utils import load_env
+
+    load_env()
     args = parse_args(argv)
 
     try:

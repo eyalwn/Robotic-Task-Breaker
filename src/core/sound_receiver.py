@@ -5,10 +5,6 @@ import threading
 import numpy as np
 import time
 from openai import OpenAI
-from dotenv import find_dotenv, load_dotenv
-
-
-load_dotenv(find_dotenv())
 
 
 class SoundReceiver:

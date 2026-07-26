@@ -24,6 +24,10 @@ from robots.XLeRobot.tools import (
     create_vla_single_arm_manipulation,
 )
 from robots.XLeRobot.xlerobot_llm_agent import XLeRobotAgent
+from utils import configure_logging, load_env
+
+load_env()
+configure_logging()
 
 prompt_path = Path(__file__).parent.parent / "src/robots/XLeRobot/xlerobot.prompt"
 with open(prompt_path, encoding="utf-8") as f:
