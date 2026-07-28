@@ -60,6 +60,8 @@ Set `BACKEND=libero` in `.env`.
 
 **One stack per venv.** If pip conflicts appear when switching policies, delete `.vla-venv` and recreate. Set `VLA_POLICY` in `.env` to match the installed stack.
 
+Every VLA stack **must** end with `pip install -e .` from the repo root so `services/run_vla_server.py` can import shared helpers (`utils`).
+
 Pick **one** of the VLA stacks below.
 
 ---
@@ -72,6 +74,7 @@ Requires **Linux + NVIDIA GPU** (Colab T4 is sufficient).
 python3 -m venv .vla-venv
 .vla-venv/bin/python -m pip install -U pip
 .vla-venv/bin/python -m pip install -r deps/requirements-vla-smolvla-linux.txt
+.vla-venv/bin/python -m pip install -e .
 ```
 
 Default checkpoint is `HuggingFaceVLA/smolvla_libero`. Override with `SMOLVLA_CHECKPOINT` in `.env` if needed.
@@ -92,6 +95,7 @@ py -3.11 -m venv .vla-venv
 git clone https://github.com/octo-models/octo.git ~/octo
 .vla-venv/Scripts/python -m pip install -r deps/requirements-vla-octo-small-1.5-windows.txt
 .vla-venv/Scripts/python -m pip install -e ~/octo --no-deps
+.vla-venv/Scripts/python -m pip install -e .
 ```
 
 First service start downloads weights from [rail-berkeley/octo-small-1.5](https://huggingface.co/rail-berkeley/octo-small-1.5) (needs network).
@@ -107,6 +111,7 @@ git clone https://github.com/octo-models/octo.git ~/octo
 .vla-venv/bin/python -m pip install -e ~/octo
 .vla-venv/bin/python -m pip install -r ~/octo/requirements.txt
 .vla-venv/bin/python -m pip install -r deps/requirements-vla-octo-small-1.5-linux.txt
+.vla-venv/bin/python -m pip install -e .
 ```
 
 Same Hugging Face weights as on Windows. If Octo's pins fight your JAX install, recreate the venv and follow Octo's README / issues.
@@ -125,6 +130,7 @@ python3 -m venv .vla-venv
 git clone --recurse-submodules https://github.com/Physical-Intelligence/openpi.git ~/openpi
 .vla-venv/bin/python -m pip install -e ~/openpi
 .vla-venv/bin/python -m pip install -r deps/requirements-vla-pi05-linux.txt
+.vla-venv/bin/python -m pip install -e .
 ```
 
 Checkpoints download automatically on first service start from `gs://openpi-assets` (cached in `~/.cache/openpi`). If OpenPI's deps conflict, see [OpenPI installation](https://github.com/Physical-Intelligence/openpi?tab=readme-ov-file#installation) for `uv`-based setup.

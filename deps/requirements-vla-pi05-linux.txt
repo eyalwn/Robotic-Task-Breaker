@@ -1,5 +1,6 @@
 # Linux + NVIDIA GPU only.
-# Usage: clone openpi with submodules, `pip install -e /path/to/openpi`, then install this file in the same venv.
+# Usage: clone openpi with submodules, `pip install -e /path/to/openpi`, then install this file
+# in the same venv, then `pip install -e .` (Longor repo root) so run_vla_server can import utils.
 # Self-contained: all remaining VLA venv deps after openpi is installed.
 
 setuptools

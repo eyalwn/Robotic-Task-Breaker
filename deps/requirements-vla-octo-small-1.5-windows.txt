@@ -11,6 +11,7 @@
 #   .vla-venv/Scripts/python -m pip install -U pip
 #   .vla-venv/Scripts/python -m pip install -r deps/requirements-vla-octo-small-1.5-windows.txt
 #   .vla-venv/Scripts/python -m pip install -e %USERPROFILE%/octo --no-deps
+#   .vla-venv/Scripts/python -m pip install -e .
 #   (clone https://github.com/octo-models/octo.git into ~/octo first)
 
 tensorflow==2.15.0

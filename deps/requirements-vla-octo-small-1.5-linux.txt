@@ -1,4 +1,5 @@
 # Pin file for policy octo-small-1.5 — Linux (and WSL): install **after** Octo's `requirements.txt` (see README §3).
+# Finish with `pip install -e .` from the Longor repo root.
 # Windows: use `requirements-vla-octo-small-1.5-windows.txt` instead (do not install Octo's full requirements.txt there).
 #
 # Python 3.12 note: Octo's requirements.txt pins numpy==1.24.3 and ml_dtypes==0.2.0 (no Py3.12 wheels),
