@@ -123,19 +123,41 @@ service baselines were all built and validated before this refactor. The
 ManiSkill backend, the XLeRobot hardware stack, the Octo and Pi0.5 services, and
 the trace writer are being removed.
 
-### Phase 1 — new environment and policy client, proven in isolation (code done, gate pending)
+### Phase 1 — new environment and policy client, proven in isolation (done)
 
 `src/config.py`, `src/libero_env.py`, `src/vla_client.py`,
 `validation/libero_probe.py`. No planner, no executor, no skills, no plan AST.
 Nothing deleted.
 
 **Acceptance:** `python validation/libero_probe.py` prints a pass/fail summary
-and exits 0, having solved `libero_object` task 0.
+and exits 0, having solved `libero_object` task 0. **Met** on Colab T4 with
+SmolVLA (`HuggingFaceVLA/smolvla_libero`):
 
-This is also the diagnostic gate for the long-standing VLA/environment defect.
-If the probe succeeds, the defect was in the layers being deleted. If it fails,
-the defect is in `services/smolvla_service.py` or the checkpoint, and the search
-space is ~280 lines instead of ~2000.
+```
+task              'pick up the alphabet soup and place it in the basket'
+steps             170 (160 policy actions)
+eef displacement  0.3025 m
+gripper qpos      0.0323 .. 0.0399
+mean |action|     [0.156, 0.361, 0.314, 0.008, 0.031, 0.021, 0.998]
+closest approach  alphabet_soup_1: 0.0074 m
+closest approach  basket_1: 0.1596 m
+PASS: task solved
+```
+
+This was also the diagnostic gate for the long-standing VLA/environment defect.
+The result settles it: the defect was in the layers this refactor deletes, not in
+the service or the checkpoint.
+
+**Baseline to preserve.** This run is the reference any later regression is
+measured against. Two properties matter:
+
+- The policy solved a *complete* pick-and-place from a single task string, in one
+  uninterrupted rollout. Decomposing the same work into separate `arm.grab` and
+  `arm.place` calls gives the policy less context and resets its action chunk
+  mid-task, so a decomposed run doing *worse* than this probe is expected and is
+  not evidence of a wiring bug. Re-run the probe before blaming the executor.
+- 160 actions sufficed for both phases of the task, well inside
+  `MAX_EPISODE_STEPS["libero_object"]` (280) and `MAX_SKILL_STEPS` (300).
 
 ### Phase 2 — documentation anchored (done)
 
@@ -155,7 +177,16 @@ in place and untouched.
 - `executor.py`: the plan walk and restricted expression evaluator from
   `src/core/plan/executor.py`, minus all trace plumbing, plus a `_manipulate()`
   method holding the whole policy loop and an `arm.grab` / `arm.place` branch in
-  the `CallNode` case.
+  the `CallNode` case. `_manipulate()` must match the loop in
+  `validation/libero_probe.py`: query the policy, apply `REPLAN_STEPS` actions,
+  repeat until success or `MAX_SKILL_STEPS`.
+
+  Task strings passed to the policy must read like the LIBERO language
+  annotations the policy trained on, since `object_names()` returns BDDL
+  identifiers such as `alphabet_soup_1`. Strip the trailing index and replace
+  underscores with spaces, then build `f"pick up the {name}"` for `arm.grab` and
+  `f"put the {name} in the {location}"` for `arm.place`. Do not invent a
+  per-object alias table; the identifiers already read as English once cleaned.
 - `planner.py`: `LLMPlanner` from `src/core/plan/llm_planner.py` and
   `LLMFeedbackEvaluator` from `src/core/plan/llm_feedback.py`, with
   `FeedbackDecision` / `FeedbackOutcome` folded in.
