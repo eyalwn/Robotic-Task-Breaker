@@ -11,7 +11,7 @@ requires-python = ">=3.10"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
-py-modules = ["utils"]
+py-modules = ["utils", "config", "libero_env", "vla_client"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

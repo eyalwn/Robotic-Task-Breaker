@@ -1,4 +1,11 @@
 # LIBERO simulation deps (Linux only; requires sys_platform == 'linux')
 # Self-contained: includes base requirements so callers only need this one file.
+#
+# We drive libero.libero.envs.OffScreenRenderEnv directly and no longer use
+# LeRobot's env factory, but the `lerobot[libero]` extra is what installs the
+# `libero` package (plus a robosuite/mujoco resolution known to work headless),
+# so it stays. Slimming this to a direct LIBERO pin is an optional follow-up.
+#
+# Headless rendering needs: export MUJOCO_GL=egl PYOPENGL_PLATFORM=egl
 -r requirements.txt
 lerobot[libero]>=0.5

@@ -1,21 +1,43 @@
 ---
-description: Longor architecture boundaries and backend contract guardrails
+description: Longor architecture boundaries and contract guardrails
 alwaysApply: true
 ---
 
 # Longor architecture boundaries
 
-- `SRD.md` is the single source of truth for milestones and backend contract.
-- If a change needs a backend contract change, stop and propose the contract update first.
-- `src/core/**` must stay OS/HW-agnostic: no `/dev/*`, `/sys/*`, `udevadm`, `sudo`, serial ports, or direct hardware SDK calls.
-- Hardware/simulation integrations live in backend packages (`src/**/robots/**`, `src/sim/**`, or dedicated `backends/`).
-- Select backend via config/env (for example `BACKEND=maniskill`). Do not hard-code device paths or Linux-only runtime commands in runnable examples.
-- HW-only dependencies must stay optional (lazy imports and optional requirements files).
-- When adding a new robot/sim, implement backend adapters + tool factories first; keep core orchestration unchanged unless strictly necessary.
+- `SRD.md` is the single source of truth for the module layout, the refactor
+  phases, and the VLA service contract. If a change needs a contract change,
+  stop and propose the contract update first.
+- Source is **flat top-level modules** in `src/`. Do not reintroduce package
+  directories (`core/`, `sim/`, `vla/`, `robots/`) or a `Backend` protocol:
+  there is exactly one environment (LIBERO) and one policy transport (HTTP).
+- Dependencies point strictly downward in this order; no module may import one
+  above it: `config` -> `libero_env` / `vla_client` -> `plan` -> `skills` ->
+  `executor` -> `planner` -> `runner`.
+- **`src/config.py` is the only place defaults are defined.** Reading
+  `os.environ` anywhere else is a defect. `.env` carries only
+  `OPENAI_API_KEY`, `LOG_LEVEL`, `LLM_MODEL`, `SAVE_VIDEO`; adding a fifth
+  requires a mapped acceptance criterion in `SRD.md`.
+- **The VLA-to-environment integration lives in `src/executor.py`**, in one
+  visible method. Do not move it behind a skill class, a tool factory, a
+  registry entry, or a callable injected from elsewhere.
+- **No hidden tuning layers between the policy output and `env.step()`**: no
+  action rescaling, axis remapping, sign flipping, adaptive scaling, proximity
+  or stall heuristics, and no rewriting a failed result into a success. The
+  action is applied as-is. The reference OpenPI LIBERO evaluation loop is the
+  behavioural contract (summarised in `SRD.md`).
+- LIBERO is Linux-only and imported lazily behind a clear install error, so the
+  modules stay importable on any host for unit tests.
 
-## Debugging boundaries (strict)
+## Debugging boundaries
 
-- During debugging milestones, treat `src/core/**` as frozen by default. Change it only after a minimal reproducer proves the defect is in core.
-- Keep backend-specific motion heuristics, perception heuristics, and evaluator tuning in backend/service layers (`src/sim/**`, `src/robots/**`, `services/**`), not in `src/core/**`.
-- `src/vla/**` must remain a thin client/tool layer; do not add benchmark-specific verdict engines or campaign logic there.
-- If a milestone claims real-perception behavior, runtime paths must not silently fall back to sim-GT. Any temporary fallback must be explicit, opt-in, and documented in `SRD.md`.
+- Prefer small reversible passes. Put experiments, sweeps, and diagnostics in
+  `validation/**`, never in the runtime modules.
+- Reproduce manipulation defects with `validation/libero_probe.py` first. It runs
+  the policy against the environment with no planner, executor, skills, or plan
+  AST, so a failure there rules the orchestration out.
+- If a run claims real-perception behaviour, it must not silently fall back to
+  sim ground truth. Any fallback must be explicit, opt-in, and documented in
+  `SRD.md`.
+- Temporary debug instrumentation in runtime modules must be removed once the
+  root cause is confirmed. Do not add a config constant to keep it around.

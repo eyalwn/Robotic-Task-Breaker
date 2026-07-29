@@ -11,14 +11,23 @@ from typing import TextIO
 from dotenv import find_dotenv, load_dotenv
 
 _PROJECT_LOGGER_NAMES = (
+    "config",
+    "libero_env",
+    "vla_client",
+    "plan",
+    "skills",
+    "executor",
+    "planner",
+    "runner",
+    "utils",
+    "services",
+    "__main__",
+    # Legacy packages, removed in phase 5.
     "core",
     "sim",
     "vla",
     "validation",
-    "services",
     "robots",
-    "utils",
-    "__main__",
 )
 _DEFAULT_FORMAT = "%(levelname)s [%(name)s] %(message)s"
 
