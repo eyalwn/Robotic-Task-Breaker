@@ -164,40 +164,31 @@ measured against. Two properties matter:
 This document, `README.md`, `.env.example`,
 `.cursor/rules/longor-architecture.mdc`.
 
-### Phase 3 — orchestration ported
+### Phase 3 — orchestration ported (done)
 
-Write `src/plan.py`, `src/skills.py`, `src/executor.py`, `src/planner.py`,
-`src/runner.py`. Add each to `py-modules` in `pyproject.toml`. The old tree stays
-in place and untouched.
+`src/plan.py`, `src/skills.py`, `src/executor.py`, `src/planner.py`,
+`src/runner.py`, registered in `py-modules`. Old tree still present and
+untouched. New modules import nothing from `core` / `sim` / `vla` / `robots`.
 
-- `plan.py`: lift `src/core/plan/schema.py` essentially unchanged.
-- `skills.py`: `Skill`, `SkillParam`, `SkillRegistry` from `src/core/skills.py`,
-  plus `state.list_objects` / `perception.detect` / `perception.locate` backed by
-  `LiberoEnv.object_names()` and `LiberoEnv.body_position()`. Sim-GT only.
-- `executor.py`: the plan walk and restricted expression evaluator from
-  `src/core/plan/executor.py`, minus all trace plumbing, plus a `_manipulate()`
-  method holding the whole policy loop and an `arm.grab` / `arm.place` branch in
-  the `CallNode` case. `_manipulate()` must match the loop in
-  `validation/libero_probe.py`: query the policy, apply `REPLAN_STEPS` actions,
-  repeat until success or `MAX_SKILL_STEPS`.
-
-  Task strings passed to the policy must read like the LIBERO language
-  annotations the policy trained on, since `object_names()` returns BDDL
-  identifiers such as `alphabet_soup_1`. Strip the trailing index and replace
-  underscores with spaces, then build `f"pick up the {name}"` for `arm.grab` and
-  `f"put the {name} in the {location}"` for `arm.place`. Do not invent a
-  per-object alias table; the identifiers already read as English once cleaned.
-- `planner.py`: `LLMPlanner` from `src/core/plan/llm_planner.py` and
-  `LLMFeedbackEvaluator` from `src/core/plan/llm_feedback.py`, with
-  `FeedbackDecision` / `FeedbackOutcome` folded in.
-- `runner.py`: `__init__` builds `LiberoEnv`, `VLAClient`, `LLMPlanner`,
-  `LLMFeedbackEvaluator`, and `Executor`. `run()` gets an initial plan, then
-  loops up to `MAX_REPLANS` times alternating `executor.run(plan)` and
-  `planner.plan(...)`.
+- `plan.py`: plan AST + `validate_plan()`.
+- `skills.py`: registry + sim-GT perception skills on `LiberoEnv`. `arm.grab` /
+  `arm.place` are not registered; their catalog lines are appended for the LLM.
+- `executor.py`: plan walk, restricted expr eval, `_manipulate()` matching
+  `validation/libero_probe.py`. Task strings: strip trailing index, underscores
+  → spaces, then `pick up the {name}` / `put the {name} in the {location}`.
+  Returns `{"status": "success"}` or `{"status": "failed", "steps": N}`.
+  `FeedbackDecision` / `FeedbackOutcome` live here (executor is below planner in
+  the dependency order) and are re-exported from `planner.py`.
+- `planner.py`: `LLMPlanner` + `LLMFeedbackEvaluator`.
+- `runner.py`: `__init__` builds env, VLA client, planner, feedback evaluator,
+  registry, and executor; `run()` plans and replans up to `MAX_REPLANS`.
 
 **Acceptance:** `Runner("...", task_suite="libero_10", task_idx=0)` constructs
 and `run()` returns a result; no module under `src/core`, `src/sim`, `src/vla`, or
-`src/robots` is imported by any new module.
+`src/robots` is imported by any new module. **Met** structurally (imports clean,
+`Runner.__init__` builds the stack). Live `run()` on `libero_10` task 0 is a
+Linux/Colab gate (LIBERO); unit suite stays green against the old tree
+(338 passed, 9 skipped).
 
 ### Phase 4 — example rewritten
 

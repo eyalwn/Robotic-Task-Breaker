@@ -1,5 +1,14 @@
 README.md
 pyproject.toml
+src/config.py
+src/executor.py
+src/libero_env.py
+src/plan.py
+src/planner.py
+src/runner.py
+src/skills.py
+src/utils.py
+src/vla_client.py
 src/core/backend.py
 src/core/camera.py
 src/core/capture_compat.py
@@ -11,7 +20,6 @@ src/core/runner.py
 src/core/skills.py
 src/core/sound_receiver.py
 src/core/tools.py
-src/core/utils.py
 src/core/voice_synth.py
 src/core/plan/__init__.py
 src/core/plan/executor.py
@@ -27,7 +35,6 @@ src/longor.egg-info/SOURCES.txt
 src/longor.egg-info/dependency_links.txt
 src/longor.egg-info/top_level.txt
 src/robots/XLeRobot/audio.py
-src/robots/XLeRobot/examples_setup.py
 src/robots/XLeRobot/servo_controls.py
 src/robots/XLeRobot/tools.py
 src/robots/XLeRobot/xlerobot_llm_agent.py
@@ -36,6 +43,8 @@ src/sim/arm_tools.py
 src/sim/camera_base.py
 src/sim/frame_saver.py
 src/sim/libero_backend.py
+src/sim/libero_perception.py
+src/sim/libero_real_perception.py
 src/sim/libero_skills.py
 src/sim/libero_smoke.py
 src/sim/libero_success_checker.py
@@ -57,11 +66,15 @@ tests/test_frame_saver.py
 tests/test_integration_vla.py
 tests/test_libero_backend.py
 tests/test_libero_integration.py
+tests/test_libero_real_perception.py
 tests/test_libero_skills.py
 tests/test_libero_smoke.py
 tests/test_libero_success_checker.py
 tests/test_llm_feedback.py
 tests/test_llm_planner.py
+tests/test_m7_direct_task_probe.py
+tests/test_m7_wiring_probe.py
+tests/test_m8_policy_health_probe.py
 tests/test_maniskill_arm_adapter.py
 tests/test_maniskill_backend.py
 tests/test_maniskill_skills.py
