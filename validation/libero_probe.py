@@ -24,6 +24,8 @@ from utils import configure_logging
 from vla_client import VLAClient, VLAError
 
 
+# XXX adding arguments?? serously?? very misleading. better to hard-code:
+# env = LiberoEnv("libero_object", 0)
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--suite", default="libero_object")

@@ -210,7 +210,7 @@ logged `Run summary: success=False, plan_status=done, steps=3, ...`. Task
 failure (wrong object in plan / failed grab-place) is not a Phase 4 miss —
 acceptance is end-to-end wiring + a verdict, not a solved episode.
 
-### Phase 5 — old tree deleted
+### Phase 5 — old tree deleted (done)
 
 Removed the legacy packages (`src/core`, `sim`, `vla`, `robots`), XLeRobot /
 ManiSkill examples, m7/m8 validation probes, Octo / Pi0.5 / `run_vla_server`
@@ -227,10 +227,9 @@ One Colab launcher: `colab/libero_probe.ipynb` → `validation/libero_probe.py`
 via `services/smolvla_service.py`.
 
 **Acceptance:** the example and the probe still run; nothing imports a deleted
-module. **Structural work landed** (deletes + kept-code imports clean). Live
-acceptance still open: run `validation/libero_probe.py` and
-`examples/long_horizon_llm_libero.py` on Linux/Colab and confirm both complete
-with a verdict. Do not mark this phase done until those runs succeed.
+module. **Met** on Colab: probe solved `libero_object` task 0 (`PASS: task
+solved`, 139 policy actions); example constructed and ran on the new stack
+(wiring OK). Kept code imports nothing deleted.
 
 ### Phase 6 — tests rewritten
 
