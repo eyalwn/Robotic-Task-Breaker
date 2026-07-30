@@ -95,6 +95,9 @@ never the orchestration.
 
 Set `SAVE_VIDEO=1` in `.env` to get `run.mp4` showing exactly what the policy saw.
 
+On Colab, use `colab/libero_probe.ipynb` — it installs deps, starts
+`services/smolvla_service.py`, and runs the probe.
+
 ## Tests
 
 With `.venv` active:
@@ -103,5 +106,7 @@ With `.venv` active:
 pytest
 ```
 
-Unit tests are hermetic: no live sim, no network. `pytest -m integration` runs
-the tests that need a live policy service.
+Unit tests are being rewritten (see `SRD.md` Phase 6). Until then, many
+collection errors are expected because the old packages are gone. When Phase 6
+lands, tests are hermetic again: no live sim, no network.
+`pytest -m integration` stays reserved for a live policy service.

@@ -212,24 +212,25 @@ acceptance is end-to-end wiring + a verdict, not a solved episode.
 
 ### Phase 5 — old tree deleted
 
-Delete `src/core/**`, `src/sim/**`, `src/vla/**`, `src/robots/**`,
-`examples/0_xlerobot_*.py` through `examples/3_xlerobot_*.py`,
-`examples/maniskill_pickcube.py`, `validation/m7_wiring_probe.py`,
-`validation/m7_direct_task_probe.py`, `validation/m8_policy_health_probe.py`,
-`services/octo_service.py`, `services/pi05_service.py`,
-`services/run_vla_server.py`, `services/tests/**`, `temp.py`,
-`deps/requirements-maniskill.txt`, `deps/requirements-vla-octo-small-1.5-*.txt`,
-`deps/requirements-vla-pi05-linux.txt`, `src/longor.egg-info/**`, and the
-legacy logger names in `src/utils.py`. Trim `src/utils.py` to `load_env` and
-`configure_logging`. Remove `[tool.setuptools.packages.find]` from
-`pyproject.toml`.
+Removed the legacy packages (`src/core`, `sim`, `vla`, `robots`), XLeRobot /
+ManiSkill examples, m7/m8 validation probes, Octo / Pi0.5 / `run_vla_server`
+services and their tests, obsolete deps, egg-info, and the old Colab notebooks.
+`src/utils.py` is only `load_env` + `configure_logging`.
+`[tool.setuptools.packages.find]` is gone from `pyproject.toml`.
 
-Also delete every notebook under `colab/` — each launches a deleted script — and
-replace them with one launcher for `validation/libero_probe.py`, per
-`.cursor/rules/colab-validation.mdc`.
+Kept: flat `src/` modules, `services/smolvla_service.py`,
+`validation/libero_probe.py`, `examples/long_horizon_llm_libero.py`, and the
+SmolVLA + LIBERO requirement files. `tests/**` left for Phase 6 (collection
+errors expected).
+
+One Colab launcher: `colab/libero_probe.ipynb` → `validation/libero_probe.py`
+via `services/smolvla_service.py`.
 
 **Acceptance:** the example and the probe still run; nothing imports a deleted
-module.
+module. **Structural work landed** (deletes + kept-code imports clean). Live
+acceptance still open: run `validation/libero_probe.py` and
+`examples/long_horizon_llm_libero.py` on Linux/Colab and confirm both complete
+with a verdict. Do not mark this phase done until those runs succeed.
 
 ### Phase 6 — tests rewritten
 

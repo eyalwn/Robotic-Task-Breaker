@@ -13,9 +13,6 @@ requires-python = ">=3.10"
 package-dir = {"" = "src"}
 py-modules = ["utils", "config", "libero_env", "vla_client", "plan", "skills", "executor", "planner", "runner"]
 
-[tool.setuptools.packages.find]
-where = ["src"]
-
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 markers = [

@@ -3,7 +3,7 @@
 #   python -m venv .vla-venv
 #   .vla-venv/bin/pip install -r deps/requirements-vla-smolvla-linux.txt
 #   .vla-venv/bin/pip install -e .
-# Then: VLA_POLICY=smolvla python services/run_vla_server.py
+# Then: python services/smolvla_service.py
 
 setuptools
 wheel
