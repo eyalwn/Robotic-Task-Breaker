@@ -106,7 +106,7 @@ With `.venv` active:
 pytest
 ```
 
-Unit tests are being rewritten (see `SRD.md` Phase 6). Until then, many
-collection errors are expected because the old packages are gone. When Phase 6
-lands, tests are hermetic again: no live sim, no network.
-`pytest -m integration` stays reserved for a live policy service.
+Unit tests are hermetic: no live sim, no network. They cover the plan AST,
+executor (control flow + expression eval), VLA client wire contract, and
+planner JSON extraction/retry. `pytest -m integration` stays reserved for a
+live policy service.

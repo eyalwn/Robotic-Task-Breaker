@@ -231,9 +231,9 @@ module. **Met** on Colab: probe solved `libero_object` task 0 (`PASS: task
 solved`, 139 policy actions); example constructed and ran on the new stack
 (wiring OK). Kept code imports nothing deleted.
 
-### Phase 6 — tests rewritten
+### Phase 6 — tests rewritten (done)
 
-Delete all of `tests/**` and write focused replacements:
+Deleted all legacy `tests/**`. Hermetic replacements:
 
 | Test | Covers |
 | --- | --- |
@@ -243,11 +243,10 @@ Delete all of `tests/**` and write focused replacements:
 | `tests/test_vla_client.py` | Wire contract: request shape, response parsing, rejection of bad actions |
 | `tests/test_planner.py` | JSON extraction from LLM output, retry on validation failure |
 
-Unit tests stay hermetic: no live sim, no network. Shared fixtures in
-`tests/conftest.py`. `pytest -m integration` remains reserved for tests needing a
-live service.
+Shared fixtures in `tests/conftest.py`. `pytest -m integration` remains reserved
+for tests needing a live service.
 
-**Acceptance:** `pytest` passes with no live sim or network.
+**Acceptance:** `pytest` passes with no live sim or network. **Met:** 53 passed.
 
 ## Future work
 

@@ -1,69 +1,123 @@
-"""Shared test fixtures and stubs for Longor tests."""
+"""Shared fixtures for hermetic Longor unit tests."""
 from __future__ import annotations
 
-import numpy as np
 import pytest
 
-
-class _FakeActionSpace:
-    """Minimal action-space stub.
-
-    *n* may be an ``int`` (action dim count) or a ``tuple`` (shape directly).
-    Includes a ``sample()`` so stubs can satisfy callers that call it.
-    """
-
-    def __init__(self, n) -> None:
-        self.shape = (n,) if isinstance(n, int) else tuple(n)
-
-    def sample(self):
-        return np.zeros(self.shape)
+from executor import Executor, FeedbackDecision, FeedbackOutcome
+from plan import Plan
+from skills import Skill, SkillRegistry
+from vla_client import VLAClient
 
 
 class FakeEnv:
-    """Minimal env stub compatible with ManiSkillArm, ManiSkillDrive, and
-    ManiSkillCamera.
+    """Minimal env stub for executor arm-skill and feedback tests."""
 
-    Recorded calls are stored in ``step_calls``; the properties ``steps`` and
-    ``actions`` are aliases so every existing test keeps working regardless of
-    which name it uses.
-    """
+    def __init__(self, *, succeed_after: int | None = 0) -> None:
+        self._succeed_after = succeed_after
+        self._steps = 0
+        self.step_calls: list[list[float]] = []
 
-    def __init__(self, n_act: int | tuple = 8) -> None:
-        self.action_space = _FakeActionSpace(n_act)
-        self.step_calls: list[np.ndarray] = []
+    def observe(self) -> tuple[bytes, bytes, list[float]]:
+        return b"main-image", b"wrist-image", [0.0] * 8
 
-    # -- aliases ---------------------------------------------------------
+    def step(self, action: list[float]) -> bool:
+        self.step_calls.append(list(action))
+        self._steps += 1
+        return True
 
-    @property
-    def steps(self) -> list[np.ndarray]:
-        return self.step_calls
+    def success(self) -> bool:
+        if self._succeed_after is None:
+            return False
+        return self._steps >= self._succeed_after
 
-    @property
-    def actions(self) -> list[np.ndarray]:
-        return self.step_calls
 
-    # -- env interface ---------------------------------------------------
+class FakeVLA:
+    """Records predict calls and returns a fixed action chunk."""
 
-    def step(self, action):
-        self.step_calls.append(np.array(action, dtype=float))
-        obs = {"extra": {"obj_pose": [0.0, 0.0, 0.01]}}
-        return obs, 0.0, False, False, {}
+    def __init__(self, actions: list[list[float]] | None = None) -> None:
+        self.actions = actions or [[0.1] * 7]
+        self.calls: list[tuple[bytes, bytes, list[float], str]] = []
 
-    def render(self):
-        return np.zeros((64, 64, 3), dtype=np.uint8)
+    def predict(
+        self, image: bytes, wrist: bytes, state: list[float], task: str
+    ) -> list[list[float]]:
+        self.calls.append((image, wrist, state, task))
+        return self.actions
 
-    def reset(self, **kwargs):
-        return None, {}
 
-    def get_obs(self):
-        return {"extra": {"obj_pose": [0.0, 0.0, 0.01]}}
+class MockSkill(Skill):
+    name = "mock.skill"
+    description = "mock skill for tests"
+    parameters = []
+    returns = "Any"
 
-    @property
-    def unwrapped(self):
-        return self
+    def __init__(self, return_value: object = None) -> None:
+        self.return_value = return_value
+        self.calls: list[dict[str, object]] = []
+
+    def __call__(self, **kwargs: object) -> object:
+        self.calls.append(dict(kwargs))
+        return self.return_value
+
+
+class MockFeedbackEvaluator:
+    def __init__(
+        self,
+        decision: FeedbackDecision,
+        reason: str = "",
+        assessment: str | None = None,
+    ) -> None:
+        self.decision = decision
+        self.reason = reason
+        self.assessment = assessment
+        self.last_description: str | None = None
+
+    def evaluate(
+        self, image_bytes: bytes, description: str, goal: str
+    ) -> FeedbackOutcome:
+        self.last_description = description
+        return FeedbackOutcome(
+            decision=self.decision,
+            reason=self.reason,
+            assessment=self.assessment,
+        )
+
+
+def mock_image_fn() -> bytes:
+    return b"fake-image"
 
 
 @pytest.fixture
 def fake_env() -> FakeEnv:
-    """Fresh :class:`FakeEnv` instance for each test."""
     return FakeEnv()
+
+
+@pytest.fixture
+def fake_vla() -> FakeVLA:
+    return FakeVLA()
+
+
+def build_executor(
+    skill: Skill,
+    *,
+    env: FakeEnv | None = None,
+    vla: FakeVLA | None = None,
+    decision: FeedbackDecision = FeedbackDecision.CONTINUE,
+    step_budget: int = 30,
+    goal: str = "test-goal",
+) -> Executor:
+    registry = SkillRegistry()
+    registry.register(skill)
+    return Executor(
+        registry=registry,
+        feedback_evaluator=MockFeedbackEvaluator(decision),
+        image_fn=mock_image_fn,
+        goal=goal,
+        env=env or FakeEnv(),
+        vla=vla or FakeVLA(),
+        step_budget=step_budget,
+    )
+
+
+def make_plan(body: dict, goal: str = "g") -> Plan:
+    return Plan.model_validate({"goal": goal, "body": body})

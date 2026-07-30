@@ -1,9 +1,10 @@
+"""Plan AST validation tests."""
 from __future__ import annotations
 
 import pytest
 from pydantic import ValidationError
 
-from core.plan import BinOpExpr, CallNode, Plan, VarExpr, WhileNode, validate_plan
+from plan import BinOpExpr, CallNode, Plan, VarExpr, WhileNode, validate_plan
 
 
 def test_valid_plan_roundtrip() -> None:
@@ -62,7 +63,7 @@ def test_expr_discriminator() -> None:
     )
     assert expr.kind == "binop"
     assert isinstance(expr.left, VarExpr)
-    assert expr.left.kind == "var"
+    assert expr.left.name == "x"
     assert expr.right.kind == "literal"
 
 
@@ -122,3 +123,13 @@ def test_while_default_max_iterations() -> None:
         }
     )
     assert node.max_iterations == 20
+
+
+def test_reject_bare_string_in_steps() -> None:
+    with pytest.raises(ValidationError):
+        validate_plan(
+            {
+                "goal": "bad",
+                "body": {"kind": "seq", "steps": ["else_branch"]},
+            }
+        )
