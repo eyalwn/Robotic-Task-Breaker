@@ -190,9 +190,9 @@ and `run()` returns a result; no module under `src/core`, `src/sim`, `src/vla`, 
 Linux/Colab gate (LIBERO); unit suite stays green against the old tree
 (338 passed, 9 skipped).
 
-### Phase 4 — example rewritten
+### Phase 4 — example rewritten (done)
 
-`examples/long_horizon_llm_libero.py` becomes:
+`examples/long_horizon_llm_libero.py` uses the new flat `Runner`:
 
 ```python
 from runner import Runner
@@ -205,7 +205,10 @@ raise SystemExit(0 if result.success else 1)
 ```
 
 **Acceptance:** the example runs end to end on `libero_10` task 0 and reports a
-verdict.
+verdict. **Met** on Colab: the new stack constructed, planned, executed, and
+logged `Run summary: success=False, plan_status=done, steps=3, ...`. Task
+failure (wrong object in plan / failed grab-place) is not a Phase 4 miss —
+acceptance is end-to-end wiring + a verdict, not a solved episode.
 
 ### Phase 5 — old tree deleted
 
