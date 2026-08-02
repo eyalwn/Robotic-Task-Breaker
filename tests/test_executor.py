@@ -3,18 +3,15 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
-import pytest
-
 from conftest import (
     FakeEnv,
     FakeVLA,
-    MockFeedbackEvaluator,
     MockSkill,
     build_executor,
     make_plan,
-    mock_image_fn,
+    run_plan,
 )
-from executor import Executor, FeedbackDecision
+from executor import BoundaryReason, Executor
 from skills import SkillRegistry
 
 
@@ -31,7 +28,7 @@ def test_seq_executes_in_order() -> None:
             ],
         }
     )
-    executor.run(plan)
+    run_plan(executor, plan)
     assert [call["x"] for call in skill.calls] == [1, 2, 3]
 
 
@@ -46,7 +43,7 @@ def test_if_then() -> None:
             "else_branch": {"kind": "feedback", "description": "skip"},
         }
     )
-    executor.run(plan)
+    run_plan(executor, plan)
     assert len(skill.calls) == 1
 
 
@@ -61,7 +58,8 @@ def test_if_else() -> None:
             "else_branch": {"kind": "feedback", "description": "else path"},
         }
     )
-    executor.run(plan)
+    result = run_plan(executor, plan)
+    assert result.reason == BoundaryReason.FEEDBACK_POINT
     assert len(skill.calls) == 0
 
 
@@ -76,8 +74,9 @@ def test_while_max_iterations() -> None:
             "body": {"kind": "call", "skill": "mock.skill"},
         }
     )
-    with pytest.raises(RuntimeError, match="while loop exceeded max_iterations=3"):
-        executor.run(plan)
+    result = run_plan(executor, plan)
+    assert result.reason == BoundaryReason.EXECUTION_ERROR
+    assert "while loop exceeded max_iterations=3" in (result.error or "")
     assert len(skill.calls) == 3
 
 
@@ -93,43 +92,140 @@ def test_call_assigns_return() -> None:
             ],
         }
     )
-    result = executor.run(plan)
-    assert result.status == "done"
-    assert result.value == "result"
+    result = run_plan(executor, plan)
+    assert result.reason == BoundaryReason.PLAN_DONE
+    assert result.return_value == "result"
 
 
-def test_feedback_continue() -> None:
+def test_feedback_returns_boundary() -> None:
     skill = MockSkill("ok")
-    executor = build_executor(skill, decision=FeedbackDecision.CONTINUE)
+    executor = build_executor(skill)
     plan = make_plan({"kind": "feedback", "description": "all good"})
-    result = executor.run(plan)
-    assert result.status == "done"
-    assert result.value is None
+    result = run_plan(executor, plan)
+    assert result.reason == BoundaryReason.FEEDBACK_POINT
+    assert result.feedback_description == "all good"
+    assert result.image_bytes == b"main-image"
 
 
-def test_feedback_stop() -> None:
+def test_feedback_continue_resumes_plan() -> None:
     skill = MockSkill("ok")
-    executor = build_executor(skill, decision=FeedbackDecision.STOP)
-    plan = make_plan({"kind": "feedback", "description": "halt"})
-    result = executor.run(plan)
-    assert result.status == "stopped"
+    executor = build_executor(skill)
+    plan = make_plan(
+        {
+            "kind": "seq",
+            "steps": [
+                {"kind": "call", "skill": "mock.skill"},
+                {"kind": "feedback", "description": "checkpoint"},
+                {"kind": "call", "skill": "mock.skill"},
+            ],
+        }
+    )
+    first = run_plan(executor, plan)
+    assert first.reason == BoundaryReason.FEEDBACK_POINT
+    assert len(skill.calls) == 1
+
+    second = executor.run()
+    assert second.reason == BoundaryReason.PLAN_DONE
+    assert len(skill.calls) == 2
 
 
-def test_feedback_replan() -> None:
+def test_multi_feedback_continue_without_replay() -> None:
     skill = MockSkill("ok")
-    executor = build_executor(skill, decision=FeedbackDecision.REPLAN)
-    plan = make_plan({"kind": "feedback", "description": "retry"})
-    result = executor.run(plan)
-    assert result.status == "replan"
+    executor = build_executor(skill)
+    plan = make_plan(
+        {
+            "kind": "seq",
+            "steps": [
+                {
+                    "kind": "call",
+                    "skill": "mock.skill",
+                    "args": {"x": {"kind": "literal", "value": 1}},
+                },
+                {"kind": "feedback", "description": "checkpoint 1"},
+                {
+                    "kind": "call",
+                    "skill": "mock.skill",
+                    "args": {"x": {"kind": "literal", "value": 2}},
+                },
+                {"kind": "feedback", "description": "checkpoint 2"},
+                {
+                    "kind": "call",
+                    "skill": "mock.skill",
+                    "args": {"x": {"kind": "literal", "value": 3}},
+                },
+            ],
+        }
+    )
+    first = run_plan(executor, plan)
+    assert first.reason == BoundaryReason.FEEDBACK_POINT
+    assert [call["x"] for call in skill.calls] == [1]
+
+    second = executor.run()
+    assert second.reason == BoundaryReason.FEEDBACK_POINT
+    assert [call["x"] for call in skill.calls] == [1, 2]
+
+    third = executor.run()
+    assert third.reason == BoundaryReason.PLAN_DONE
+    assert [call["x"] for call in skill.calls] == [1, 2, 3]
+
+
+def test_nested_seq_multi_feedback_continue() -> None:
+    skill = MockSkill("ok")
+    executor = build_executor(skill)
+    plan = make_plan(
+        {
+            "kind": "seq",
+            "steps": [
+                {
+                    "kind": "call",
+                    "skill": "mock.skill",
+                    "args": {"x": {"kind": "literal", "value": 1}},
+                },
+                {"kind": "feedback", "description": "outer checkpoint"},
+                {
+                    "kind": "seq",
+                    "steps": [
+                        {
+                            "kind": "call",
+                            "skill": "mock.skill",
+                            "args": {"x": {"kind": "literal", "value": 2}},
+                        },
+                        {"kind": "feedback", "description": "inner checkpoint"},
+                        {
+                            "kind": "call",
+                            "skill": "mock.skill",
+                            "args": {"x": {"kind": "literal", "value": 3}},
+                        },
+                    ],
+                },
+                {
+                    "kind": "call",
+                    "skill": "mock.skill",
+                    "args": {"x": {"kind": "literal", "value": 4}},
+                },
+            ],
+        }
+    )
+    first = run_plan(executor, plan)
+    assert first.reason == BoundaryReason.FEEDBACK_POINT
+    assert [call["x"] for call in skill.calls] == [1]
+
+    second = executor.run()
+    assert second.reason == BoundaryReason.FEEDBACK_POINT
+    assert [call["x"] for call in skill.calls] == [1, 2]
+
+    third = executor.run()
+    assert third.reason == BoundaryReason.PLAN_DONE
+    assert [call["x"] for call in skill.calls] == [1, 2, 3, 4]
 
 
 def test_return_node() -> None:
     skill = MockSkill("ok")
     executor = build_executor(skill)
     plan = make_plan({"kind": "return", "value": {"kind": "literal", "value": 42}})
-    result = executor.run(plan)
-    assert result.status == "done"
-    assert result.value == 42
+    result = run_plan(executor, plan)
+    assert result.reason == BoundaryReason.PLAN_DONE
+    assert result.return_value == 42
 
 
 def test_step_budget() -> None:
@@ -145,21 +241,17 @@ def test_step_budget() -> None:
             ],
         }
     )
-    result = executor.run(plan)
-    assert result.status == "step_budget"
+    result = run_plan(executor, plan)
+    assert result.reason == BoundaryReason.STEP_BUDGET
     assert len(skill.calls) == 2
 
 
 def test_feedback_appends_prior_skill_result() -> None:
     skill = MockSkill({"status": "stopped", "grasp_confirmed": False})
-    feedback = MockFeedbackEvaluator(FeedbackDecision.CONTINUE)
     registry = SkillRegistry()
     registry.register(skill)
     executor = Executor(
         registry=registry,
-        feedback_evaluator=feedback,
-        image_fn=mock_image_fn,
-        goal="test-goal",
         env=FakeEnv(),
         vla=FakeVLA(),
     )
@@ -172,10 +264,11 @@ def test_feedback_appends_prior_skill_result() -> None:
             ],
         }
     )
-    executor.run(plan)
-    assert feedback.last_description is not None
-    assert "Prior skill result:" in feedback.last_description
-    assert "grasp_confirmed" in feedback.last_description
+    result = run_plan(executor, plan)
+    assert result.reason == BoundaryReason.FEEDBACK_POINT
+    assert result.feedback_prompt is not None
+    assert "Prior skill result:" in result.feedback_prompt
+    assert "grasp_confirmed" in result.feedback_prompt
 
 
 def test_arm_grab_success_immediate() -> None:
@@ -191,8 +284,8 @@ def test_arm_grab_success_immediate() -> None:
             "assign_to": "outcome",
         }
     )
-    result = executor.run(plan)
-    assert result.status == "done"
+    result = run_plan(executor, plan)
+    assert result.reason == BoundaryReason.PLAN_DONE
     assert vla.calls == []
     assert env.step_calls == []
 
@@ -209,8 +302,8 @@ def test_arm_grab_calls_vla_and_succeeds() -> None:
             "args": {"object_name": {"kind": "literal", "value": "alphabet_soup_1"}},
         }
     )
-    result = executor.run(plan)
-    assert result.status == "done"
+    result = run_plan(executor, plan)
+    assert result.reason == BoundaryReason.PLAN_DONE
     assert len(vla.calls) == 1
     assert vla.calls[0][3] == "pick up the alphabet soup"
     assert len(env.step_calls) == 2
@@ -231,7 +324,7 @@ def test_arm_place_task_string() -> None:
             },
         }
     )
-    executor.run(plan)
+    run_plan(executor, plan)
     assert vla.calls[0][3] == "put the cream cheese in the basket"
 
 

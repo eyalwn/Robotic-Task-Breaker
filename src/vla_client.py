@@ -23,11 +23,14 @@ class VLAError(Exception):
 
 
 class VLAClient:
+    """HTTP client for the SmolVLA policy service."""
+
     def __init__(self, url: str = config.VLA_URL, timeout: float = config.VLA_TIMEOUT):
         self._url = url.rstrip("/")
         self._timeout = timeout
 
     def health(self) -> dict:
+        """Query the service ``/health`` endpoint."""
         return self._request("GET", "/health")
 
     def predict(

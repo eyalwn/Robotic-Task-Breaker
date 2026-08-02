@@ -1,3 +1,4 @@
+"""Skill registry and LIBERO state/perception skills for plan execution."""
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
@@ -9,6 +10,8 @@ from libero_env import LiberoEnv
 
 @dataclass
 class Pose:
+    """3-D position in world coordinates."""
+
     x: float
     y: float
     z: float
@@ -16,6 +19,8 @@ class Pose:
 
 @dataclass
 class DetectedObject:
+    """Named object with pose and detection confidence."""
+
     name: str
     pose: Pose
     confidence: float = 1.0
@@ -23,6 +28,8 @@ class DetectedObject:
 
 @dataclass
 class SkillParam:
+    """Catalog metadata for one skill parameter."""
+
     name: str
     type_hint: str
     description: str
@@ -30,6 +37,8 @@ class SkillParam:
 
 
 class Skill(ABC):
+    """Callable plan skill with catalog metadata."""
+
     name: str = ""
     description: str = ""
     parameters: list[SkillParam] = []
@@ -41,19 +50,24 @@ class Skill(ABC):
 
 
 class SkillRegistry:
+    """Registry of plan skills keyed by name."""
+
     def __init__(self) -> None:
         self._skills: dict[str, Skill] = {}
         self._aliases: dict[str, str] = {}
 
     def register(self, skill: Skill) -> None:
+        """Add a skill to the registry."""
         self._skills[skill.name] = skill
 
     def register_alias(self, alias: str, target: str) -> None:
+        """Map an alternate name to a registered skill."""
         if target not in self._skills:
             raise KeyError(f"Skill {target!r} not registered. Available: {sorted(self._skills)}")
         self._aliases[alias] = target
 
     def get(self, name: str) -> Skill:
+        """Resolve a skill by name or alias."""
         name = self._aliases.get(name, name)
         try:
             return self._skills[name]
@@ -65,6 +79,7 @@ class SkillRegistry:
         return list(self._skills.values())
 
     def render_catalog(self) -> str:
+        """Format registered skills for planner prompts."""
         lines: list[str] = []
         for skill in self._skills.values():
             params = ", ".join(
@@ -130,6 +145,7 @@ class LocateSkill(Skill):
 
 
 def register_libero_skills(registry: SkillRegistry, env: LiberoEnv) -> None:
+    """Register LIBERO state and perception skills bound to ``env``."""
     registry.register(ListObjectsSkill(env))
     registry.register_alias("list_objects", "state.list_objects")
     registry.register(DetectSkill(env))

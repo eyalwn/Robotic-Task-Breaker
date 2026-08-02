@@ -3,10 +3,9 @@ from __future__ import annotations
 
 import pytest
 
-from executor import Executor, FeedbackDecision, FeedbackOutcome
+from executor import BoundaryReason, Executor
 from plan import Plan
 from skills import Skill, SkillRegistry
-from vla_client import VLAClient
 
 
 class FakeEnv:
@@ -60,33 +59,6 @@ class MockSkill(Skill):
         return self.return_value
 
 
-class MockFeedbackEvaluator:
-    def __init__(
-        self,
-        decision: FeedbackDecision,
-        reason: str = "",
-        assessment: str | None = None,
-    ) -> None:
-        self.decision = decision
-        self.reason = reason
-        self.assessment = assessment
-        self.last_description: str | None = None
-
-    def evaluate(
-        self, image_bytes: bytes, description: str, goal: str
-    ) -> FeedbackOutcome:
-        self.last_description = description
-        return FeedbackOutcome(
-            decision=self.decision,
-            reason=self.reason,
-            assessment=self.assessment,
-        )
-
-
-def mock_image_fn() -> bytes:
-    return b"fake-image"
-
-
 @pytest.fixture
 def fake_env() -> FakeEnv:
     return FakeEnv()
@@ -102,21 +74,22 @@ def build_executor(
     *,
     env: FakeEnv | None = None,
     vla: FakeVLA | None = None,
-    decision: FeedbackDecision = FeedbackDecision.CONTINUE,
     step_budget: int = 30,
-    goal: str = "test-goal",
 ) -> Executor:
     registry = SkillRegistry()
     registry.register(skill)
-    return Executor(
+    executor = Executor(
         registry=registry,
-        feedback_evaluator=MockFeedbackEvaluator(decision),
-        image_fn=mock_image_fn,
-        goal=goal,
         env=env or FakeEnv(),
         vla=vla or FakeVLA(),
         step_budget=step_budget,
     )
+    return executor
+
+
+def run_plan(executor: Executor, plan: Plan):
+    executor.reset(plan)
+    return executor.run()
 
 
 def make_plan(body: dict, goal: str = "g") -> Plan:

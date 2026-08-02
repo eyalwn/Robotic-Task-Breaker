@@ -1,3 +1,4 @@
+"""Plan AST models and validation for LLM-emitted robot task plans."""
 from __future__ import annotations
 
 from typing import Annotated, Literal, Union
@@ -6,11 +7,15 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class LiteralExpr(BaseModel):
+    """Literal value expression."""
+
     kind: Literal["literal"] = "literal"
     value: bool | int | float | str | None
 
 
 class VarExpr(BaseModel):
+    """Variable reference expression."""
+
     kind: Literal["var"] = "var"
     name: str
 
@@ -23,6 +28,8 @@ class VarExpr(BaseModel):
 
 
 class BinOpExpr(BaseModel):
+    """Binary operator expression."""
+
     kind: Literal["binop"] = "binop"
     op: Literal["==", "!=", "<", "<=", ">", ">=", "and", "or", "in"]
     left: "Expr"
@@ -30,6 +37,8 @@ class BinOpExpr(BaseModel):
 
 
 class NotExpr(BaseModel):
+    """Logical negation expression."""
+
     kind: Literal["not"] = "not"
     operand: "Expr"
 
@@ -41,11 +50,15 @@ Expr = Annotated[
 
 
 class SeqNode(BaseModel):
+    """Sequential statement list."""
+
     kind: Literal["seq"] = "seq"
     steps: list["StmtNode"]
 
 
 class IfNode(BaseModel):
+    """Conditional branch statement."""
+
     kind: Literal["if"] = "if"
     condition: Expr
     then_branch: "StmtNode"
@@ -53,6 +66,8 @@ class IfNode(BaseModel):
 
 
 class WhileNode(BaseModel):
+    """Bounded while-loop statement."""
+
     kind: Literal["while"] = "while"
     condition: Expr
     body: "StmtNode"
@@ -60,6 +75,8 @@ class WhileNode(BaseModel):
 
 
 class CallNode(BaseModel):
+    """Skill invocation statement."""
+
     kind: Literal["call"] = "call"
     skill: str
     args: dict[str, Expr] = Field(default_factory=dict)
@@ -83,11 +100,15 @@ class CallNode(BaseModel):
 
 
 class FeedbackNode(BaseModel):
+    """Planner feedback checkpoint statement."""
+
     kind: Literal["feedback"] = "feedback"
     description: str
 
 
 class ReturnNode(BaseModel):
+    """Early return from plan execution."""
+
     kind: Literal["return"] = "return"
     value: Expr | None = None
 
@@ -99,6 +120,8 @@ StmtNode = Annotated[
 
 
 class Plan(BaseModel):
+    """Validated plan AST root (goal plus body)."""
+
     goal: str
     body: StmtNode
 
@@ -114,4 +137,5 @@ Plan.model_rebuild()
 
 
 def validate_plan(data: dict) -> Plan:
+    """Parse and validate a plan dict into a ``Plan``."""
     return Plan.model_validate(data)

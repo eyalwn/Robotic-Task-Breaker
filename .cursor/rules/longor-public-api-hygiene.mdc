@@ -1,0 +1,27 @@
+---
+description: Keep public runtime APIs minimal and documented
+alwaysApply: true
+---
+
+# Longor public API hygiene
+
+Apply this rule to all runtime code under `src/**`.
+
+- Every public runtime module must have a concise top-level docstring.
+- Every public class and public method/function must have a concise docstring.
+- Public constructors (`__init__`) should stay small and explicit:
+  - Prefer required arguments over optional defaults for runtime orchestration APIs.
+  - Avoid dependency-injection args on public runtime entrypoints unless explicitly approved.
+  - If defaults are necessary, keep them minimal and justify them in `SRD.md`.
+- Keep public entrypoint signatures stable and compact:
+  - `Runner`-style entrypoints should expose only essential domain inputs.
+  - Move wiring/shape logic behind the boundary owner instead of leaking it into entrypoints.
+- Do not silently continue when required runtime context is missing.
+  - Fail fast with a clear error when mandatory inputs/state are unavailable.
+
+Examples:
+
+- Good: `Runner(goal, task_suite, task_idx)` with no DI args or extra defaults.
+- Bad: `Runner(..., planner=None, executor=None, env=None, max_replans=...)`.
+- Good: planner prompt/goal shaping lives in `planner.py`.
+- Bad: LLM-facing goal shaping in `runner.py`.

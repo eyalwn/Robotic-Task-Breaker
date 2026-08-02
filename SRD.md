@@ -40,9 +40,9 @@ listed above it.
 | `src/vla_client.py` | `VLAClient`: HTTP to the policy service. Knows nothing about LIBERO. |
 | `src/plan.py` | Pydantic plan AST + `validate_plan()`. |
 | `src/skills.py` | `Skill` / `SkillParam` / `SkillRegistry` + LIBERO sim-GT perception skills. |
-| `src/executor.py` | Walks the plan; owns the VLA-to-environment loop. |
-| `src/planner.py` | `LLMPlanner` (emits plans) + `LLMFeedbackEvaluator` (continue/stop/replan). |
-| `src/runner.py` | `Runner`: builds env + planner + executor, then alternates plan and execute. |
+| `src/executor.py` | Walks the plan, owns VLA-to-environment execution, and returns typed execution boundaries back to the runner. |
+| `src/planner.py` | `LLMPlanner(goal, catalog, scene_objects)`: owns all LLM calls (plan generation and feedback decisions); model and retry limits come from `config`. |
+| `src/runner.py` | `Runner`: composition root — owns `LiberoEnv`, `SkillRegistry`, orchestration loop, and replan cap; wires planner and executor. |
 
 Plus `src/utils.py` (`load_env`, `configure_logging`) and
 `services/smolvla_service.py` (the policy server, run in a separate venv).
@@ -176,12 +176,16 @@ untouched. New modules import nothing from `core` / `sim` / `vla` / `robots`.
 - `executor.py`: plan walk, restricted expr eval, `_manipulate()` matching
   `validation/libero_probe.py`. Task strings: strip trailing index, underscores
   → spaces, then `pick up the {name}` / `put the {name} in the {location}`.
-  Returns `{"status": "success"}` or `{"status": "failed", "steps": N}`.
-  `FeedbackDecision` / `FeedbackOutcome` live here (executor is below planner in
-  the dependency order) and are re-exported from `planner.py`.
-- `planner.py`: `LLMPlanner` + `LLMFeedbackEvaluator`.
-- `runner.py`: `__init__` builds env, VLA client, planner, feedback evaluator,
-  registry, and executor; `run()` plans and replans up to `MAX_REPLANS`.
+  Owns the VLA client and returns typed `ExecutionBoundary` results:
+  `feedback_point`, `plan_done`, `step_budget`, `execution_error`.
+- `planner.py`: `LLMPlanner(goal, catalog, scene_objects)` +
+  `LLMFeedbackEvaluator` + typed `PlannerDecision` (`continue`, `stop`,
+  `new_plan`). Planner owns all LLM interactions (plan generation and feedback
+  decisions); `LLM_MODEL` and `MAX_PLAN_RETRIES` are read from `config`.
+- `runner.py`: composition root — `__init__` builds env, registry, planner, and
+  executor. Initializes `LLMPlanner` with goal, catalog, and scene objects;
+  `run()` performs the loop `planner.plan -> executor.run ->
+  planner.decide(handoff)` and enforces `MAX_REPLANS`.
 
 **Acceptance:** `Runner("...", task_suite="libero_10", task_idx=0)` constructs
 and `run()` returns a result; no module under `src/core`, `src/sim`, `src/vla`, or

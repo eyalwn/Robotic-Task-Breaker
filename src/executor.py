@@ -1,14 +1,15 @@
+"""Plan executor: walks the AST, runs skills/VLA, and returns execution boundaries."""
 from __future__ import annotations
 
 import json
 import logging
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Callable, Protocol
+from typing import Any, Protocol
 
 import config
-from libero_env import LiberoEnv
 from plan import (
     BinOpExpr,
     CallNode,
@@ -32,27 +33,72 @@ _STATUS_TERMS = {"success", "stopped", "failed", "failure", "done", "error"}
 _ARM_SKILLS = frozenset({"arm.grab", "arm.place"})
 
 
-class FeedbackDecision(str, Enum):
-    CONTINUE = "continue"
-    STOP = "stop"
-    REPLAN = "replan"
+class BoundaryReason(str, Enum):
+    """Why ``Executor.run()`` stopped."""
+
+    FEEDBACK_POINT = "feedback_point"
+    PLAN_DONE = "plan_done"
+    STEP_BUDGET = "step_budget"
+    EXECUTION_ERROR = "execution_error"
 
 
-@dataclass(frozen=True)
-class FeedbackOutcome:
-    decision: FeedbackDecision
-    reason: str = ""
-    assessment: str | None = None
+@dataclass
+class ExecutionBoundary:
+    """Payload returned when plan execution pauses or finishes."""
+
+    reason: BoundaryReason
+    steps: int = 0
+    feedback_description: str | None = None
+    feedback_prompt: str | None = None
+    image_bytes: bytes | None = None
+    return_value: Any = None
+    error: str | None = None
 
 
-class FeedbackEvaluator(Protocol):
-    def evaluate(self, image_bytes: bytes, description: str, goal: str) -> FeedbackOutcome:
-        ...
+class LiberoEnvLike(Protocol):
+    """Minimal environment surface required by ``Executor``."""
+
+    def observe(self) -> tuple[bytes, bytes, list[float]]: ...
+
+    def step(self, action: list[float]) -> bool: ...
+
+    def success(self) -> bool: ...
 
 
-class AlwaysContinueEvaluator:
-    def evaluate(self, image_bytes: bytes, description: str, goal: str) -> FeedbackOutcome:
-        return FeedbackOutcome(decision=FeedbackDecision.CONTINUE)
+class VLAClientLike(Protocol):
+    """Minimal VLA client surface required by ``Executor``."""
+
+    def predict(
+        self, image: bytes, wrist: bytes, state: list[float], task: str
+    ) -> list[list[float]]: ...
+
+
+class ReturnSignal(Exception):
+    """Raised by a return node to unwind the call stack and deliver a value."""
+
+    def __init__(self, value: Any = None) -> None:
+        super().__init__()
+        self.value = value
+
+
+class StepBudgetExceeded(Exception):
+    """Raised when the step budget is exhausted."""
+
+
+class FeedbackPause(Exception):
+    """Internal: execution paused at a feedback node for runner/planner handoff."""
+
+    def __init__(
+        self,
+        *,
+        description: str,
+        prompt: str,
+        image_bytes: bytes,
+    ) -> None:
+        super().__init__(description)
+        self.description = description
+        self.prompt = prompt
+        self.image_bytes = image_bytes
 
 
 def _status_from_value(value: Any) -> str | None:
@@ -93,98 +139,113 @@ def _coerce_status_comparison(left: Any, right: Any) -> tuple[Any, Any]:
     return left_status, right_status
 
 
-def _log_feedback(node_description: str, prompt: str, outcome: FeedbackOutcome) -> None:
-    logger.info("Feedback LLM asked: %r", node_description)
-    if prompt != node_description:
-        logger.debug("Feedback LLM prompt (full): %s", prompt)
-    if outcome.assessment is not None:
-        if outcome.reason:
-            logger.info(
-                "Feedback LLM response: %s — %s",
-                outcome.assessment,
-                outcome.reason,
-            )
-        else:
-            logger.info("Feedback LLM response: %s", outcome.assessment)
-    else:
-        logger.info("Feedback LLM: not consulted (stub evaluator)")
-    logger.info(
-        "Feedback executor decision: %s",
-        outcome.decision.value.upper(),
-    )
-
-
-class ReplanSignal(Exception):
-    """Raised by a feedback node when the LLM evaluator returns REPLAN."""
-
-    def __init__(self, description: str) -> None:
-        super().__init__(description)
-        self.description = description
-
-
-class ReturnSignal(Exception):
-    """Raised by a return node to unwind the call stack and deliver a value."""
-
-    def __init__(self, value: Any = None) -> None:
-        super().__init__()
-        self.value = value
-
-
-class StopSignal(Exception):
-    """Raised by a feedback node when the LLM evaluator returns STOP."""
-
-
-class StepBudgetExceeded(Exception):
-    """Raised when the step budget is exhausted."""
-
-
-@dataclass
-class ExecutionResult:
-    status: str
-    replans: int = 0
-    steps: int = 0
-    value: Any = None
-    error: str | None = None
-
-
 def _clean_object_name(name: str) -> str:
     return re.sub(r"_\d+$", "", name).replace("_", " ")
 
 
 class Executor:
+    """Executes a plan against the environment and VLA policy."""
+
     def __init__(
         self,
         registry: SkillRegistry,
-        feedback_evaluator: FeedbackEvaluator,
-        image_fn: Callable[[], bytes],
-        goal: str,
-        env: LiberoEnv,
-        vla: VLAClient,
+        env: LiberoEnvLike,
+        vla: VLAClientLike | None = None,
         step_budget: int = config.STEP_BUDGET,
     ) -> None:
         self._registry = registry
-        self._feedback_evaluator = feedback_evaluator
-        self._image_fn = image_fn
-        self._goal = goal
         self._env = env
-        self._vla = vla
+        self._vla = vla or VLAClient()
         self._step_budget = step_budget
+        self._plan: Plan | None = None
+        self._ctx: dict[str, Any] = {}
         self._steps = 0
         self._last_skill_result: str | None = None
+        self._continuation: Callable[[], None] | None = None
 
-    def run(self, plan: Plan) -> ExecutionResult:
-        ctx: dict[str, Any] = {}
+    def reset(self, plan: Plan) -> None:
+        """Load a new plan and clear execution state."""
+        self._plan = plan
+        self._ctx = {}
+        self._steps = 0
+        self._last_skill_result = None
+        self._continuation = None
+
+    def run(self) -> ExecutionBoundary:
+        """Run until a boundary (feedback, done, budget, or error)."""
+        if self._plan is None:
+            raise RuntimeError("Executor.run() called before reset(plan)")
+
+        steps_before = self._steps
         try:
-            self._exec(plan.body, ctx)
-            return ExecutionResult(status="done", steps=self._steps, value=None)
+            if self._continuation is not None:
+                continuation = self._continuation
+                self._continuation = None
+                continuation()
+            else:
+                self._exec(self._plan.body, self._ctx)
+            return ExecutionBoundary(
+                reason=BoundaryReason.PLAN_DONE,
+                steps=self._steps - steps_before,
+                return_value=None,
+            )
         except ReturnSignal as sig:
-            return ExecutionResult(status="done", steps=self._steps, value=sig.value)
-        except StopSignal:
-            return ExecutionResult(status="stopped", steps=self._steps)
-        except ReplanSignal as sig:
-            return ExecutionResult(status="replan", steps=self._steps, error=sig.description)
+            return ExecutionBoundary(
+                reason=BoundaryReason.PLAN_DONE,
+                steps=self._steps - steps_before,
+                return_value=sig.value,
+            )
+        except FeedbackPause as pause:
+            return ExecutionBoundary(
+                reason=BoundaryReason.FEEDBACK_POINT,
+                steps=self._steps - steps_before,
+                feedback_description=pause.description,
+                feedback_prompt=pause.prompt,
+                image_bytes=pause.image_bytes,
+            )
         except StepBudgetExceeded:
-            return ExecutionResult(status="step_budget", steps=self._steps)
+            return ExecutionBoundary(
+                reason=BoundaryReason.STEP_BUDGET,
+                steps=self._steps - steps_before,
+            )
+        except Exception as exc:
+            logger.exception("Executor execution error")
+            return ExecutionBoundary(
+                reason=BoundaryReason.EXECUTION_ERROR,
+                steps=self._steps - steps_before,
+                error=str(exc),
+            )
+
+    def _append_continuation(self, fn: Callable[[], None]) -> None:
+        previous = self._continuation
+        if previous is None:
+            self._continuation = fn
+            return
+
+        def chained() -> None:
+            previous()
+            fn()
+
+        self._continuation = chained
+
+    def _exec_steps(self, steps: list[StmtNode], ctx: dict[str, Any]) -> Any:
+        last: Any = None
+        for index, step in enumerate(steps):
+            try:
+                last = self._exec(step, ctx)
+            except FeedbackPause:
+                remaining = steps[index + 1 :]
+                if remaining:
+
+                    def continue_steps(
+                        remaining_steps: list[StmtNode] = remaining,
+                        context: dict[str, Any] = ctx,
+                    ) -> None:
+                        self._exec_steps(remaining_steps, context)
+
+                    self._append_continuation(continue_steps)
+                raise
+        return last
 
     def _manipulate(
         self,
@@ -216,10 +277,7 @@ class Executor:
 
     def _exec(self, node: StmtNode, ctx: dict[str, Any]) -> Any:
         if isinstance(node, SeqNode):
-            last: Any = None
-            for step in node.steps:
-                last = self._exec(step, ctx)
-            return last
+            return self._exec_steps(node.steps, ctx)
 
         if isinstance(node, IfNode):
             if self._eval(node.condition, ctx):
@@ -232,7 +290,9 @@ class Executor:
             iterations = 0
             while self._eval(node.condition, ctx):
                 if iterations >= node.max_iterations:
-                    raise RuntimeError(f"while loop exceeded max_iterations={node.max_iterations}")
+                    raise RuntimeError(
+                        f"while loop exceeded max_iterations={node.max_iterations}"
+                    )
                 self._exec(node.body, ctx)
                 iterations += 1
             return None
@@ -240,7 +300,9 @@ class Executor:
         if isinstance(node, CallNode):
             if self._steps >= self._step_budget:
                 raise StepBudgetExceeded()
-            evaluated_args = {key: self._eval(value, ctx) for key, value in node.args.items()}
+            evaluated_args = {
+                key: self._eval(value, ctx) for key, value in node.args.items()
+            }
             args_str = ", ".join(f"{k}={v!r}" for k, v in evaluated_args.items())
             logger.info("Uses skill: %s(%s)", node.skill, args_str)
 
@@ -261,23 +323,18 @@ class Executor:
             return result
 
         if isinstance(node, FeedbackNode):
-            image_bytes = self._image_fn()
-            description = node.description
+            image_bytes = self._env.observe()[0]
+            prompt = node.description
             if self._last_skill_result:
-                description = (
-                    f"{description}\n\nPrior skill result: {self._last_skill_result}"
+                prompt = (
+                    f"{prompt}\n\nPrior skill result: {self._last_skill_result}"
                 )
-            outcome = self._feedback_evaluator.evaluate(
-                image_bytes, description, self._goal
+            logger.info("Feedback checkpoint: %r", node.description)
+            raise FeedbackPause(
+                description=node.description,
+                prompt=prompt,
+                image_bytes=image_bytes,
             )
-            _log_feedback(node.description, description, outcome)
-            if outcome.decision == FeedbackDecision.CONTINUE:
-                return None
-            if outcome.decision == FeedbackDecision.STOP:
-                raise StopSignal()
-            if outcome.decision == FeedbackDecision.REPLAN:
-                raise ReplanSignal(node.description)
-            raise ValueError(f"Unsupported feedback decision: {outcome.decision!r}")
 
         if isinstance(node, ReturnNode):
             value = self._eval(node.value, ctx) if node.value is not None else None
@@ -334,7 +391,9 @@ class Executor:
                 if expr.op == ">=":
                     return left >= right
             except TypeError as exc:
-                raise TypeError(f"Incomparable operands for {expr.op}: {left!r}, {right!r}") from exc
+                raise TypeError(
+                    f"Incomparable operands for {expr.op}: {left!r}, {right!r}"
+                ) from exc
 
             raise ValueError(f"Unsupported binary operator: {expr.op!r}")
 

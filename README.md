@@ -7,6 +7,11 @@ the run to continue, stop, or replan.
 Platform: **LIBERO on Linux + NVIDIA** (Colab T4 is sufficient). Architecture and
 contracts: `SRD.md`.
 
+Ownership split (runtime):
+- `Runner`: composition root — owns `LiberoEnv` and `SkillRegistry`; builds `LLMPlanner` with goal/catalog/scene context; orchestration loop (`plan -> execute -> decide`) and replan cap.
+- `Planner`: all LLM interactions (plan generation + feedback decisions); `LLMPlanner(goal, catalog, scene_objects)` — model and retry limits from `config`.
+- `Executor`: environment/VLA execution, returns typed boundary reasons to runner.
+
 ## Setup
 
 Two virtualenvs in the repo root: `.venv` for the app and simulation, `.vla-venv`

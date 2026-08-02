@@ -3,13 +3,13 @@ from __future__ import annotations
 
 import pytest
 
-from conftest import MockSkill, build_executor, make_plan
+from conftest import MockSkill, build_executor, make_plan, run_plan
 from plan import BinOpExpr, LiteralExpr, NotExpr, VarExpr
 
 
 def _return_value(expr_dict: dict) -> object:
     plan = make_plan({"kind": "return", "value": expr_dict})
-    return build_executor(MockSkill()).run(plan).value
+    return run_plan(build_executor(MockSkill()), plan).return_value
 
 
 def test_literal() -> None:
