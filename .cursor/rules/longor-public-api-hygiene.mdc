@@ -16,6 +16,8 @@ Apply this rule to all runtime code under `src/**`.
 - Keep public entrypoint signatures stable and compact:
   - `Runner`-style entrypoints should expose only essential domain inputs.
   - Move wiring/shape logic behind the boundary owner instead of leaking it into entrypoints.
+- Public method names must match return semantics:
+ - If a method is named `plan`, return the plan payload directly (not a wrapper that contains it) unless explicitly approved in `SRD.md`.
 - Do not silently continue when required runtime context is missing.
   - Fail fast with a clear error when mandatory inputs/state are unavailable.
 

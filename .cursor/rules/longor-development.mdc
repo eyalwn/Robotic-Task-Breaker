@@ -5,12 +5,15 @@ alwaysApply: true
 
 # Longor global development defaults
 
-- Priority order is strict: **simplicity > modularity > readability > performance**.
+- Priority order is strict: **simplicity > readability > modularity > performance**.
 - Keep interface stability high and code surface area low. Prefer fewer files and fewer lines.
 - Remove non-critical features, dead code, redundant wrappers, and speculative abstractions.
+- Do not add wrapper return types around a single payload unless at least two independent consumers require distinct fields.
+- Do not add private state-holder structs/classes for one-function control flow (`_LoopState` style); use locals or a compact tuple instead.
+- In orchestration paths, prefer one top-level `try` and avoid nested `try` blocks unless different exception classes require different handling.
 - If requirements are unclear, stop at the first decision point and ask a targeted question. Do not guess.
 - Never stage, commit, or push unless the user explicitly asks in the current message.
-- Follow the `SRD.md` refactor phases, module layout, and VLA service contract. If a change needs a contract change, stop and propose it first.
+- Follow the `SRD.md` architecture contracts, module layout, and VLA service contract. If a change needs a contract change, stop and propose it first.
 - Follow PEP 8 for Python edits.
 
 ## Debug containment protocol (strict)

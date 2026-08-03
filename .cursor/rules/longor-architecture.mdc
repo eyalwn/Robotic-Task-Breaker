@@ -5,9 +5,9 @@ alwaysApply: true
 
 # Longor architecture boundaries
 
-- `SRD.md` is the single source of truth for the module layout, the refactor
-  phases, and the VLA service contract. If a change needs a contract change,
-  stop and propose the contract update first.
+- `SRD.md` is the single source of truth for the module layout and the VLA
+  service contract. If a change needs a contract change, stop and propose the
+  contract update first.
 - Source is **flat top-level modules** in `src/`. Do not reintroduce package
   directories (`core/`, `sim/`, `vla/`, `robots/`) or a `Backend` protocol:
   there is exactly one environment (LIBERO) and one policy transport (HTTP).

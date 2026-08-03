@@ -1,6 +1,6 @@
 # Longor SRD
 
-Single source of truth for architecture, contracts, and the current refactor.
+Single source of truth for architecture and runtime contracts.
 
 Install: `pip install -r deps/requirements-libero.txt && pip install -e .` from the
 repo root. Source lives in `src/` as flat top-level modules; `pip install -e .`
@@ -120,88 +120,20 @@ One policy service process at a time, `services/smolvla_service.py`, on
 
 Changing this contract requires updating this section first.
 
-## Refactor phases
+## Delivery status
 
-Replaces the former M1-M18 milestone list. History: LIBERO integration, the plan
-AST and executor, the LLM planner and feedback evaluator, and SmolVLA and Pi0.5
-service baselines were all built and validated before this refactor. The
-ManiSkill backend, the XLeRobot hardware stack, the Octo and Pi0.5 services, and
-the trace writer are being removed.
+The planned refactor phases are complete and retired. This document now focuses
+on current-state contracts only.
 
-### Phase 1 — new environment and policy client, proven in isolation (done)
+Current runtime shape:
 
-`src/config.py`, `src/libero_env.py`, `src/vla_client.py`,
-`validation/libero_probe.py`. No planner, no executor, no skills, no plan AST.
-Nothing deleted.
+- `planner.plan(handoff?) -> dict` (validated plan AST JSON)
+- STOP is represented by a sentinel return literal: `"STOP: <reason>"`
+- `runner` checks `planner_stop_reason(...)` before `validate_plan(...)` and
+  `executor.run(plan)`
+- `executor.run(plan)` is stateless across runs
 
-**Acceptance:** `python validation/libero_probe.py` prints a pass/fail summary
-and exits 0, having solved `libero_object` task 0. **Met** on Colab T4 with
-SmolVLA (`HuggingFaceVLA/smolvla_libero`):
-
-```
-task              'pick up the alphabet soup and place it in the basket'
-steps             170 (160 policy actions)
-eef displacement  0.3025 m
-gripper qpos      0.0323 .. 0.0399
-mean |action|     [0.156, 0.361, 0.314, 0.008, 0.031, 0.021, 0.998]
-closest approach  alphabet_soup_1: 0.0074 m
-closest approach  basket_1: 0.1596 m
-PASS: task solved
-```
-
-This was also the diagnostic gate for the long-standing VLA/environment defect.
-The result settles it: the defect was in the layers this refactor deletes, not in
-the service or the checkpoint.
-
-**Baseline to preserve.** This run is the reference any later regression is
-measured against. Two properties matter:
-
-- The policy solved a *complete* pick-and-place from a single task string, in one
-  uninterrupted rollout. Decomposing the same work into separate `arm.grab` and
-  `arm.place` calls gives the policy less context and resets its action chunk
-  mid-task, so a decomposed run doing *worse* than this probe is expected and is
-  not evidence of a wiring bug. Re-run the probe before blaming the executor.
-- 160 actions sufficed for both phases of the task, well inside
-  `MAX_EPISODE_STEPS["libero_object"]` (280) and `MAX_SKILL_STEPS` (300).
-
-### Phase 2 — documentation anchored (done)
-
-This document, `README.md`, `.env.example`,
-`.cursor/rules/longor-architecture.mdc`.
-
-### Phase 3 — orchestration ported (done)
-
-`src/plan.py`, `src/skills.py`, `src/executor.py`, `src/planner.py`,
-`src/runner.py`, registered in `py-modules`. Old tree still present and
-untouched. New modules import nothing from `core` / `sim` / `vla` / `robots`.
-
-- `plan.py`: plan AST + `validate_plan()` + `planner_stop_reason()` (sentinel STOP detection).
-- `skills.py`: registry + sim-GT perception skills on `LiberoEnv`. `arm.grab` /
-  `arm.place` are not registered; their catalog lines are appended for the LLM.
-- `executor.py`: stateless `run(plan)`; restricted expr eval; `_manipulate()` matching
-  `validation/libero_probe.py`. Task strings: strip trailing index, underscores
-  → spaces, then `pick up the {name}` / `put the {name} in the {location}`.
-  Owns the VLA client and returns typed `ExecutionBoundary` results:
-  `feedback_point`, `plan_done`, `step_budget`, `execution_error`. No cross-run
-  plan memory, no `reset`, no continuation after feedback.
-- `planner.py`: `LLMPlanner(goal, catalog, scene_objects)`.
-  `plan(handoff?) -> dict` (validated plan AST JSON). Stop = sentinel plan with
-  return literal `"STOP: <reason>"`. Mid-loop handoff carries snapshot +
-  `progress_history`. `LLM_MODEL` and `MAX_PLAN_RETRIES` from `config`.
-- `runner.py`: composition root — builds env, registry, planner, executor;
-  loop is `planner.plan → planner_stop_reason? → validate_plan → executor.run(plan)
-  → planner.plan(handoff)` on feedback; accumulates short history lines for the planner.
-
-**Acceptance:** `Runner("...", task_suite="libero_10", task_idx=0)` constructs
-and `run()` returns a result; no module under `src/core`, `src/sim`, `src/vla`, or
-`src/robots` is imported by any new module. **Met** structurally (imports clean,
-`Runner.__init__` builds the stack). Live `run()` on `libero_10` task 0 is a
-Linux/Colab gate (LIBERO); unit suite stays green against the old tree
-(338 passed, 9 skipped).
-
-### Phase 4 — example rewritten (done)
-
-`examples/long_horizon_llm_libero.py` uses the new flat `Runner`:
+Example entrypoint:
 
 ```python
 from runner import Runner
@@ -213,53 +145,9 @@ Runner(GOAL, task_suite="libero_10", task_idx=0).run()
 print("DONE")
 ```
 
-**Acceptance:** the example runs end to end on `libero_10` task 0 and reports a
-verdict. **Met** on Colab: the new stack constructed, planned, executed, and
-logged `Run summary: success=False, plan_status=done, steps=3, ...`. Task
-failure (wrong object in plan / failed grab-place) is not a Phase 4 miss —
-acceptance is end-to-end wiring + a verdict, not a solved episode.
-
-### Phase 5 — old tree deleted (done)
-
-Removed the legacy packages (`src/core`, `sim`, `vla`, `robots`), XLeRobot /
-ManiSkill examples, m7/m8 validation probes, Octo / Pi0.5 / `run_vla_server`
-services and their tests, obsolete deps, egg-info, and the old Colab notebooks.
-`src/utils.py` is only `load_env` + `configure_logging`.
-`[tool.setuptools.packages.find]` is gone from `pyproject.toml`.
-
-Kept: flat `src/` modules, `services/smolvla_service.py`,
-`validation/libero_probe.py`, `examples/long_horizon_llm_libero.py`, and the
-SmolVLA + LIBERO requirement files. `tests/**` left for Phase 6 (collection
-errors expected).
-
-One Colab launcher: `colab/libero_probe.ipynb` → `validation/libero_probe.py`
-via `services/smolvla_service.py`.
-
-**Acceptance:** the example and the probe still run; nothing imports a deleted
-module. **Met** on Colab: probe solved `libero_object` task 0 (`PASS: task
-solved`, 139 policy actions); example constructed and ran on the new stack
-(wiring OK). Kept code imports nothing deleted.
-
-### Phase 6 — tests rewritten (done)
-
-Deleted all legacy `tests/**`. Hermetic replacements:
-
-| Test | Covers |
-| --- | --- |
-| `tests/test_plan.py` | AST validation, arg coercion, rejection of malformed plans |
-| `tests/test_executor.py` | Control flow (seq/if/while/return/feedback) against a fake env and fake policy |
-| `tests/test_executor_expr.py` | Restricted expression evaluator, including error cases |
-| `tests/test_vla_client.py` | Wire contract: request shape, response parsing, rejection of bad actions |
-| `tests/test_planner.py` | JSON extraction from LLM output, retry on validation failure |
-
-Shared fixtures in `tests/conftest.py`. `pytest -m integration` remains reserved
-for tests needing a live service.
-
-**Acceptance:** `pytest` passes with no live sim or network. **Met:** 53 passed.
-
 ## Future work
 
-Deliberately out of scope until the phases above land:
+Deliberately out of scope for the current runtime scope:
 
 - Real (RGB-based) perception replacing sim-GT, then deleting sim-GT.
 - LIBERO-10 campaign: independent per-task evaluation for `task_idx` 0..9.
