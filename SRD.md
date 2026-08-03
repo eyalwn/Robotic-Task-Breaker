@@ -18,10 +18,10 @@ the work, not just an ordered step list.
    subtasks.
 2. The **executor** walks the plan. Perception steps call **skills**; arm
    manipulation steps run the VLA policy loop directly.
-3. **Feedback points** pause execution, capture an RGB snapshot, and hand control
-   back to the runner. The runner re-invokes the same `planner.plan(handoff)`
-   path with the snapshot plus a short `progress_history`. The planner may emit
-   a fresh plan or a sentinel STOP plan (return node with literal `"STOP: <reason>"`).
+3. **Feedback points** pause execution and hand control back to the runner. The
+   runner captures an RGB snapshot and re-invokes `planner.plan(stop, snapshot)`.
+   The planner keeps a short `progress_history` across calls. It may emit a fresh
+   plan or a sentinel STOP plan (return node with literal `"STOP: <reason>"`).
    The runner detects STOP before `validate_plan` / `executor.run`. The executor is
    stateless across `run(plan)` calls: no `reset`, no continuation. `STEP_BUDGET`
    bounds skill calls **within one** `run(plan)` only. Stopping a stuck run is
@@ -43,11 +43,11 @@ listed above it.
 | `src/config.py` | Every tunable constant; loads `.env`. Imports nothing from Longor. |
 | `src/libero_env.py` | `LiberoEnv`: builds `OffScreenRenderEnv`, `observe()`, `step()`, `success()`, `object_names()`, `body_position()`, run video. |
 | `src/vla_client.py` | `VLAClient`: HTTP to the policy service. Knows nothing about LIBERO. |
-| `src/plan.py` | Pydantic plan AST + `validate_plan()` + `planner_stop_reason()`. |
+| `src/plan.py` | Pydantic plan AST + `validate_plan()` + `is_a_stop_plan()` / `get_stop_reason()`. |
 | `src/skills.py` | `Skill` / `SkillParam` / `SkillRegistry` + LIBERO sim-GT perception skills. |
 | `src/executor.py` | Stateless `run(plan)`: walks one plan, owns VLA-to-environment execution, returns a typed `ExecutionStop`; no cross-run memory. |
-| `src/planner.py` | `LLMPlanner(goal, catalog, scene_objects)`: `plan(handoff?) -> dict` (plan AST JSON); mid-loop handoff carries snapshot + `progress_history`; model/retries from `config`. |
-| `src/runner.py` | `Runner`: composition root — owns `LiberoEnv`, `SkillRegistry`; loop is `plan → validate → executor.run(plan) → plan(handoff)` on feedback; checks sentinel STOP before execute; accumulates history lines for the planner. |
+| `src/planner.py` | `LLMPlanner(goal, catalog, scene_objects)`: `plan(stop?, snapshot?) -> dict` (plan AST JSON); owns `progress_history` across calls; model/retries from `config`. |
+| `src/runner.py` | `Runner`: composition root — owns `LiberoEnv`, `SkillRegistry`; loop is `plan → validate → executor.run(plan) → observe + plan(stop, snapshot)` on feedback; checks sentinel STOP before execute. |
 
 Plus `src/utils.py` (`load_env`, `configure_logging`) and
 `services/smolvla_service.py` (the policy server, run in a separate venv).
@@ -127,10 +127,10 @@ on current-state contracts only.
 
 Current runtime shape:
 
-- `planner.plan(handoff?) -> dict` (validated plan AST JSON)
+- `planner.plan(stop?, snapshot?) -> dict` (validated plan AST JSON)
 - STOP is represented by a sentinel return literal: `"STOP: <reason>"`
-- `runner` checks `planner_stop_reason(...)` before `validate_plan(...)` and
-  `executor.run(plan)`
+- `runner` checks `is_a_stop_plan(...)` before `executor.run(plan)` and reads
+  the reason via `get_stop_reason(...)`
 - `executor.run(plan)` is stateless across runs
 
 Example entrypoint:

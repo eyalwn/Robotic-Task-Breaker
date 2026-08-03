@@ -9,7 +9,6 @@ import pytest
 
 from executor import ExecutionStop, Executor, StopReason
 from plan import Plan
-from planner import PlanningHandoff
 from runner import Runner
 
 
@@ -43,7 +42,7 @@ class _StubPlanner:
         self.init_goal = goal
         self.init_scene_objects = scene_objects
         self.plan_calls = 0
-        self.handoffs: list[PlanningHandoff | None] = []
+        self.plan_args: list[tuple[ExecutionStop | None, bytes | None]] = []
         self._plan_fail_on_call: int | None = None
         self._stop_on_call: int | None = None
         self._stop_reason = "goal achieved"
@@ -55,9 +54,13 @@ class _StubPlanner:
         self._stop_on_call = call_number
         self._stop_reason = reason
 
-    def plan(self, handoff: PlanningHandoff | None = None) -> dict[str, Any]:
+    def plan(
+        self,
+        stop: ExecutionStop | None = None,
+        snapshot: bytes | None = None,
+    ) -> dict[str, Any]:
         self.plan_calls += 1
-        self.handoffs.append(handoff)
+        self.plan_args.append((stop, snapshot))
         if self._plan_fail_on_call == self.plan_calls:
             raise RuntimeError("plan validation failed")
         if self._stop_on_call == self.plan_calls:
@@ -70,8 +73,10 @@ class _StubEnv:
         self._success = success
         self.closed = False
         self.events: list[str] = []
+        self.observe_calls = 0
 
     def observe(self) -> tuple[bytes, bytes, list[float]]:
+        self.observe_calls += 1
         return b"img", b"wrist", [0.0] * 8
 
     def step(self, action: list[float]) -> bool:
@@ -136,8 +141,9 @@ def test_runner_plan_done_success(monkeypatch: pytest.MonkeyPatch) -> None:
     status, error, value, total_steps = runner._run_loop()
     assert runner._verdict(status, value) is True
     assert status == "done"
-    assert error is None
+    assert error == ""
     assert planner.plan_calls == 1
+    assert planner.plan_args[0] == (None, None)
     assert executor.run.call_count == 1
     assert total_steps == 0
 
@@ -163,7 +169,6 @@ def test_runner_feedback_triggers_replan_then_done(monkeypatch: pytest.MonkeyPat
                 steps=2,
                 feedback_description="checkpoint",
                 feedback_prompt="checkpoint",
-                image_bytes=b"img",
             ),
             ExecutionStop(reason=StopReason.PLAN_DONE, return_value="done"),
         ],
@@ -173,13 +178,13 @@ def test_runner_feedback_triggers_replan_then_done(monkeypatch: pytest.MonkeyPat
     status, error, value, _ = runner._run_loop()
     assert runner._verdict(status, value) is True
     assert planner.plan_calls == 2
-    assert planner.handoffs[1] is not None
-    assert planner.handoffs[1].description == "checkpoint"
-    assert planner.handoffs[1].image_bytes == b"img"
-    assert len(planner.handoffs[1].progress_history) == 1
-    assert "feedback_point: checkpoint" in planner.handoffs[1].progress_history[0]
+    stop, snapshot = planner.plan_args[1]
+    assert stop is not None
+    assert stop.feedback_description == "checkpoint"
+    assert snapshot == b"img"
+    assert runner._env.observe_calls == 1
     assert executor.run.call_count == 2
-    assert error is None
+    assert error == ""
 
 
 def test_runner_multiple_feedback_cycles(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -188,7 +193,6 @@ def test_runner_multiple_feedback_cycles(monkeypatch: pytest.MonkeyPatch) -> Non
         reason=StopReason.FEEDBACK_POINT,
         feedback_description="checkpoint",
         feedback_prompt="checkpoint",
-        image_bytes=b"img",
     )
     runner, planner, executor = _runner_with_stub_executor(
         [feedback, feedback, ExecutionStop(reason=StopReason.PLAN_DONE, return_value="done")],
@@ -198,9 +202,14 @@ def test_runner_multiple_feedback_cycles(monkeypatch: pytest.MonkeyPatch) -> Non
     status, error, value, _ = runner._run_loop()
     assert runner._verdict(status, value) is True
     assert planner.plan_calls == 3
-    assert len(planner.handoffs[2].progress_history) == 2
+    assert planner.plan_args[0] == (None, None)
+    assert planner.plan_args[1][0] is not None
+    assert planner.plan_args[1][1] == b"img"
+    assert planner.plan_args[2][0] is not None
+    assert planner.plan_args[2][1] == b"img"
+    assert runner._env.observe_calls == 2
     assert executor.run.call_count == 3
-    assert error is None
+    assert error == ""
 
 
 def test_runner_feedback_plan_failure(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -212,7 +221,6 @@ def test_runner_feedback_plan_failure(monkeypatch: pytest.MonkeyPatch) -> None:
                 reason=StopReason.FEEDBACK_POINT,
                 feedback_description="checkpoint",
                 feedback_prompt="checkpoint",
-                image_bytes=b"img",
             ),
         ],
         monkeypatch,
@@ -230,7 +238,6 @@ def test_runner_planner_stop(monkeypatch: pytest.MonkeyPatch) -> None:
                 reason=StopReason.FEEDBACK_POINT,
                 feedback_description="checkpoint",
                 feedback_prompt="checkpoint",
-                image_bytes=b"img",
             ),
         ],
         monkeypatch,
@@ -240,7 +247,7 @@ def test_runner_planner_stop(monkeypatch: pytest.MonkeyPatch) -> None:
     assert runner._verdict(status, value) is False
     assert status == "stopped"
     assert error == "goal achieved"
-    assert value is None
+    assert value == ""
 
 
 def test_runner_step_budget(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -251,4 +258,15 @@ def test_runner_step_budget(monkeypatch: pytest.MonkeyPatch) -> None:
     status, error, value, _ = runner._run_loop()
     assert status == "step_budget"
     assert runner._verdict(status, value) is False
-    assert error is None
+    assert error == ""
+
+
+def test_runner_feedback_missing_fields(monkeypatch: pytest.MonkeyPatch) -> None:
+    runner, _, _ = _runner_with_stub_executor(
+        [ExecutionStop(reason=StopReason.FEEDBACK_POINT)],
+        monkeypatch,
+    )
+    status, error, value, _ = runner._run_loop()
+    assert status == "execution_error"
+    assert error == "feedback stop missing description or prompt"
+    assert value == ""

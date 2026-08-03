@@ -141,8 +141,20 @@ def validate_plan(data: dict) -> Plan:
     return Plan.model_validate(data)
 
 
-def planner_stop_reason(data: dict) -> str | None:
+def _stop_reason(data: Plan | dict) -> str | None:
     """Return stop reason if data is a sentinel STOP plan, else None."""
+    if isinstance(data, Plan):
+        body = data.body
+        if not isinstance(body, ReturnNode):
+            return None
+        if not isinstance(body.value, LiteralExpr):
+            return None
+        raw = body.value.value
+        if not isinstance(raw, str) or not raw.startswith("STOP:"):
+            return None
+        reason = raw[5:].strip()
+        return reason if reason else "planner stopped"
+
     body = data.get("body")
     if not isinstance(body, dict) or body.get("kind") != "return":
         return None
@@ -154,3 +166,20 @@ def planner_stop_reason(data: dict) -> str | None:
         return None
     reason = raw[5:].strip()
     return reason if reason else "planner stopped"
+
+
+def is_a_stop_plan(data: Plan | dict) -> bool:
+    """Return True if data is a sentinel STOP plan."""
+    return _stop_reason(data) is not None
+
+
+def get_stop_reason(data: Plan | dict) -> str:
+    """Return the stop reason from a sentinel STOP plan.
+
+    Raises:
+        ValueError: If ``data`` is not a STOP plan.
+    """
+    reason = _stop_reason(data)
+    if reason is None:
+        raise ValueError("plan is not a STOP plan")
+    return reason

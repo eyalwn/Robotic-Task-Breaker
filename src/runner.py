@@ -2,32 +2,27 @@
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Literal
 
-from executor import ExecutionStop, Executor, StopReason
+from executor import Executor, StopReason
 from libero_env import LiberoEnv
-from plan import planner_stop_reason, validate_plan
-from planner import LLMPlanner, PlanningHandoff
+from plan import get_stop_reason, is_a_stop_plan
+from planner import LLMPlanner
 from skills import SkillRegistry, arm_skill_catalog, register_libero_skills
 
 logger = logging.getLogger(__name__)
 
+RunStatus = Literal[
+    "done", "plan_failed", "stopped", "step_budget", "execution_error"
+]
 
-def _return_indicates_failure(value: Any) -> bool:
-    return isinstance(value, str) and "failed to" in value.lower()
+
+def _as_str(value: object | None) -> str:
+    return "" if value is None else str(value)
 
 
-def _history_line(stop: ExecutionStop) -> str:
-    reason = stop.reason.value
-    if stop.reason == StopReason.FEEDBACK_POINT:
-        detail = stop.feedback_description or ""
-    elif stop.reason == StopReason.PLAN_DONE:
-        detail = str(stop.return_value) if stop.return_value is not None else ""
-    elif stop.reason == StopReason.EXECUTION_ERROR:
-        detail = stop.error or ""
-    else:
-        detail = ""
-    return f"{reason}: {detail} | steps={stop.steps}"
+def _return_indicates_failure(value: str) -> bool:
+    return "failed to" in value.lower()
 
 
 class Runner:
@@ -51,9 +46,9 @@ class Runner:
 
     def run(self) -> None:
         """Run the task loop and log its outcome."""
-        status = "done"
-        error: str | None = None
-        value: Any = None
+        status: RunStatus = "done"
+        error = ""
+        value = ""
         total_steps = 0
         try:
             status, error, value, total_steps = self._run_loop()
@@ -65,64 +60,37 @@ class Runner:
             self._log_status(status, success, value, error, total_steps)
             self._env.close()
 
-    def _run_loop(self) -> tuple[str, str | None, Any, int]:
+    def _run_loop(self) -> tuple[RunStatus, str, str, int]:
         total_steps = 0
-        progress_history: list[str] = []
-
-        plan_dict = self._planner.plan(None)
-        reason = planner_stop_reason(plan_dict)
-        if reason:
-            return "stopped", reason, None, total_steps
-
-        current_plan = validate_plan(plan_dict)
-
+        stop = None
+        snapshot = None
         while True:
+            current_plan = self._planner.plan(stop, snapshot)
+            if is_a_stop_plan(current_plan):
+                return "stopped", get_stop_reason(current_plan), "", total_steps
+
             stop = self._executor.run(current_plan)
             total_steps += stop.steps
-            progress_history.append(_history_line(stop))
 
             if stop.reason == StopReason.PLAN_DONE:
-                return "done", None, stop.return_value, total_steps
+                return "done", "", _as_str(stop.return_value), total_steps
 
             if stop.reason == StopReason.STEP_BUDGET:
-                return "step_budget", None, None, total_steps
+                return "step_budget", "", "", total_steps
 
             if stop.reason == StopReason.EXECUTION_ERROR:
-                return "execution_error", stop.error, None, total_steps
+                return "execution_error", stop.error or "", "", total_steps
 
             if stop.reason != StopReason.FEEDBACK_POINT:
                 msg = f"unexpected stop reason: {stop.reason.value}"
-                return "execution_error", msg, None, total_steps
+                return "execution_error", msg, "", total_steps
 
-            handoff, handoff_error = self._build_handoff(stop, progress_history)
-            if handoff is None:
-                return "execution_error", handoff_error, None, total_steps
+            if stop.feedback_description is None or stop.feedback_prompt is None:
+                return "execution_error", "feedback stop missing description or prompt", "", total_steps
 
-            plan_dict = self._planner.plan(handoff)
-            reason = planner_stop_reason(plan_dict)
-            if reason:
-                return "stopped", reason, None, total_steps
+            snapshot = self._env.observe()[0]
 
-            current_plan = validate_plan(plan_dict)
-
-    def _build_handoff(
-        self,
-        stop: ExecutionStop,
-        progress_history: list[str],
-    ) -> tuple[PlanningHandoff | None, str | None]:
-        if stop.image_bytes is None or stop.feedback_prompt is None:
-            return None, "feedback stop missing image or prompt"
-        if stop.feedback_description is None:
-            return None, "feedback stop missing description"
-
-        return PlanningHandoff(
-            description=stop.feedback_description,
-            prompt=stop.feedback_prompt,
-            image_bytes=stop.image_bytes,
-            progress_history=tuple(progress_history),
-        ), None
-
-    def _verdict(self, status: str, value: Any) -> bool:
+    def _verdict(self, status: RunStatus, value: str) -> bool:
         if status != "done":
             return False
         if _return_indicates_failure(value):
@@ -131,10 +99,10 @@ class Runner:
 
     def _log_status(
         self,
-        status: str,
+        status: RunStatus,
         success: bool,
-        value: Any,
-        error: str | None,
+        value: str,
+        error: str,
         total_steps: int,
     ) -> None:
         if success:
@@ -164,7 +132,7 @@ class Runner:
             f"plan_status={status}",
             f"steps={total_steps}",
         ]
-        if value is not None:
+        if value:
             summary_parts.append(f"last_skill={value!r}")
         if error:
             summary_parts.append(f"error={error}")

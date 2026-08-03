@@ -4,7 +4,16 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from plan import BinOpExpr, CallNode, Plan, VarExpr, WhileNode, planner_stop_reason, validate_plan
+from plan import (
+    BinOpExpr,
+    CallNode,
+    Plan,
+    VarExpr,
+    WhileNode,
+    get_stop_reason,
+    is_a_stop_plan,
+    validate_plan,
+)
 
 
 def test_valid_plan_roundtrip() -> None:
@@ -135,7 +144,7 @@ def test_reject_bare_string_in_steps() -> None:
         )
 
 
-def test_planner_stop_reason_detects_sentinel() -> None:
+def test_stop_plan_detects_sentinel() -> None:
     data = {
         "goal": "g",
         "body": {
@@ -143,10 +152,11 @@ def test_planner_stop_reason_detects_sentinel() -> None:
             "value": {"kind": "literal", "value": "STOP: goal achieved"},
         },
     }
-    assert planner_stop_reason(data) == "goal achieved"
+    assert is_a_stop_plan(data)
+    assert get_stop_reason(data) == "goal achieved"
 
 
-def test_planner_stop_reason_rejects_normal_plan() -> None:
+def test_stop_plan_rejects_normal_plan() -> None:
     data = {
         "goal": "g",
         "body": {
@@ -154,8 +164,8 @@ def test_planner_stop_reason_rejects_normal_plan() -> None:
             "value": {"kind": "literal", "value": "done"},
         },
     }
-    assert planner_stop_reason(data) is None
+    assert not is_a_stop_plan(data)
 
 
-def test_planner_stop_reason_rejects_stop_json() -> None:
-    assert planner_stop_reason({"stop": True, "reason": "nope"}) is None
+def test_stop_plan_rejects_stop_json() -> None:
+    assert not is_a_stop_plan({"stop": True, "reason": "nope"})

@@ -5,7 +5,6 @@ import base64
 import json
 import logging
 import re
-from dataclasses import dataclass
 from typing import Any, Protocol
 
 from langchain.chat_models import init_chat_model
@@ -13,7 +12,8 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import ValidationError
 
 import config
-from plan import validate_plan
+from executor import ExecutionStop, StopReason
+from plan import Plan, validate_plan
 
 logger = logging.getLogger(__name__)
 
@@ -81,16 +81,6 @@ SKILL CATALOG:
 
 Respond with ONLY the plan JSON object — no markdown, no code fences, no explanation.\
 """
-
-
-@dataclass(frozen=True)
-class PlanningHandoff:
-    """Feedback checkpoint payload for mid-loop replanning."""
-
-    description: str
-    prompt: str
-    image_bytes: bytes
-    progress_history: tuple[str, ...] = ()
 
 
 def _retry_prompt(raw: str, error_msg: str) -> str:
@@ -178,17 +168,35 @@ def _shape_goal(goal: str, scene_objects: list[Any] | None) -> str:
     )
 
 
-def _build_handoff_human(shaped_goal: str, handoff: PlanningHandoff) -> HumanMessage:
-    image_b64 = base64.b64encode(handoff.image_bytes).decode("utf-8")
+def _history_line(stop: ExecutionStop) -> str:
+    reason = stop.reason.value
+    if stop.reason == StopReason.FEEDBACK_POINT:
+        detail = stop.feedback_description or ""
+    elif stop.reason == StopReason.PLAN_DONE:
+        detail = str(stop.return_value) if stop.return_value is not None else ""
+    elif stop.reason == StopReason.EXECUTION_ERROR:
+        detail = stop.error or ""
+    else:
+        detail = ""
+    return f"{reason}: {detail} | steps={stop.steps}"
+
+
+def _build_feedback_human(
+    shaped_goal: str,
+    stop: ExecutionStop,
+    snapshot: bytes,
+    progress_history: list[str],
+) -> HumanMessage:
+    image_b64 = base64.b64encode(snapshot).decode("utf-8")
     history_block = ""
-    if handoff.progress_history:
-        lines = "\n".join(f"- {line}" for line in handoff.progress_history)
+    if progress_history:
+        lines = "\n".join(f"- {line}" for line in progress_history)
         history_block = f"Progress so far:\n{lines}\n\n"
     text = (
         f"Goal: {shaped_goal}\n\n"
         f"{history_block}"
-        f"Feedback checkpoint: {handoff.description}\n"
-        f"{handoff.prompt}\n\n"
+        f"Feedback checkpoint: {stop.feedback_description}\n"
+        f"{stop.feedback_prompt}\n\n"
         "Review progress history and the scene snapshot. Do not repeat failed "
         "approaches. If the goal is achieved, irrecoverable, or no progress "
         "after repeated attempts, respond with a sentinel STOP plan instead "
@@ -210,7 +218,11 @@ def _build_handoff_human(shaped_goal: str, handoff: PlanningHandoff) -> HumanMes
 class Planner(Protocol):
     """Plan generation interface."""
 
-    def plan(self, handoff: PlanningHandoff | None = None) -> dict[str, Any]:
+    def plan(
+        self,
+        stop: ExecutionStop | None = None,
+        snapshot: bytes | None = None,
+    ) -> Plan:
         ...
 
 
@@ -228,20 +240,34 @@ class LLMPlanner:
         self._scene_objects = scene_objects
         self._model_name = config.LLM_MODEL
         self._max_plan_retries = config.MAX_PLAN_RETRIES
+        self._progress_history: list[str] = []
 
-    def plan(self, handoff: PlanningHandoff | None = None) -> dict[str, Any]:
+    def plan(
+        self,
+        stop: ExecutionStop | None = None,
+        snapshot: bytes | None = None,
+    ) -> Plan:
         """Emit an initial or mid-loop plan AST dict."""
         shaped_goal = _shape_goal(self._goal, self._scene_objects)
         system_content = _SYSTEM_TEMPLATE.format(
             catalog=self._catalog, ast_format=_AST_FORMAT
         )
-        if handoff is None:
+        if stop is None:
+            if snapshot is not None:
+                raise ValueError("snapshot requires a feedback stop")
             first_human = HumanMessage(content=f"Goal: {shaped_goal}")
         else:
-            first_human = _build_handoff_human(shaped_goal, handoff)
+            if snapshot is None:
+                raise ValueError("feedback replan requires a snapshot")
+            if stop.feedback_description is None or stop.feedback_prompt is None:
+                raise ValueError("feedback stop missing description or prompt")
+            self._progress_history.append(_history_line(stop))
+            first_human = _build_feedback_human(
+                shaped_goal, stop, snapshot, self._progress_history
+            )
             logger.info(
                 "LLMPlanner: mid-loop replan at feedback checkpoint %r",
-                handoff.description,
+                stop.feedback_description,
             )
 
         llm = _init_planning_llm(self._model_name)
@@ -282,9 +308,9 @@ class LLMPlanner:
 
             try:
                 data = json.loads(raw)
-                validate_plan(data)
+                validated_plan = validate_plan(data)
                 logger.info("LLMPlanner: valid plan on attempt %d", attempt + 1)
-                return data
+                return validated_plan
             except (json.JSONDecodeError, ValidationError) as exc:
                 error_msg = str(exc)
                 logger.warning(
@@ -311,5 +337,4 @@ class LLMPlanner:
 __all__ = [
     "LLMPlanner",
     "Planner",
-    "PlanningHandoff",
 ]
