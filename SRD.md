@@ -21,7 +21,8 @@ the work, not just an ordered step list.
 3. **Feedback points** pause execution, capture an RGB snapshot, and hand control
    back to the runner. The runner re-invokes the same `planner.plan(handoff)`
    path with the snapshot plus a short `progress_history`. The planner may emit
-   a fresh plan or stop (`{"stop": true, "reason": "..."}`). The executor is
+   a fresh plan or a sentinel STOP plan (return node with literal `"STOP: <reason>"`).
+   The runner detects STOP before `validate_plan` / `executor.run`. The executor is
    stateless across `run(plan)` calls: no `reset`, no continuation. `STEP_BUDGET`
    bounds skill calls **within one** `run(plan)` only. Stopping a stuck run is
    the planner's job (via history + snapshot), not a runner replan cap.
@@ -42,11 +43,11 @@ listed above it.
 | `src/config.py` | Every tunable constant; loads `.env`. Imports nothing from Longor. |
 | `src/libero_env.py` | `LiberoEnv`: builds `OffScreenRenderEnv`, `observe()`, `step()`, `success()`, `object_names()`, `body_position()`, run video. |
 | `src/vla_client.py` | `VLAClient`: HTTP to the policy service. Knows nothing about LIBERO. |
-| `src/plan.py` | Pydantic plan AST + `validate_plan()`. |
+| `src/plan.py` | Pydantic plan AST + `validate_plan()` + `planner_stop_reason()`. |
 | `src/skills.py` | `Skill` / `SkillParam` / `SkillRegistry` + LIBERO sim-GT perception skills. |
 | `src/executor.py` | Stateless `run(plan)`: walks one plan, owns VLA-to-environment execution, returns a typed boundary; no cross-run memory. |
-| `src/planner.py` | `LLMPlanner(goal, catalog, scene_objects)`: `plan(handoff?) -> PlanningResult` (new plan or stop); mid-loop handoff carries snapshot + `progress_history`; model/retries from `config`. |
-| `src/runner.py` | `Runner`: composition root — owns `LiberoEnv`, `SkillRegistry`; loop is `plan → executor.run(plan) → plan(handoff)` on feedback; accumulates history lines for the planner. |
+| `src/planner.py` | `LLMPlanner(goal, catalog, scene_objects)`: `plan(handoff?) -> dict` (plan AST JSON); mid-loop handoff carries snapshot + `progress_history`; model/retries from `config`. |
+| `src/runner.py` | `Runner`: composition root — owns `LiberoEnv`, `SkillRegistry`; loop is `plan → validate → executor.run(plan) → plan(handoff)` on feedback; checks sentinel STOP before execute; accumulates history lines for the planner. |
 
 Plus `src/utils.py` (`load_env`, `configure_logging`) and
 `services/smolvla_service.py` (the policy server, run in a separate venv).
@@ -174,7 +175,7 @@ This document, `README.md`, `.env.example`,
 `src/runner.py`, registered in `py-modules`. Old tree still present and
 untouched. New modules import nothing from `core` / `sim` / `vla` / `robots`.
 
-- `plan.py`: plan AST + `validate_plan()`.
+- `plan.py`: plan AST + `validate_plan()` + `planner_stop_reason()` (sentinel STOP detection).
 - `skills.py`: registry + sim-GT perception skills on `LiberoEnv`. `arm.grab` /
   `arm.place` are not registered; their catalog lines are appended for the LLM.
 - `executor.py`: stateless `run(plan)`; restricted expr eval; `_manipulate()` matching
@@ -184,12 +185,12 @@ untouched. New modules import nothing from `core` / `sim` / `vla` / `robots`.
   `feedback_point`, `plan_done`, `step_budget`, `execution_error`. No cross-run
   plan memory, no `reset`, no continuation after feedback.
 - `planner.py`: `LLMPlanner(goal, catalog, scene_objects)`.
-  `plan(handoff?) -> PlanningResult` (fresh plan or stop). Mid-loop handoff
-  carries snapshot + `progress_history`. `LLM_MODEL` and `MAX_PLAN_RETRIES`
-  from `config`.
+  `plan(handoff?) -> dict` (validated plan AST JSON). Stop = sentinel plan with
+  return literal `"STOP: <reason>"`. Mid-loop handoff carries snapshot +
+  `progress_history`. `LLM_MODEL` and `MAX_PLAN_RETRIES` from `config`.
 - `runner.py`: composition root — builds env, registry, planner, executor;
-  loop is `planner.plan → executor.run(plan) → planner.plan(handoff)` on
-  feedback; accumulates short history lines for the planner.
+  loop is `planner.plan → planner_stop_reason? → validate_plan → executor.run(plan)
+  → planner.plan(handoff)` on feedback; accumulates short history lines for the planner.
 
 **Acceptance:** `Runner("...", task_suite="libero_10", task_idx=0)` constructs
 and `run()` returns a result; no module under `src/core`, `src/sim`, `src/vla`, or

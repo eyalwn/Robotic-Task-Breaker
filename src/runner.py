@@ -2,11 +2,11 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass
 from typing import Any
 
 from executor import BoundaryReason, ExecutionBoundary, Executor
 from libero_env import LiberoEnv
+from plan import planner_stop_reason, validate_plan
 from planner import LLMPlanner, PlanningHandoff
 from skills import SkillRegistry, arm_skill_catalog, register_libero_skills
 
@@ -28,13 +28,6 @@ def _history_line(boundary: ExecutionBoundary) -> str:
     else:
         detail = ""
     return f"{reason}: {detail} | steps={boundary.steps}"
-
-@dataclass
-class _LoopState:
-    total_steps: int = 0
-    status: str = "done"
-    value: Any = None
-    error: str | None = None
 
 
 class Runner:
@@ -58,102 +51,96 @@ class Runner:
 
     def run(self) -> None:
         """Run the task loop and log its outcome."""
+        status = "done"
+        error: str | None = None
+        value: Any = None
+        total_steps = 0
         try:
-            state = self._run_loop()
+            status, error, value, total_steps = self._run_loop()
         except RuntimeError as exc:
-            state = _LoopState(status="plan_failed", error=str(exc))
+            status = "plan_failed"
+            error = str(exc)
         finally:
+            success = self._verdict(status, value)
+            self._log_status(status, success, value, error, total_steps)
             self._env.close()
-        success = self._verdict(state)
-        self._log_status(state, success)
 
-    def _run_loop(self) -> _LoopState:
-        state = _LoopState()
+    def _run_loop(self) -> tuple[str, str | None, Any, int]:
+        total_steps = 0
         progress_history: list[str] = []
 
-        result = self._planner.plan(None)
-        if result.stop or result.plan is None:
-            state.status = "plan_failed"
-            state.error = result.reason or "initial plan missing"
-            return state
+        plan_dict = self._planner.plan(None)
+        reason = planner_stop_reason(plan_dict)
+        if reason:
+            return "stopped", reason, None, total_steps
 
-        current_plan = result.plan
+        current_plan = validate_plan(plan_dict)
 
         while True:
             boundary = self._executor.run(current_plan)
-            state.total_steps += boundary.steps
+            total_steps += boundary.steps
             progress_history.append(_history_line(boundary))
 
             if boundary.reason == BoundaryReason.PLAN_DONE:
-                state.status = "done"
-                state.value = boundary.return_value
-                return state
+                return "done", None, boundary.return_value, total_steps
 
             if boundary.reason == BoundaryReason.STEP_BUDGET:
-                state.status = "step_budget"
-                return state
+                return "step_budget", None, None, total_steps
 
             if boundary.reason == BoundaryReason.EXECUTION_ERROR:
-                state.status = "execution_error"
-                state.error = boundary.error
-                return state
+                return "execution_error", boundary.error, None, total_steps
 
             if boundary.reason != BoundaryReason.FEEDBACK_POINT:
-                state.status = "execution_error"
-                state.error = f"unexpected boundary reason: {boundary.reason.value}"
-                return state
+                msg = f"unexpected boundary reason: {boundary.reason.value}"
+                return "execution_error", msg, None, total_steps
 
-            handoff = self._build_handoff(boundary, state, progress_history)
+            handoff, handoff_error = self._build_handoff(boundary, progress_history)
             if handoff is None:
-                return state
+                return "execution_error", handoff_error, None, total_steps
 
-            result = self._planner.plan(handoff)
-            if result.stop:
-                state.status = "stopped"
-                state.error = result.reason or None
-                return state
+            plan_dict = self._planner.plan(handoff)
+            reason = planner_stop_reason(plan_dict)
+            if reason:
+                return "stopped", reason, None, total_steps
 
-            if result.plan is None:
-                state.status = "plan_failed"
-                state.error = "planner returned no plan"
-                return state
-
-            current_plan = result.plan
+            current_plan = validate_plan(plan_dict)
 
     def _build_handoff(
         self,
         boundary: ExecutionBoundary,
-        state: _LoopState,
         progress_history: list[str],
-    ) -> PlanningHandoff | None:
+    ) -> tuple[PlanningHandoff | None, str | None]:
         if boundary.image_bytes is None or boundary.feedback_prompt is None:
-            state.status = "execution_error"
-            state.error = "feedback boundary missing image or prompt"
-            return None
+            return None, "feedback boundary missing image or prompt"
         if boundary.feedback_description is None:
-            state.status = "execution_error"
-            state.error = "feedback boundary missing description"
-            return None
+            return None, "feedback boundary missing description"
 
         return PlanningHandoff(
             description=boundary.feedback_description,
             prompt=boundary.feedback_prompt,
             image_bytes=boundary.image_bytes,
             progress_history=tuple(progress_history),
-        )
+        ), None
 
-    def _verdict(self, state: _LoopState) -> bool:
-        if state.status != "done":
+    def _verdict(self, status: str, value: Any) -> bool:
+        if status != "done":
             return False
-        if _return_indicates_failure(state.value):
+        if _return_indicates_failure(value):
             return False
         return bool(self._env.success())
 
-    def _log_status(self, state: _LoopState, success: bool) -> None:
+    def _log_status(
+        self,
+        status: str,
+        success: bool,
+        value: Any,
+        error: str | None,
+        total_steps: int,
+    ) -> None:
         if success:
             logger.info("Task succeeded: %r", self._goal)
-        elif state.status == "done":
-            if _return_indicates_failure(state.value):
+        elif status == "done":
+            if _return_indicates_failure(value):
                 logger.info(
                     "Task not achieved: %r (plan finished; skill reported failure)",
                     self._goal,
@@ -163,23 +150,23 @@ class Runner:
                     "Task not achieved: %r (plan finished; env goal check failed)",
                     self._goal,
                 )
-        elif state.status == "plan_failed":
+        elif status == "plan_failed":
             logger.info("Task failed: %r (planner error during replan)", self._goal)
-        elif state.status == "stopped":
-            logger.info("Task stopped: %r (%s)", self._goal, state.error)
-        elif state.status == "step_budget":
+        elif status == "stopped":
+            logger.info("Task stopped: %r (%s)", self._goal, error)
+        elif status == "step_budget":
             logger.info("Task failed: %r (executor step budget exceeded)", self._goal)
         else:
-            logger.info("Task failed: %r (status=%s)", self._goal, state.status)
+            logger.info("Task failed: %r (status=%s)", self._goal, status)
 
         summary_parts = [
             f"success={success}",
-            f"plan_status={state.status}",
-            f"steps={state.total_steps}",
+            f"plan_status={status}",
+            f"steps={total_steps}",
         ]
-        if state.value is not None:
-            summary_parts.append(f"last_skill={state.value!r}")
-        if state.error:
-            summary_parts.append(f"error={state.error}")
+        if value is not None:
+            summary_parts.append(f"last_skill={value!r}")
+        if error:
+            summary_parts.append(f"error={error}")
 
         logger.info("Run summary: %s", ", ".join(summary_parts))

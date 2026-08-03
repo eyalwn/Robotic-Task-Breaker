@@ -139,3 +139,18 @@ Plan.model_rebuild()
 def validate_plan(data: dict) -> Plan:
     """Parse and validate a plan dict into a ``Plan``."""
     return Plan.model_validate(data)
+
+
+def planner_stop_reason(data: dict) -> str | None:
+    """Return stop reason if data is a sentinel STOP plan, else None."""
+    body = data.get("body")
+    if not isinstance(body, dict) or body.get("kind") != "return":
+        return None
+    value = body.get("value")
+    if not isinstance(value, dict) or value.get("kind") != "literal":
+        return None
+    raw = value.get("value")
+    if not isinstance(raw, str) or not raw.startswith("STOP:"):
+        return None
+    reason = raw[5:].strip()
+    return reason if reason else "planner stopped"

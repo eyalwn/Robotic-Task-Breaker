@@ -1,14 +1,36 @@
 """Runner orchestration tests with mocked planner and executor."""
 from __future__ import annotations
 
+from typing import Any
+
 from unittest.mock import MagicMock
 
 import pytest
 
 from executor import BoundaryReason, ExecutionBoundary, Executor
 from plan import Plan
-from planner import PlanningHandoff, PlanningResult
+from planner import PlanningHandoff
 from runner import Runner
+
+
+def _done_plan_dict(goal: str) -> dict[str, Any]:
+    return {
+        "goal": goal,
+        "body": {
+            "kind": "return",
+            "value": {"kind": "literal", "value": "done"},
+        },
+    }
+
+
+def _stop_plan_dict(reason: str) -> dict[str, Any]:
+    return {
+        "goal": "stop",
+        "body": {
+            "kind": "return",
+            "value": {"kind": "literal", "value": f"STOP: {reason}"},
+        },
+    }
 
 
 class _StubPlanner:
@@ -33,30 +55,21 @@ class _StubPlanner:
         self._stop_on_call = call_number
         self._stop_reason = reason
 
-    def plan(self, handoff: PlanningHandoff | None = None) -> PlanningResult:
+    def plan(self, handoff: PlanningHandoff | None = None) -> dict[str, Any]:
         self.plan_calls += 1
         self.handoffs.append(handoff)
         if self._plan_fail_on_call == self.plan_calls:
             raise RuntimeError("plan validation failed")
         if self._stop_on_call == self.plan_calls:
-            return PlanningResult(stop=True, reason=self._stop_reason)
-        return PlanningResult(
-            plan=Plan.model_validate(
-                {
-                    "goal": self.init_goal,
-                    "body": {
-                        "kind": "return",
-                        "value": {"kind": "literal", "value": "done"},
-                    },
-                }
-            )
-        )
+            return _stop_plan_dict(self._stop_reason)
+        return _done_plan_dict(self.init_goal)
 
 
 class _StubEnv:
     def __init__(self, *, success: bool = True) -> None:
         self._success = success
         self.closed = False
+        self.events: list[str] = []
 
     def observe(self) -> tuple[bytes, bytes, list[float]]:
         return b"img", b"wrist", [0.0] * 8
@@ -65,12 +78,14 @@ class _StubEnv:
         return True
 
     def success(self) -> bool:
+        self.events.append("success")
         return self._success
 
     def object_names(self) -> list[str]:
         return ["test_object_1"]
 
     def close(self) -> None:
+        self.events.append("close")
         self.closed = True
 
 
@@ -118,11 +133,25 @@ def test_runner_plan_done_success(monkeypatch: pytest.MonkeyPatch) -> None:
         [ExecutionBoundary(reason=BoundaryReason.PLAN_DONE, return_value="done")],
         monkeypatch,
     )
-    state = runner._run_loop()
-    assert runner._verdict(state) is True
-    assert state.status == "done"
+    status, error, value, total_steps = runner._run_loop()
+    assert runner._verdict(status, value) is True
+    assert status == "done"
+    assert error is None
     assert planner.plan_calls == 1
     assert executor.run.call_count == 1
+    assert total_steps == 0
+
+
+def test_runner_run_calls_success_before_close(monkeypatch: pytest.MonkeyPatch) -> None:
+    runner, _, _ = _runner_with_stub_executor(
+        [ExecutionBoundary(reason=BoundaryReason.PLAN_DONE, return_value="done")],
+        monkeypatch,
+        env_success=True,
+    )
+    assert runner.run() is None
+    env = runner._env
+    assert "success" in env.events
+    assert env.events.index("success") < env.events.index("close")
 
 
 def test_runner_feedback_triggers_replan_then_done(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -141,8 +170,8 @@ def test_runner_feedback_triggers_replan_then_done(monkeypatch: pytest.MonkeyPat
         monkeypatch,
         planner=planner,
     )
-    state = runner._run_loop()
-    assert runner._verdict(state) is True
+    status, error, value, _ = runner._run_loop()
+    assert runner._verdict(status, value) is True
     assert planner.plan_calls == 2
     assert planner.handoffs[1] is not None
     assert planner.handoffs[1].description == "checkpoint"
@@ -150,6 +179,7 @@ def test_runner_feedback_triggers_replan_then_done(monkeypatch: pytest.MonkeyPat
     assert len(planner.handoffs[1].progress_history) == 1
     assert "feedback_point: checkpoint" in planner.handoffs[1].progress_history[0]
     assert executor.run.call_count == 2
+    assert error is None
 
 
 def test_runner_multiple_feedback_cycles(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -165,11 +195,12 @@ def test_runner_multiple_feedback_cycles(monkeypatch: pytest.MonkeyPatch) -> Non
         monkeypatch,
         planner=planner,
     )
-    state = runner._run_loop()
-    assert runner._verdict(state) is True
+    status, error, value, _ = runner._run_loop()
+    assert runner._verdict(status, value) is True
     assert planner.plan_calls == 3
     assert len(planner.handoffs[2].progress_history) == 2
     assert executor.run.call_count == 3
+    assert error is None
 
 
 def test_runner_feedback_plan_failure(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -205,10 +236,11 @@ def test_runner_planner_stop(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch,
         planner=planner,
     )
-    state = runner._run_loop()
-    assert runner._verdict(state) is False
-    assert state.status == "stopped"
-    assert state.error == "goal achieved"
+    status, error, value, _ = runner._run_loop()
+    assert runner._verdict(status, value) is False
+    assert status == "stopped"
+    assert error == "goal achieved"
+    assert value is None
 
 
 def test_runner_step_budget(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -216,6 +248,7 @@ def test_runner_step_budget(monkeypatch: pytest.MonkeyPatch) -> None:
         [ExecutionBoundary(reason=BoundaryReason.STEP_BUDGET)],
         monkeypatch,
     )
-    state = runner._run_loop()
-    assert state.status == "step_budget"
-    assert runner._verdict(state) is False
+    status, error, value, _ = runner._run_loop()
+    assert status == "step_budget"
+    assert runner._verdict(status, value) is False
+    assert error is None

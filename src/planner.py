@@ -13,7 +13,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import ValidationError
 
 import config
-from plan import Plan, validate_plan
+from plan import validate_plan
 
 logger = logging.getLogger(__name__)
 
@@ -91,15 +91,6 @@ class PlanningHandoff:
     prompt: str
     image_bytes: bytes
     progress_history: tuple[str, ...] = ()
-
-
-@dataclass(frozen=True)
-class PlanningResult:
-    """Outcome of a planner call: a new plan or a stop signal."""
-
-    plan: Plan | None = None
-    stop: bool = False
-    reason: str = ""
 
 
 def _retry_prompt(raw: str, error_msg: str) -> str:
@@ -187,10 +178,6 @@ def _shape_goal(goal: str, scene_objects: list[Any] | None) -> str:
     )
 
 
-def _build_initial_human(shaped_goal: str) -> HumanMessage:
-    return HumanMessage(content=f"Goal: {shaped_goal}")
-
-
 def _build_handoff_human(shaped_goal: str, handoff: PlanningHandoff) -> HumanMessage:
     image_b64 = base64.b64encode(handoff.image_bytes).decode("utf-8")
     history_block = ""
@@ -204,8 +191,10 @@ def _build_handoff_human(shaped_goal: str, handoff: PlanningHandoff) -> HumanMes
         f"{handoff.prompt}\n\n"
         "Review progress history and the scene snapshot. Do not repeat failed "
         "approaches. If the goal is achieved, irrecoverable, or no progress "
-        "after repeated attempts, respond with "
-        '{"stop": true, "reason": "<why>"} instead of a plan. '
+        "after repeated attempts, respond with a sentinel STOP plan instead "
+        "of an executable plan:\n"
+        '{"goal":"<same goal>","body":{"kind":"return","value":'
+        '{"kind":"literal","value":"STOP: <reason>"}}}\n'
         "Otherwise emit a fresh plan for the goal."
     )
     human_content: list[Any] = [
@@ -218,20 +207,10 @@ def _build_handoff_human(shaped_goal: str, handoff: PlanningHandoff) -> HumanMes
     return HumanMessage(content=human_content)
 
 
-def _parse_stop_response(data: dict[str, Any]) -> PlanningResult | None:
-    if data.get("stop") is True:
-        reason = data.get("reason", "")
-        return PlanningResult(
-            stop=True,
-            reason=str(reason) if reason else "planner stopped",
-        )
-    return None
-
-
 class Planner(Protocol):
     """Plan generation interface."""
 
-    def plan(self, handoff: PlanningHandoff | None = None) -> PlanningResult:
+    def plan(self, handoff: PlanningHandoff | None = None) -> dict[str, Any]:
         ...
 
 
@@ -250,14 +229,14 @@ class LLMPlanner:
         self._model_name = config.LLM_MODEL
         self._max_plan_retries = config.MAX_PLAN_RETRIES
 
-    def plan(self, handoff: PlanningHandoff | None = None) -> PlanningResult:
-        """Emit an initial or mid-loop plan AST, or a stop signal."""
+    def plan(self, handoff: PlanningHandoff | None = None) -> dict[str, Any]:
+        """Emit an initial or mid-loop plan AST dict."""
         shaped_goal = _shape_goal(self._goal, self._scene_objects)
         system_content = _SYSTEM_TEMPLATE.format(
             catalog=self._catalog, ast_format=_AST_FORMAT
         )
         if handoff is None:
-            first_human = _build_initial_human(shaped_goal)
+            first_human = HumanMessage(content=f"Goal: {shaped_goal}")
         else:
             first_human = _build_handoff_human(shaped_goal, handoff)
             logger.info(
@@ -303,21 +282,9 @@ class LLMPlanner:
 
             try:
                 data = json.loads(raw)
-                stop_result = _parse_stop_response(data)
-                if stop_result is not None:
-                    if handoff is None:
-                        raise RuntimeError(
-                            "LLMPlanner: initial plan call returned stop"
-                        )
-                    logger.info(
-                        "LLMPlanner: stop on attempt %d: %s",
-                        attempt + 1,
-                        stop_result.reason,
-                    )
-                    return stop_result
-                plan = validate_plan(data)
+                validate_plan(data)
                 logger.info("LLMPlanner: valid plan on attempt %d", attempt + 1)
-                return PlanningResult(plan=plan)
+                return data
             except (json.JSONDecodeError, ValidationError) as exc:
                 error_msg = str(exc)
                 logger.warning(
@@ -345,5 +312,4 @@ __all__ = [
     "LLMPlanner",
     "Planner",
     "PlanningHandoff",
-    "PlanningResult",
 ]

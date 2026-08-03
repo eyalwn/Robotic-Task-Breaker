@@ -8,7 +8,6 @@ import pytest
 from planner import (
     LLMPlanner,
     PlanningHandoff,
-    PlanningResult,
     _extract_json_object,
     _strip_code_fences,
 )
@@ -19,6 +18,14 @@ VALID_PLAN = {
         "kind": "call",
         "skill": "arm.grab",
         "args": {"object_name": {"kind": "literal", "value": "cube"}},
+    },
+}
+
+STOP_PLAN = {
+    "goal": "goal",
+    "body": {
+        "kind": "return",
+        "value": {"kind": "literal", "value": "STOP: goal achieved"},
     },
 }
 
@@ -92,9 +99,8 @@ def test_planner_success(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("planner.init_chat_model", lambda _model: _mock_llm(VALID_PLAN))
     planner = LLMPlanner("pick cube", "catalog", [])
     result = planner.plan()
-    assert isinstance(result, PlanningResult)
-    assert result.plan is not None
-    assert result.plan.goal == "pick the cube"
+    assert isinstance(result, dict)
+    assert result["goal"] == "pick the cube"
 
 
 def test_planner_retry_on_invalid(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -106,8 +112,8 @@ def test_planner_retry_on_invalid(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("planner.config.MAX_PLAN_RETRIES", 2)
     planner = LLMPlanner("pick cube", "catalog", [])
     result = planner.plan()
-    assert isinstance(result, PlanningResult)
-    assert result.plan is not None
+    assert isinstance(result, dict)
+    assert result["goal"] == "pick the cube"
 
 
 def test_planner_retry_prompt_content(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -125,8 +131,8 @@ def test_planner_retry_prompt_content(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("planner.config.MAX_PLAN_RETRIES", 2)
     planner = LLMPlanner("pick cube", "catalog", [])
     result = planner.plan()
-    assert isinstance(result, PlanningResult)
-    assert result.plan is not None
+    assert isinstance(result, dict)
+    assert result["goal"] == "pick the cube"
     assert len(spy.calls) == 2
     retry_msg = spy.calls[1][-1].content
     assert "never a bare string like 'else_branch'" in retry_msg
@@ -149,8 +155,8 @@ def test_planner_strips_markdown_fences(monkeypatch: pytest.MonkeyPatch) -> None
     )
     planner = LLMPlanner("pick cube", "catalog", [])
     result = planner.plan()
-    assert isinstance(result, PlanningResult)
-    assert result.plan is not None
+    assert isinstance(result, dict)
+    assert result["goal"] == "pick the cube"
 
 
 def test_planner_shape_goal_with_scene_objects(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -187,8 +193,8 @@ def test_planner_handoff_multimodal_message(monkeypatch: pytest.MonkeyPatch) -> 
         image_bytes=b"img-bytes",
     )
     result = planner.plan(handoff)
-    assert isinstance(result, PlanningResult)
-    assert result.plan is not None
+    assert isinstance(result, dict)
+    assert result["goal"] == "pick the cube"
     human_msg = spy.calls[0][-1]
     assert isinstance(human_msg.content, list)
     text_part = human_msg.content[0]
@@ -216,11 +222,10 @@ def test_planner_handoff_includes_progress_history(monkeypatch: pytest.MonkeyPat
     assert "feedback_point: prior step" in text_part["text"]
 
 
-def test_planner_stop_json_on_handoff(monkeypatch: pytest.MonkeyPatch) -> None:
-    stop_payload = {"stop": True, "reason": "goal achieved"}
+def test_planner_stop_sentinel_on_handoff(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "planner.init_chat_model",
-        lambda _model: _LLM([_Response(json.dumps(stop_payload))]),
+        lambda _model: _LLM([_Response(json.dumps(STOP_PLAN))]),
     )
     planner = LLMPlanner("goal", "catalog", [])
     handoff = PlanningHandoff(
@@ -229,20 +234,17 @@ def test_planner_stop_json_on_handoff(monkeypatch: pytest.MonkeyPatch) -> None:
         image_bytes=b"img",
     )
     result = planner.plan(handoff)
-    assert result.stop is True
-    assert result.reason == "goal achieved"
-    assert result.plan is None
+    assert result == STOP_PLAN
 
 
-def test_planner_stop_on_initial_call_raises(monkeypatch: pytest.MonkeyPatch) -> None:
-    stop_payload = {"stop": True, "reason": "no"}
+def test_planner_stop_sentinel_on_initial_call(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "planner.init_chat_model",
-        lambda _model: _LLM([_Response(json.dumps(stop_payload))]),
+        lambda _model: _LLM([_Response(json.dumps(STOP_PLAN))]),
     )
     planner = LLMPlanner("goal", "catalog", [])
-    with pytest.raises(RuntimeError, match="initial plan call returned stop"):
-        planner.plan()
+    result = planner.plan()
+    assert result == STOP_PLAN
 
 
 def test_planner_handoff_returns_valid_plan(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -254,5 +256,5 @@ def test_planner_handoff_returns_valid_plan(monkeypatch: pytest.MonkeyPatch) -> 
         image_bytes=b"img",
     )
     result = planner.plan(handoff)
-    assert result.plan is not None
-    assert result.plan.goal == "pick the cube"
+    assert isinstance(result, dict)
+    assert result["goal"] == "pick the cube"

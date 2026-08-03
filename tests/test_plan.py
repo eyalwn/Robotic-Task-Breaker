@@ -4,7 +4,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
-from plan import BinOpExpr, CallNode, Plan, VarExpr, WhileNode, validate_plan
+from plan import BinOpExpr, CallNode, Plan, VarExpr, WhileNode, planner_stop_reason, validate_plan
 
 
 def test_valid_plan_roundtrip() -> None:
@@ -133,3 +133,29 @@ def test_reject_bare_string_in_steps() -> None:
                 "body": {"kind": "seq", "steps": ["else_branch"]},
             }
         )
+
+
+def test_planner_stop_reason_detects_sentinel() -> None:
+    data = {
+        "goal": "g",
+        "body": {
+            "kind": "return",
+            "value": {"kind": "literal", "value": "STOP: goal achieved"},
+        },
+    }
+    assert planner_stop_reason(data) == "goal achieved"
+
+
+def test_planner_stop_reason_rejects_normal_plan() -> None:
+    data = {
+        "goal": "g",
+        "body": {
+            "kind": "return",
+            "value": {"kind": "literal", "value": "done"},
+        },
+    }
+    assert planner_stop_reason(data) is None
+
+
+def test_planner_stop_reason_rejects_stop_json() -> None:
+    assert planner_stop_reason({"stop": True, "reason": "nope"}) is None

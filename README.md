@@ -3,14 +3,15 @@
 Long-horizon robot tasks: an **LLM** emits a structured plan, a stateless
 **executor** walks one plan at a time, a **VLA** policy does the arm
 manipulation, and **RGB** feedback checkpoints re-invoke planning with the
-snapshot plus a short progress history (planner may emit a new plan or stop).
+snapshot plus a short progress history (planner may emit a new plan or a sentinel
+STOP plan).
 
 Platform: **LIBERO on Linux + NVIDIA** (Colab T4 is sufficient). Architecture and
 contracts: `SRD.md`.
 
 Ownership split (runtime):
-- `Runner`: composition root — owns `LiberoEnv` and `SkillRegistry`; builds `LLMPlanner`; loop is `plan -> executor.run(plan) -> plan(handoff)` on feedback; accumulates progress history.
-- `Planner`: `plan(handoff?) -> PlanningResult` (plan or stop); mid-loop handoff includes snapshot + history; model/retries from `config`.
+- `Runner`: composition root — owns `LiberoEnv` and `SkillRegistry`; builds `LLMPlanner`; loop is `plan -> validate -> executor.run(plan) -> plan(handoff)` on feedback; checks sentinel STOP before execute; accumulates progress history.
+- `Planner`: `plan(handoff?) -> dict` (plan AST JSON); stop = sentinel return literal `"STOP: <reason>"`; mid-loop handoff includes snapshot + history; model/retries from `config`.
 - `Executor`: stateless `run(plan)` — VLA/env execution, typed boundary back to runner; no cross-run memory.
 
 ## Setup

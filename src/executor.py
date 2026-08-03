@@ -138,10 +138,6 @@ def _coerce_status_comparison(left: Any, right: Any) -> tuple[Any, Any]:
     return left_status, right_status
 
 
-def _clean_object_name(name: str) -> str:
-    return re.sub(r"_\d+$", "", name).replace("_", " ")
-
-
 class Executor:
     """Executes a plan against the environment and VLA policy."""
 
@@ -196,25 +192,13 @@ class Executor:
                 error=str(exc),
             )
 
-    def _exec_steps(
-        self,
-        steps: list[StmtNode],
-        ctx: dict[str, Any],
-        run_steps: list[int],
-        last_skill_result: list[str | None],
-    ) -> Any:
-        last: Any = None
-        for step in steps:
-            last = self._exec(step, ctx, run_steps, last_skill_result)
-        return last
-
     def _manipulate(
         self,
         skill: str,
         object_name: str,
         location: str | None = None,
     ) -> dict[str, Any]:
-        cleaned = _clean_object_name(object_name)
+        cleaned = re.sub(r"_\d+$", "", object_name).replace("_", " ")
         if skill == "arm.grab":
             task = f"pick up the {cleaned}"
         elif skill == "arm.place":
@@ -244,7 +228,10 @@ class Executor:
         last_skill_result: list[str | None],
     ) -> Any:
         if isinstance(node, SeqNode):
-            return self._exec_steps(node.steps, ctx, run_steps, last_skill_result)
+            last: Any = None
+            for step in node.steps:
+                last = self._exec(step, ctx, run_steps, last_skill_result)
+            return last
 
         if isinstance(node, IfNode):
             if self._eval(node.condition, ctx):
