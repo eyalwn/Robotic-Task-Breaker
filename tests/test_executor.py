@@ -11,7 +11,7 @@ from conftest import (
     make_plan,
     run_plan,
 )
-from executor import BoundaryReason, Executor
+from executor import Executor, StopReason
 from skills import SkillRegistry
 
 
@@ -59,7 +59,7 @@ def test_if_else() -> None:
         }
     )
     result = run_plan(executor, plan)
-    assert result.reason == BoundaryReason.FEEDBACK_POINT
+    assert result.reason == StopReason.FEEDBACK_POINT
     assert len(skill.calls) == 0
 
 
@@ -75,7 +75,7 @@ def test_while_max_iterations() -> None:
         }
     )
     result = run_plan(executor, plan)
-    assert result.reason == BoundaryReason.EXECUTION_ERROR
+    assert result.reason == StopReason.EXECUTION_ERROR
     assert "while loop exceeded max_iterations=3" in (result.error or "")
     assert len(skill.calls) == 3
 
@@ -93,16 +93,16 @@ def test_call_assigns_return() -> None:
         }
     )
     result = run_plan(executor, plan)
-    assert result.reason == BoundaryReason.PLAN_DONE
+    assert result.reason == StopReason.PLAN_DONE
     assert result.return_value == "result"
 
 
-def test_feedback_returns_boundary() -> None:
+def test_feedback_returns_stop() -> None:
     skill = MockSkill("ok")
     executor = build_executor(skill)
     plan = make_plan({"kind": "feedback", "description": "all good"})
     result = run_plan(executor, plan)
-    assert result.reason == BoundaryReason.FEEDBACK_POINT
+    assert result.reason == StopReason.FEEDBACK_POINT
     assert result.feedback_description == "all good"
     assert result.image_bytes == b"main-image"
 
@@ -121,7 +121,7 @@ def test_feedback_discards_remaining_plan() -> None:
         }
     )
     result = run_plan(executor, plan)
-    assert result.reason == BoundaryReason.FEEDBACK_POINT
+    assert result.reason == StopReason.FEEDBACK_POINT
     assert len(skill.calls) == 1
 
 
@@ -138,11 +138,11 @@ def test_rerun_plan_restarts_from_scratch() -> None:
         }
     )
     first = run_plan(executor, plan)
-    assert first.reason == BoundaryReason.FEEDBACK_POINT
+    assert first.reason == StopReason.FEEDBACK_POINT
     assert len(skill.calls) == 1
 
     second = executor.run(plan)
-    assert second.reason == BoundaryReason.FEEDBACK_POINT
+    assert second.reason == StopReason.FEEDBACK_POINT
     assert len(skill.calls) == 2
 
 
@@ -151,7 +151,7 @@ def test_return_node() -> None:
     executor = build_executor(skill)
     plan = make_plan({"kind": "return", "value": {"kind": "literal", "value": 42}})
     result = run_plan(executor, plan)
-    assert result.reason == BoundaryReason.PLAN_DONE
+    assert result.reason == StopReason.PLAN_DONE
     assert result.return_value == 42
 
 
@@ -169,7 +169,7 @@ def test_step_budget() -> None:
         }
     )
     result = run_plan(executor, plan)
-    assert result.reason == BoundaryReason.STEP_BUDGET
+    assert result.reason == StopReason.STEP_BUDGET
     assert len(skill.calls) == 2
 
 
@@ -192,7 +192,7 @@ def test_feedback_appends_prior_skill_result() -> None:
         }
     )
     result = run_plan(executor, plan)
-    assert result.reason == BoundaryReason.FEEDBACK_POINT
+    assert result.reason == StopReason.FEEDBACK_POINT
     assert result.feedback_prompt is not None
     assert "Prior skill result:" in result.feedback_prompt
     assert "grasp_confirmed" in result.feedback_prompt
@@ -212,7 +212,7 @@ def test_arm_grab_success_immediate() -> None:
         }
     )
     result = run_plan(executor, plan)
-    assert result.reason == BoundaryReason.PLAN_DONE
+    assert result.reason == StopReason.PLAN_DONE
     assert vla.calls == []
     assert env.step_calls == []
 
@@ -230,7 +230,7 @@ def test_arm_grab_calls_vla_and_succeeds() -> None:
         }
     )
     result = run_plan(executor, plan)
-    assert result.reason == BoundaryReason.PLAN_DONE
+    assert result.reason == StopReason.PLAN_DONE
     assert len(vla.calls) == 1
     assert vla.calls[0][3] == "pick up the alphabet soup"
     assert len(env.step_calls) == 2

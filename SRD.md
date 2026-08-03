@@ -45,7 +45,7 @@ listed above it.
 | `src/vla_client.py` | `VLAClient`: HTTP to the policy service. Knows nothing about LIBERO. |
 | `src/plan.py` | Pydantic plan AST + `validate_plan()` + `planner_stop_reason()`. |
 | `src/skills.py` | `Skill` / `SkillParam` / `SkillRegistry` + LIBERO sim-GT perception skills. |
-| `src/executor.py` | Stateless `run(plan)`: walks one plan, owns VLA-to-environment execution, returns a typed boundary; no cross-run memory. |
+| `src/executor.py` | Stateless `run(plan)`: walks one plan, owns VLA-to-environment execution, returns a typed `ExecutionStop`; no cross-run memory. |
 | `src/planner.py` | `LLMPlanner(goal, catalog, scene_objects)`: `plan(handoff?) -> dict` (plan AST JSON); mid-loop handoff carries snapshot + `progress_history`; model/retries from `config`. |
 | `src/runner.py` | `Runner`: composition root — owns `LiberoEnv`, `SkillRegistry`; loop is `plan → validate → executor.run(plan) → plan(handoff)` on feedback; checks sentinel STOP before execute; accumulates history lines for the planner. |
 

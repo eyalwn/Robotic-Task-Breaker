@@ -12,7 +12,7 @@ contracts: `SRD.md`.
 Ownership split (runtime):
 - `Runner`: composition root — owns `LiberoEnv` and `SkillRegistry`; builds `LLMPlanner`; loop is `plan -> validate -> executor.run(plan) -> plan(handoff)` on feedback; checks sentinel STOP before execute; accumulates progress history.
 - `Planner`: `plan(handoff?) -> dict` (plan AST JSON); stop = sentinel return literal `"STOP: <reason>"`; mid-loop handoff includes snapshot + history; model/retries from `config`.
-- `Executor`: stateless `run(plan)` — VLA/env execution, typed boundary back to runner; no cross-run memory.
+- `Executor`: stateless `run(plan)` — VLA/env execution, typed `ExecutionStop` back to runner; no cross-run memory.
 
 ## Setup
 

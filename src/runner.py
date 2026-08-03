@@ -4,7 +4,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from executor import BoundaryReason, ExecutionBoundary, Executor
+from executor import ExecutionStop, Executor, StopReason
 from libero_env import LiberoEnv
 from plan import planner_stop_reason, validate_plan
 from planner import LLMPlanner, PlanningHandoff
@@ -17,17 +17,17 @@ def _return_indicates_failure(value: Any) -> bool:
     return isinstance(value, str) and "failed to" in value.lower()
 
 
-def _history_line(boundary: ExecutionBoundary) -> str:
-    reason = boundary.reason.value
-    if boundary.reason == BoundaryReason.FEEDBACK_POINT:
-        detail = boundary.feedback_description or ""
-    elif boundary.reason == BoundaryReason.PLAN_DONE:
-        detail = str(boundary.return_value) if boundary.return_value is not None else ""
-    elif boundary.reason == BoundaryReason.EXECUTION_ERROR:
-        detail = boundary.error or ""
+def _history_line(stop: ExecutionStop) -> str:
+    reason = stop.reason.value
+    if stop.reason == StopReason.FEEDBACK_POINT:
+        detail = stop.feedback_description or ""
+    elif stop.reason == StopReason.PLAN_DONE:
+        detail = str(stop.return_value) if stop.return_value is not None else ""
+    elif stop.reason == StopReason.EXECUTION_ERROR:
+        detail = stop.error or ""
     else:
         detail = ""
-    return f"{reason}: {detail} | steps={boundary.steps}"
+    return f"{reason}: {detail} | steps={stop.steps}"
 
 
 class Runner:
@@ -77,24 +77,24 @@ class Runner:
         current_plan = validate_plan(plan_dict)
 
         while True:
-            boundary = self._executor.run(current_plan)
-            total_steps += boundary.steps
-            progress_history.append(_history_line(boundary))
+            stop = self._executor.run(current_plan)
+            total_steps += stop.steps
+            progress_history.append(_history_line(stop))
 
-            if boundary.reason == BoundaryReason.PLAN_DONE:
-                return "done", None, boundary.return_value, total_steps
+            if stop.reason == StopReason.PLAN_DONE:
+                return "done", None, stop.return_value, total_steps
 
-            if boundary.reason == BoundaryReason.STEP_BUDGET:
+            if stop.reason == StopReason.STEP_BUDGET:
                 return "step_budget", None, None, total_steps
 
-            if boundary.reason == BoundaryReason.EXECUTION_ERROR:
-                return "execution_error", boundary.error, None, total_steps
+            if stop.reason == StopReason.EXECUTION_ERROR:
+                return "execution_error", stop.error, None, total_steps
 
-            if boundary.reason != BoundaryReason.FEEDBACK_POINT:
-                msg = f"unexpected boundary reason: {boundary.reason.value}"
+            if stop.reason != StopReason.FEEDBACK_POINT:
+                msg = f"unexpected stop reason: {stop.reason.value}"
                 return "execution_error", msg, None, total_steps
 
-            handoff, handoff_error = self._build_handoff(boundary, progress_history)
+            handoff, handoff_error = self._build_handoff(stop, progress_history)
             if handoff is None:
                 return "execution_error", handoff_error, None, total_steps
 
@@ -107,18 +107,18 @@ class Runner:
 
     def _build_handoff(
         self,
-        boundary: ExecutionBoundary,
+        stop: ExecutionStop,
         progress_history: list[str],
     ) -> tuple[PlanningHandoff | None, str | None]:
-        if boundary.image_bytes is None or boundary.feedback_prompt is None:
-            return None, "feedback boundary missing image or prompt"
-        if boundary.feedback_description is None:
-            return None, "feedback boundary missing description"
+        if stop.image_bytes is None or stop.feedback_prompt is None:
+            return None, "feedback stop missing image or prompt"
+        if stop.feedback_description is None:
+            return None, "feedback stop missing description"
 
         return PlanningHandoff(
-            description=boundary.feedback_description,
-            prompt=boundary.feedback_prompt,
-            image_bytes=boundary.image_bytes,
+            description=stop.feedback_description,
+            prompt=stop.feedback_prompt,
+            image_bytes=stop.image_bytes,
             progress_history=tuple(progress_history),
         ), None
 

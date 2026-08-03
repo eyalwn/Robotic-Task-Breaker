@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from executor import BoundaryReason, ExecutionBoundary, Executor
+from executor import ExecutionStop, Executor, StopReason
 from plan import Plan
 from planner import PlanningHandoff
 from runner import Runner
@@ -90,7 +90,7 @@ class _StubEnv:
 
 
 def _runner_with_stub_executor(
-    boundaries: list[ExecutionBoundary],
+    stops: list[ExecutionStop],
     monkeypatch: pytest.MonkeyPatch,
     *,
     planner: _StubPlanner | None = None,
@@ -99,10 +99,10 @@ def _runner_with_stub_executor(
     planner = planner or _StubPlanner()
     env = _StubEnv(success=env_success)
     executor = MagicMock(spec=Executor)
-    boundary_iter = iter(boundaries)
+    stop_iter = iter(stops)
 
-    def _run(_plan: Plan) -> ExecutionBoundary:
-        return next(boundary_iter)
+    def _run(_plan: Plan) -> ExecutionStop:
+        return next(stop_iter)
 
     executor.run.side_effect = _run
 
@@ -121,7 +121,7 @@ def _runner_with_stub_executor(
 
 def test_runner_passes_raw_goal_to_planner(monkeypatch: pytest.MonkeyPatch) -> None:
     runner, planner, _ = _runner_with_stub_executor(
-        [ExecutionBoundary(reason=BoundaryReason.PLAN_DONE, return_value="done")],
+        [ExecutionStop(reason=StopReason.PLAN_DONE, return_value="done")],
         monkeypatch,
     )
     assert runner.run() is None
@@ -130,7 +130,7 @@ def test_runner_passes_raw_goal_to_planner(monkeypatch: pytest.MonkeyPatch) -> N
 
 def test_runner_plan_done_success(monkeypatch: pytest.MonkeyPatch) -> None:
     runner, planner, executor = _runner_with_stub_executor(
-        [ExecutionBoundary(reason=BoundaryReason.PLAN_DONE, return_value="done")],
+        [ExecutionStop(reason=StopReason.PLAN_DONE, return_value="done")],
         monkeypatch,
     )
     status, error, value, total_steps = runner._run_loop()
@@ -144,7 +144,7 @@ def test_runner_plan_done_success(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_runner_run_calls_success_before_close(monkeypatch: pytest.MonkeyPatch) -> None:
     runner, _, _ = _runner_with_stub_executor(
-        [ExecutionBoundary(reason=BoundaryReason.PLAN_DONE, return_value="done")],
+        [ExecutionStop(reason=StopReason.PLAN_DONE, return_value="done")],
         monkeypatch,
         env_success=True,
     )
@@ -158,14 +158,14 @@ def test_runner_feedback_triggers_replan_then_done(monkeypatch: pytest.MonkeyPat
     planner = _StubPlanner()
     runner, planner, executor = _runner_with_stub_executor(
         [
-            ExecutionBoundary(
-                reason=BoundaryReason.FEEDBACK_POINT,
+            ExecutionStop(
+                reason=StopReason.FEEDBACK_POINT,
                 steps=2,
                 feedback_description="checkpoint",
                 feedback_prompt="checkpoint",
                 image_bytes=b"img",
             ),
-            ExecutionBoundary(reason=BoundaryReason.PLAN_DONE, return_value="done"),
+            ExecutionStop(reason=StopReason.PLAN_DONE, return_value="done"),
         ],
         monkeypatch,
         planner=planner,
@@ -184,14 +184,14 @@ def test_runner_feedback_triggers_replan_then_done(monkeypatch: pytest.MonkeyPat
 
 def test_runner_multiple_feedback_cycles(monkeypatch: pytest.MonkeyPatch) -> None:
     planner = _StubPlanner()
-    feedback = ExecutionBoundary(
-        reason=BoundaryReason.FEEDBACK_POINT,
+    feedback = ExecutionStop(
+        reason=StopReason.FEEDBACK_POINT,
         feedback_description="checkpoint",
         feedback_prompt="checkpoint",
         image_bytes=b"img",
     )
     runner, planner, executor = _runner_with_stub_executor(
-        [feedback, feedback, ExecutionBoundary(reason=BoundaryReason.PLAN_DONE, return_value="done")],
+        [feedback, feedback, ExecutionStop(reason=StopReason.PLAN_DONE, return_value="done")],
         monkeypatch,
         planner=planner,
     )
@@ -208,8 +208,8 @@ def test_runner_feedback_plan_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     planner.fail_on_plan_call(2)
     runner, _, _ = _runner_with_stub_executor(
         [
-            ExecutionBoundary(
-                reason=BoundaryReason.FEEDBACK_POINT,
+            ExecutionStop(
+                reason=StopReason.FEEDBACK_POINT,
                 feedback_description="checkpoint",
                 feedback_prompt="checkpoint",
                 image_bytes=b"img",
@@ -226,8 +226,8 @@ def test_runner_planner_stop(monkeypatch: pytest.MonkeyPatch) -> None:
     planner.stop_on_plan_call(2, reason="goal achieved")
     runner, _, _ = _runner_with_stub_executor(
         [
-            ExecutionBoundary(
-                reason=BoundaryReason.FEEDBACK_POINT,
+            ExecutionStop(
+                reason=StopReason.FEEDBACK_POINT,
                 feedback_description="checkpoint",
                 feedback_prompt="checkpoint",
                 image_bytes=b"img",
@@ -245,7 +245,7 @@ def test_runner_planner_stop(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_runner_step_budget(monkeypatch: pytest.MonkeyPatch) -> None:
     runner, _, _ = _runner_with_stub_executor(
-        [ExecutionBoundary(reason=BoundaryReason.STEP_BUDGET)],
+        [ExecutionStop(reason=StopReason.STEP_BUDGET)],
         monkeypatch,
     )
     status, error, value, _ = runner._run_loop()

@@ -1,4 +1,4 @@
-"""Plan executor: walks the AST, runs skills/VLA, and returns execution boundaries."""
+"""Plan executor: walks the AST, runs skills/VLA, and returns execution stops."""
 from __future__ import annotations
 
 import json
@@ -32,7 +32,7 @@ _STATUS_TERMS = {"success", "stopped", "failed", "failure", "done", "error"}
 _ARM_SKILLS = frozenset({"arm.grab", "arm.place"})
 
 
-class BoundaryReason(str, Enum):
+class StopReason(str, Enum):
     """Why ``Executor.run(plan)`` stopped."""
 
     FEEDBACK_POINT = "feedback_point"
@@ -42,10 +42,10 @@ class BoundaryReason(str, Enum):
 
 
 @dataclass
-class ExecutionBoundary:
+class ExecutionStop:
     """Payload returned when plan execution pauses or finishes."""
 
-    reason: BoundaryReason
+    reason: StopReason
     steps: int = 0
     feedback_description: str | None = None
     feedback_prompt: str | None = None
@@ -153,41 +153,41 @@ class Executor:
         self._vla = vla or VLAClient()
         self._step_budget = step_budget
 
-    def run(self, plan: Plan) -> ExecutionBoundary:
+    def run(self, plan: Plan) -> ExecutionStop:
         """Execute plan from scratch until feedback, done, budget, or error."""
         ctx: dict[str, Any] = {}
         run_steps: list[int] = [0]
         last_skill_result: list[str | None] = [None]
         try:
             self._exec(plan.body, ctx, run_steps, last_skill_result)
-            return ExecutionBoundary(
-                reason=BoundaryReason.PLAN_DONE,
+            return ExecutionStop(
+                reason=StopReason.PLAN_DONE,
                 steps=run_steps[0],
                 return_value=None,
             )
         except ReturnSignal as sig:
-            return ExecutionBoundary(
-                reason=BoundaryReason.PLAN_DONE,
+            return ExecutionStop(
+                reason=StopReason.PLAN_DONE,
                 steps=run_steps[0],
                 return_value=sig.value,
             )
         except FeedbackPause as pause:
-            return ExecutionBoundary(
-                reason=BoundaryReason.FEEDBACK_POINT,
+            return ExecutionStop(
+                reason=StopReason.FEEDBACK_POINT,
                 steps=run_steps[0],
                 feedback_description=pause.description,
                 feedback_prompt=pause.prompt,
                 image_bytes=pause.image_bytes,
             )
         except StepBudgetExceeded:
-            return ExecutionBoundary(
-                reason=BoundaryReason.STEP_BUDGET,
+            return ExecutionStop(
+                reason=StopReason.STEP_BUDGET,
                 steps=run_steps[0],
             )
         except Exception as exc:
             logger.exception("Executor execution error")
-            return ExecutionBoundary(
-                reason=BoundaryReason.EXECUTION_ERROR,
+            return ExecutionStop(
+                reason=StopReason.EXECUTION_ERROR,
                 steps=run_steps[0],
                 error=str(exc),
             )

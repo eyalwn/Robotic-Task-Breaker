@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import pytest
 
-from executor import BoundaryReason, Executor
+from executor import Executor
 from plan import Plan
 from skills import Skill, SkillRegistry
 
