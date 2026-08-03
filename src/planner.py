@@ -1,4 +1,4 @@
-"""LLM-backed planner and feedback evaluator."""
+"""LLM-backed planner for initial and mid-loop plan generation."""
 from __future__ import annotations
 
 import base64
@@ -6,12 +6,10 @@ import json
 import logging
 import re
 from dataclasses import dataclass
-from enum import Enum
 from typing import Any, Protocol
 
 from langchain.chat_models import init_chat_model
 from langchain_core.messages import HumanMessage, SystemMessage
-from langchain_core.tools import tool as lc_tool
 from pydantic import ValidationError
 
 import config
@@ -45,19 +43,9 @@ Rules:
 - For listing scene objects, use state.list_objects (not list_objects).
 - Insert "feedback" nodes after major actions (grabbing, placing) to evaluate progress.
 - Bind return values with "assign_to" to use in later conditions or the final return.
-- DO NOT compare arm.grab/arm.place outputs to literal strings like "success"; those tools return JSON payload strings. Use feedback nodes to decide success/failure after actions.
-- Keep plans concise (≤20 call nodes). The executor enforces a 30-step hard budget.
+- DO NOT compare arm.grab/arm.place outputs to literal strings like "success"; those tools return JSON payload strings. Use feedback nodes after actions.
+- Keep plans concise (≤20 call nodes); single-plan step budget applies per execution.
 - The plan must be valid JSON matching the schema above.
-
-Feedback semantics (planner interprets these at feedback checkpoints):
-- CONTINUE: proceed with the current plan. Does NOT mean "the check passed".
-- REPLAN: the check or approach failed; emit a new plan.
-- STOP: goal achieved or irrecoverable failure; halt execution.
-
-After-action plan structure:
-- NEVER emit seq: [grab, feedback, return failure-string] without an if-branch.
-- After grab + feedback CONTINUE, continue toward place or the next object.
-- Return a failure string only in an explicit else branch or when feedback would STOP.
 
 Example (single object — grab → feedback → place → feedback):
 {"goal":"put items in basket","body":{"kind":"seq","steps":[
@@ -94,72 +82,23 @@ SKILL CATALOG:
 Respond with ONLY the plan JSON object — no markdown, no code fences, no explanation.\
 """
 
-_REPLAN_CONTEXT_HINT = """\
-Replanning notes:
-- The previous plan failed a feedback check (REPLAN). Fix the approach; do not repeat grab→feedback→return-failure sequences.
-- CONTINUE means "keep executing this plan", not "verification passed".
-- After a successful grab, proceed to place remaining objects — only return failure in an explicit else branch.\
-"""
-
-
-class FeedbackDecision(str, Enum):
-    """Feedback evaluator verdict."""
-
-    CONTINUE = "continue"
-    STOP = "stop"
-    REPLAN = "replan"
-
 
 @dataclass(frozen=True)
-class FeedbackOutcome:
-    """Result of evaluating one feedback checkpoint."""
-
-    decision: FeedbackDecision
-    reason: str = ""
-    assessment: str | None = None
-
-
-class FeedbackEvaluator(Protocol):
-    """Evaluates a feedback checkpoint image and prompt."""
-
-    def evaluate(
-        self, image_bytes: bytes, description: str, goal: str
-    ) -> FeedbackOutcome:
-        ...
-
-
-class AlwaysContinueEvaluator:
-    """Stub evaluator that always returns CONTINUE."""
-
-    def evaluate(
-        self, image_bytes: bytes, description: str, goal: str
-    ) -> FeedbackOutcome:
-        return FeedbackOutcome(decision=FeedbackDecision.CONTINUE)
-
-
-class PlannerAction(str, Enum):
-    """Runner action after a feedback boundary."""
-
-    CONTINUE = "continue"
-    STOP = "stop"
-    NEW_PLAN = "new_plan"
-
-
-@dataclass(frozen=True)
-class FeedbackHandoff:
-    """Image and prompts passed from executor to planner."""
+class PlanningHandoff:
+    """Feedback checkpoint payload for mid-loop replanning."""
 
     description: str
     prompt: str
     image_bytes: bytes
+    progress_history: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
-class PlannerDecision:
-    """Planner response to a feedback handoff."""
+class PlanningResult:
+    """Outcome of a planner call: a new plan or a stop signal."""
 
-    action: PlannerAction
     plan: Plan | None = None
+    stop: bool = False
     reason: str = ""
 
 
@@ -248,34 +187,51 @@ def _shape_goal(goal: str, scene_objects: list[Any] | None) -> str:
     )
 
 
-def _log_feedback(node_description: str, prompt: str, outcome: FeedbackOutcome) -> None:
-    logger.info("Feedback LLM asked: %r", node_description)
-    if prompt != node_description:
-        logger.debug("Feedback LLM prompt (full): %s", prompt)
-    if outcome.assessment is not None:
-        if outcome.reason:
-            logger.info(
-                "Feedback LLM response: %s — %s",
-                outcome.assessment,
-                outcome.reason,
-            )
-        else:
-            logger.info("Feedback LLM response: %s", outcome.assessment)
-    else:
-        logger.info("Feedback LLM: not consulted (stub evaluator)")
-    logger.info(
-        "Feedback planner decision: %s",
-        outcome.decision.value.upper(),
+def _build_initial_human(shaped_goal: str) -> HumanMessage:
+    return HumanMessage(content=f"Goal: {shaped_goal}")
+
+
+def _build_handoff_human(shaped_goal: str, handoff: PlanningHandoff) -> HumanMessage:
+    image_b64 = base64.b64encode(handoff.image_bytes).decode("utf-8")
+    history_block = ""
+    if handoff.progress_history:
+        lines = "\n".join(f"- {line}" for line in handoff.progress_history)
+        history_block = f"Progress so far:\n{lines}\n\n"
+    text = (
+        f"Goal: {shaped_goal}\n\n"
+        f"{history_block}"
+        f"Feedback checkpoint: {handoff.description}\n"
+        f"{handoff.prompt}\n\n"
+        "Review progress history and the scene snapshot. Do not repeat failed "
+        "approaches. If the goal is achieved, irrecoverable, or no progress "
+        "after repeated attempts, respond with "
+        '{"stop": true, "reason": "<why>"} instead of a plan. '
+        "Otherwise emit a fresh plan for the goal."
     )
+    human_content: list[Any] = [
+        {"type": "text", "text": text},
+        {
+            "type": "image_url",
+            "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"},
+        },
+    ]
+    return HumanMessage(content=human_content)
+
+
+def _parse_stop_response(data: dict[str, Any]) -> PlanningResult | None:
+    if data.get("stop") is True:
+        reason = data.get("reason", "")
+        return PlanningResult(
+            stop=True,
+            reason=str(reason) if reason else "planner stopped",
+        )
+    return None
 
 
 class Planner(Protocol):
-    """Plan generation and feedback decision interface."""
+    """Plan generation interface."""
 
-    def plan(self, context: str = "") -> Plan:
-        ...
-
-    def decide(self, handoff: FeedbackHandoff) -> PlannerDecision:
+    def plan(self, handoff: PlanningHandoff | None = None) -> PlanningResult:
         ...
 
 
@@ -293,23 +249,27 @@ class LLMPlanner:
         self._scene_objects = scene_objects
         self._model_name = config.LLM_MODEL
         self._max_plan_retries = config.MAX_PLAN_RETRIES
-        self._feedback_evaluator = LLMFeedbackEvaluator(config.LLM_MODEL)
 
-    def plan(self, context: str = "") -> Plan:
-        """Emit an initial or replan AST for the run goal."""
+    def plan(self, handoff: PlanningHandoff | None = None) -> PlanningResult:
+        """Emit an initial or mid-loop plan AST, or a stop signal."""
         shaped_goal = _shape_goal(self._goal, self._scene_objects)
         system_content = _SYSTEM_TEMPLATE.format(
             catalog=self._catalog, ast_format=_AST_FORMAT
         )
-        first_human = f"Goal: {shaped_goal}"
-        if context:
-            first_human += f"\n\nReplan context: {context}\n\n{_REPLAN_CONTEXT_HINT}"
+        if handoff is None:
+            first_human = _build_initial_human(shaped_goal)
+        else:
+            first_human = _build_handoff_human(shaped_goal, handoff)
+            logger.info(
+                "LLMPlanner: mid-loop replan at feedback checkpoint %r",
+                handoff.description,
+            )
 
         llm = _init_planning_llm(self._model_name)
 
         messages: list[Any] = [
             SystemMessage(content=system_content),
-            HumanMessage(content=first_human),
+            first_human,
         ]
 
         for attempt in range(self._max_plan_retries):
@@ -343,9 +303,21 @@ class LLMPlanner:
 
             try:
                 data = json.loads(raw)
+                stop_result = _parse_stop_response(data)
+                if stop_result is not None:
+                    if handoff is None:
+                        raise RuntimeError(
+                            "LLMPlanner: initial plan call returned stop"
+                        )
+                    logger.info(
+                        "LLMPlanner: stop on attempt %d: %s",
+                        attempt + 1,
+                        stop_result.reason,
+                    )
+                    return stop_result
                 plan = validate_plan(data)
                 logger.info("LLMPlanner: valid plan on attempt %d", attempt + 1)
-                return plan
+                return PlanningResult(plan=plan)
             except (json.JSONDecodeError, ValidationError) as exc:
                 error_msg = str(exc)
                 logger.warning(
@@ -368,129 +340,10 @@ class LLMPlanner:
 
         raise RuntimeError("LLMPlanner: unreachable")
 
-    def decide(self, handoff: FeedbackHandoff) -> PlannerDecision:
-        """Choose continue, stop, or replan after a feedback checkpoint."""
-        shaped_goal = _shape_goal(self._goal, self._scene_objects)
-        outcome = self._feedback_evaluator.evaluate(
-            handoff.image_bytes,
-            handoff.prompt,
-            shaped_goal,
-        )
-        _log_feedback(handoff.description, handoff.prompt, outcome)
-
-        if outcome.decision == FeedbackDecision.CONTINUE:
-            return PlannerDecision(
-                action=PlannerAction.CONTINUE,
-                reason=outcome.reason,
-            )
-
-        if outcome.decision == FeedbackDecision.STOP:
-            return PlannerDecision(
-                action=PlannerAction.STOP,
-                reason=outcome.reason,
-            )
-
-        if outcome.decision == FeedbackDecision.REPLAN:
-            context = handoff.description
-            if outcome.reason:
-                context = f"{context} ({outcome.reason})"
-            plan = self.plan(context=context)
-            return PlannerDecision(
-                action=PlannerAction.NEW_PLAN,
-                plan=plan,
-                reason=outcome.reason,
-            )
-
-        raise ValueError(f"Unsupported feedback decision: {outcome.decision!r}")
-
-
-_SYSTEM = (
-    "CRITICAL: 'stop' terminates the ENTIRE run immediately — no further skills execute. "
-    "Only emit 'stop' when the overall goal is completely done (every object placed/handled) "
-    "OR permanently failed. A positive sub-goal check (e.g. one of two objects placed) "
-    "means CONTINUE — proceed to the remaining objects.\n\n"
-    "You are a robot task progress evaluator. "
-    "Given a camera image and a description of what to check, "
-    "answer the check and decide whether the task is progressing well.\n\n"
-    "Call emit_decision with:\n"
-    "  assessment — your direct answer to the check (e.g. 'yes', 'no', or 'unknown').\n"
-    "  decision — one of:\n"
-    "    'continue' — sub-goal met or progressing; proceed with remaining plan steps.\n"
-    "    'stop'     — ENTIRE goal complete or irrecoverably failed; halt ALL execution.\n"
-    "    'replan'   — the current approach is not working; a new plan is needed.\n"
-    "  reason     — brief justification."
-)
-
-
-class LLMFeedbackEvaluator:
-    """LLM tool-call evaluator for feedback checkpoints."""
-
-    def __init__(self, model: str = config.LLM_MODEL) -> None:
-        @lc_tool
-        def emit_decision(decision: str, assessment: str, reason: str = "") -> str:
-            """Emit feedback: assessment answers the check; decision is continue/stop/replan."""
-            return decision
-
-        llm = init_chat_model(model)
-        self._llm = llm.bind_tools([emit_decision], tool_choice="emit_decision")
-
-    def evaluate(
-        self,
-        image_bytes: bytes,
-        description: str,
-        goal: str,
-    ) -> FeedbackOutcome:
-        image_b64 = base64.b64encode(image_bytes).decode("utf-8")
-        human_content: list[Any] = [
-            {
-                "type": "text",
-                "text": f"Overall goal: {goal}\n\nEvaluate: {description}",
-            },
-            {
-                "type": "image_url",
-                "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"},
-            },
-        ]
-        messages = [
-            SystemMessage(content=_SYSTEM),
-            HumanMessage(content=human_content),
-        ]
-        response = self._llm.invoke(messages)
-        if response.usage_metadata:
-            logger.debug("LLMFeedbackEvaluator usage: %s", response.usage_metadata)
-
-        if not response.tool_calls:
-            logger.warning(
-                "LLMFeedbackEvaluator: no tool call — defaulting to CONTINUE"
-            )
-            return FeedbackOutcome(decision=FeedbackDecision.CONTINUE)
-
-        args = response.tool_calls[0]["args"]
-        raw: str = args.get("decision", "continue").lower().strip()
-        reason = str(args.get("reason", "") or "")
-        assessment = str(args.get("assessment", "") or "").strip() or None
-        try:
-            decision = FeedbackDecision(raw)
-        except ValueError:
-            logger.warning(
-                "LLMFeedbackEvaluator: unknown decision %r — defaulting to CONTINUE",
-                raw,
-            )
-            decision = FeedbackDecision.CONTINUE
-
-        logger.debug("LLMFeedbackEvaluator full prompt: %s", description)
-        return FeedbackOutcome(decision=decision, reason=reason, assessment=assessment)
-
 
 __all__ = [
-    "AlwaysContinueEvaluator",
-    "FeedbackDecision",
-    "FeedbackEvaluator",
-    "FeedbackHandoff",
-    "FeedbackOutcome",
-    "LLMFeedbackEvaluator",
     "LLMPlanner",
     "Planner",
-    "PlannerAction",
-    "PlannerDecision",
+    "PlanningHandoff",
+    "PlanningResult",
 ]

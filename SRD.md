@@ -18,9 +18,13 @@ the work, not just an ordered step list.
    subtasks.
 2. The **executor** walks the plan. Perception steps call **skills**; arm
    manipulation steps run the VLA policy loop directly.
-3. **Feedback points** capture an RGB snapshot, let the LLM evaluate progress
-   against the goal, and route the run to continue, stop, or replan. Replanning
-   is bounded.
+3. **Feedback points** pause execution, capture an RGB snapshot, and hand control
+   back to the runner. The runner re-invokes the same `planner.plan(handoff)`
+   path with the snapshot plus a short `progress_history`. The planner may emit
+   a fresh plan or stop (`{"stop": true, "reason": "..."}`). The executor is
+   stateless across `run(plan)` calls: no `reset`, no continuation. `STEP_BUDGET`
+   bounds skill calls **within one** `run(plan)` only. Stopping a stuck run is
+   the planner's job (via history + snapshot), not a runner replan cap.
 4. Plans are **declarative data, not executable Python**: no `exec` of generated
    code, no `eval` of arbitrary expressions.
 
@@ -40,9 +44,9 @@ listed above it.
 | `src/vla_client.py` | `VLAClient`: HTTP to the policy service. Knows nothing about LIBERO. |
 | `src/plan.py` | Pydantic plan AST + `validate_plan()`. |
 | `src/skills.py` | `Skill` / `SkillParam` / `SkillRegistry` + LIBERO sim-GT perception skills. |
-| `src/executor.py` | Walks the plan, owns VLA-to-environment execution, and returns typed execution boundaries back to the runner. |
-| `src/planner.py` | `LLMPlanner(goal, catalog, scene_objects)`: owns all LLM calls (plan generation and feedback decisions); model and retry limits come from `config`. |
-| `src/runner.py` | `Runner`: composition root — owns `LiberoEnv`, `SkillRegistry`, orchestration loop, and replan cap; wires planner and executor. |
+| `src/executor.py` | Stateless `run(plan)`: walks one plan, owns VLA-to-environment execution, returns a typed boundary; no cross-run memory. |
+| `src/planner.py` | `LLMPlanner(goal, catalog, scene_objects)`: `plan(handoff?) -> PlanningResult` (new plan or stop); mid-loop handoff carries snapshot + `progress_history`; model/retries from `config`. |
+| `src/runner.py` | `Runner`: composition root — owns `LiberoEnv`, `SkillRegistry`; loop is `plan → executor.run(plan) → plan(handoff)` on feedback; accumulates history lines for the planner. |
 
 Plus `src/utils.py` (`load_env`, `configure_logging`) and
 `services/smolvla_service.py` (the policy server, run in a separate venv).
@@ -88,13 +92,13 @@ executor's manipulation method together must stay behaviourally equivalent to it
 | --- | --- |
 | `OPENAI_API_KEY` | Secret; read by the LLM SDK, never by our code. |
 | `LOG_LEVEL` | `DEBUG` / `INFO` / `WARNING` / `ERROR`. |
-| `LLM_MODEL` | Planner and feedback model id. |
+| `LLM_MODEL` | Planner model id (initial and mid-loop `plan()`). |
 | `SAVE_VIDEO` | `1` to write the run video to `config.VIDEO_PATH`. |
 
 Everything else is a constant in `src/config.py`: `VLA_PORT` (8765), `VLA_URL`,
 `VLA_TIMEOUT`, `RESOLUTION` (256), `SEED`, `SETTLE_STEPS`, `SETTLE_ACTION`,
 `MAX_EPISODE_STEPS` (per suite), `VIDEO_PATH`, `VIDEO_FPS`, `REPLAN_STEPS`,
-`MAX_SKILL_STEPS`, `ACTION_CLIP`, `MAX_REPLANS`, `STEP_BUDGET`,
+`MAX_SKILL_STEPS`, `ACTION_CLIP`, `STEP_BUDGET`,
 `MAX_PLAN_RETRIES`.
 
 Adding a new constant is fine. Adding a new environment variable requires a
@@ -173,19 +177,19 @@ untouched. New modules import nothing from `core` / `sim` / `vla` / `robots`.
 - `plan.py`: plan AST + `validate_plan()`.
 - `skills.py`: registry + sim-GT perception skills on `LiberoEnv`. `arm.grab` /
   `arm.place` are not registered; their catalog lines are appended for the LLM.
-- `executor.py`: plan walk, restricted expr eval, `_manipulate()` matching
+- `executor.py`: stateless `run(plan)`; restricted expr eval; `_manipulate()` matching
   `validation/libero_probe.py`. Task strings: strip trailing index, underscores
   → spaces, then `pick up the {name}` / `put the {name} in the {location}`.
   Owns the VLA client and returns typed `ExecutionBoundary` results:
-  `feedback_point`, `plan_done`, `step_budget`, `execution_error`.
-- `planner.py`: `LLMPlanner(goal, catalog, scene_objects)` +
-  `LLMFeedbackEvaluator` + typed `PlannerDecision` (`continue`, `stop`,
-  `new_plan`). Planner owns all LLM interactions (plan generation and feedback
-  decisions); `LLM_MODEL` and `MAX_PLAN_RETRIES` are read from `config`.
-- `runner.py`: composition root — `__init__` builds env, registry, planner, and
-  executor. Initializes `LLMPlanner` with goal, catalog, and scene objects;
-  `run()` performs the loop `planner.plan -> executor.run ->
-  planner.decide(handoff)` and enforces `MAX_REPLANS`.
+  `feedback_point`, `plan_done`, `step_budget`, `execution_error`. No cross-run
+  plan memory, no `reset`, no continuation after feedback.
+- `planner.py`: `LLMPlanner(goal, catalog, scene_objects)`.
+  `plan(handoff?) -> PlanningResult` (fresh plan or stop). Mid-loop handoff
+  carries snapshot + `progress_history`. `LLM_MODEL` and `MAX_PLAN_RETRIES`
+  from `config`.
+- `runner.py`: composition root — builds env, registry, planner, executor;
+  loop is `planner.plan → executor.run(plan) → planner.plan(handoff)` on
+  feedback; accumulates short history lines for the planner.
 
 **Acceptance:** `Runner("...", task_suite="libero_10", task_idx=0)` constructs
 and `run()` returns a result; no module under `src/core`, `src/sim`, `src/vla`, or
@@ -204,8 +208,8 @@ from utils import configure_logging
 
 configure_logging()
 GOAL = "put the alphabet soup can and the cream cheese box in the basket"
-result = Runner(GOAL, task_suite="libero_10", task_idx=0).run()
-raise SystemExit(0 if result.success else 1)
+Runner(GOAL, task_suite="libero_10", task_idx=0).run()
+print("DONE")
 ```
 
 **Acceptance:** the example runs end to end on `libero_10` task 0 and reports a

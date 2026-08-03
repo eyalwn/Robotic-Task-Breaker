@@ -88,8 +88,7 @@ def build_executor(
 
 
 def run_plan(executor: Executor, plan: Plan):
-    executor.reset(plan)
-    return executor.run()
+    return executor.run(plan)
 
 
 def make_plan(body: dict, goal: str = "g") -> Plan:

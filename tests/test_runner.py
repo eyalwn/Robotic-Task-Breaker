@@ -7,9 +7,8 @@ import pytest
 
 from executor import BoundaryReason, ExecutionBoundary, Executor
 from plan import Plan
-from planner import FeedbackHandoff, PlannerAction, PlannerDecision
+from planner import PlanningHandoff, PlanningResult
 from runner import Runner
-from skills import SkillRegistry
 
 
 class _StubPlanner:
@@ -22,27 +21,36 @@ class _StubPlanner:
         self.init_goal = goal
         self.init_scene_objects = scene_objects
         self.plan_calls = 0
-        self.decide_calls = 0
-        self._decisions: list[PlannerDecision] = []
+        self.handoffs: list[PlanningHandoff | None] = []
+        self._plan_fail_on_call: int | None = None
+        self._stop_on_call: int | None = None
+        self._stop_reason = "goal achieved"
 
-    def queue_decision(self, decision: PlannerDecision) -> None:
-        self._decisions.append(decision)
+    def fail_on_plan_call(self, call_number: int) -> None:
+        self._plan_fail_on_call = call_number
 
-    def plan(self, context: str = "") -> Plan:
+    def stop_on_plan_call(self, call_number: int, reason: str = "goal achieved") -> None:
+        self._stop_on_call = call_number
+        self._stop_reason = reason
+
+    def plan(self, handoff: PlanningHandoff | None = None) -> PlanningResult:
         self.plan_calls += 1
-        self.last_context = context
-        return Plan.model_validate(
-            {
-                "goal": self.init_goal,
-                "body": {"kind": "return", "value": {"kind": "literal", "value": "done"}},
-            }
+        self.handoffs.append(handoff)
+        if self._plan_fail_on_call == self.plan_calls:
+            raise RuntimeError("plan validation failed")
+        if self._stop_on_call == self.plan_calls:
+            return PlanningResult(stop=True, reason=self._stop_reason)
+        return PlanningResult(
+            plan=Plan.model_validate(
+                {
+                    "goal": self.init_goal,
+                    "body": {
+                        "kind": "return",
+                        "value": {"kind": "literal", "value": "done"},
+                    },
+                }
+            )
         )
-
-    def decide(self, handoff: FeedbackHandoff) -> PlannerDecision:
-        self.decide_calls += 1
-        if not self._decisions:
-            return PlannerDecision(action=PlannerAction.CONTINUE)
-        return self._decisions.pop(0)
 
 
 class _StubEnv:
@@ -78,11 +86,10 @@ def _runner_with_stub_executor(
     executor = MagicMock(spec=Executor)
     boundary_iter = iter(boundaries)
 
-    def _run() -> ExecutionBoundary:
+    def _run(_plan: Plan) -> ExecutionBoundary:
         return next(boundary_iter)
 
     executor.run.side_effect = _run
-    executor.reset = MagicMock()
 
     def _planner_factory(goal: str, _catalog: str, scene_objects: list, **_kwargs: object) -> _StubPlanner:
         planner.init_goal = goal
@@ -102,7 +109,7 @@ def test_runner_passes_raw_goal_to_planner(monkeypatch: pytest.MonkeyPatch) -> N
         [ExecutionBoundary(reason=BoundaryReason.PLAN_DONE, return_value="done")],
         monkeypatch,
     )
-    runner.run()
+    assert runner.run() is None
     assert planner.init_goal == "test goal"
 
 
@@ -111,21 +118,20 @@ def test_runner_plan_done_success(monkeypatch: pytest.MonkeyPatch) -> None:
         [ExecutionBoundary(reason=BoundaryReason.PLAN_DONE, return_value="done")],
         monkeypatch,
     )
-    result = runner.run()
-    assert result.success is True
-    assert result.status == "done"
+    state = runner._run_loop()
+    assert runner._verdict(state) is True
+    assert state.status == "done"
     assert planner.plan_calls == 1
-    assert executor.reset.call_count == 1
     assert executor.run.call_count == 1
 
 
-def test_runner_feedback_continue_then_done(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_runner_feedback_triggers_replan_then_done(monkeypatch: pytest.MonkeyPatch) -> None:
     planner = _StubPlanner()
-    planner.queue_decision(PlannerDecision(action=PlannerAction.CONTINUE))
     runner, planner, executor = _runner_with_stub_executor(
         [
             ExecutionBoundary(
                 reason=BoundaryReason.FEEDBACK_POINT,
+                steps=2,
                 feedback_description="checkpoint",
                 feedback_prompt="checkpoint",
                 image_bytes=b"img",
@@ -135,61 +141,74 @@ def test_runner_feedback_continue_then_done(monkeypatch: pytest.MonkeyPatch) -> 
         monkeypatch,
         planner=planner,
     )
-    result = runner.run()
-    assert result.success is True
-    assert planner.decide_calls == 1
+    state = runner._run_loop()
+    assert runner._verdict(state) is True
+    assert planner.plan_calls == 2
+    assert planner.handoffs[1] is not None
+    assert planner.handoffs[1].description == "checkpoint"
+    assert planner.handoffs[1].image_bytes == b"img"
+    assert len(planner.handoffs[1].progress_history) == 1
+    assert "feedback_point: checkpoint" in planner.handoffs[1].progress_history[0]
     assert executor.run.call_count == 2
 
 
-def test_runner_feedback_stop(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_runner_multiple_feedback_cycles(monkeypatch: pytest.MonkeyPatch) -> None:
     planner = _StubPlanner()
-    planner.queue_decision(PlannerDecision(action=PlannerAction.STOP, reason="halt"))
+    feedback = ExecutionBoundary(
+        reason=BoundaryReason.FEEDBACK_POINT,
+        feedback_description="checkpoint",
+        feedback_prompt="checkpoint",
+        image_bytes=b"img",
+    )
+    runner, planner, executor = _runner_with_stub_executor(
+        [feedback, feedback, ExecutionBoundary(reason=BoundaryReason.PLAN_DONE, return_value="done")],
+        monkeypatch,
+        planner=planner,
+    )
+    state = runner._run_loop()
+    assert runner._verdict(state) is True
+    assert planner.plan_calls == 3
+    assert len(planner.handoffs[2].progress_history) == 2
+    assert executor.run.call_count == 3
+
+
+def test_runner_feedback_plan_failure(monkeypatch: pytest.MonkeyPatch) -> None:
+    planner = _StubPlanner()
+    planner.fail_on_plan_call(2)
     runner, _, _ = _runner_with_stub_executor(
         [
             ExecutionBoundary(
                 reason=BoundaryReason.FEEDBACK_POINT,
-                feedback_description="halt",
-                feedback_prompt="halt",
+                feedback_description="checkpoint",
+                feedback_prompt="checkpoint",
                 image_bytes=b"img",
             ),
         ],
         monkeypatch,
         planner=planner,
     )
-    result = runner.run()
-    assert result.success is False
-    assert result.status == "stopped"
-    assert result.error == "halt"
+    assert runner.run() is None
 
 
-def test_runner_replan_limit(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_runner_planner_stop(monkeypatch: pytest.MonkeyPatch) -> None:
     planner = _StubPlanner()
-    new_plan = Plan.model_validate(
-        {
-            "goal": "retry",
-            "body": {"kind": "return", "value": {"kind": "literal", "value": "x"}},
-        }
-    )
-    for _ in range(4):
-        planner.queue_decision(
-            PlannerDecision(action=PlannerAction.NEW_PLAN, plan=new_plan)
-        )
-
-    feedback = ExecutionBoundary(
-        reason=BoundaryReason.FEEDBACK_POINT,
-        feedback_description="retry",
-        feedback_prompt="retry",
-        image_bytes=b"img",
-    )
-    runner, _, executor = _runner_with_stub_executor(
-        [feedback, feedback, feedback, feedback],
+    planner.stop_on_plan_call(2, reason="goal achieved")
+    runner, _, _ = _runner_with_stub_executor(
+        [
+            ExecutionBoundary(
+                reason=BoundaryReason.FEEDBACK_POINT,
+                feedback_description="checkpoint",
+                feedback_prompt="checkpoint",
+                image_bytes=b"img",
+            ),
+        ],
         monkeypatch,
         planner=planner,
     )
-    result = runner.run()
-    assert result.status == "replan_limit"
-    assert result.replans == 3
-    assert executor.reset.call_count == 4
+    state = runner._run_loop()
+    assert runner._verdict(state) is False
+    assert state.status == "stopped"
+    assert state.error == "goal achieved"
 
 
 def test_runner_step_budget(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -197,6 +216,6 @@ def test_runner_step_budget(monkeypatch: pytest.MonkeyPatch) -> None:
         [ExecutionBoundary(reason=BoundaryReason.STEP_BUDGET)],
         monkeypatch,
     )
-    result = runner.run()
-    assert result.status == "step_budget"
-    assert result.success is False
+    state = runner._run_loop()
+    assert state.status == "step_budget"
+    assert runner._verdict(state) is False

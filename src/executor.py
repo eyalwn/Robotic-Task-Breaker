@@ -4,7 +4,6 @@ from __future__ import annotations
 import json
 import logging
 import re
-from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Protocol
@@ -34,7 +33,7 @@ _ARM_SKILLS = frozenset({"arm.grab", "arm.place"})
 
 
 class BoundaryReason(str, Enum):
-    """Why ``Executor.run()`` stopped."""
+    """Why ``Executor.run(plan)`` stopped."""
 
     FEEDBACK_POINT = "feedback_point"
     PLAN_DONE = "plan_done"
@@ -157,48 +156,29 @@ class Executor:
         self._env = env
         self._vla = vla or VLAClient()
         self._step_budget = step_budget
-        self._plan: Plan | None = None
-        self._ctx: dict[str, Any] = {}
-        self._steps = 0
-        self._last_skill_result: str | None = None
-        self._continuation: Callable[[], None] | None = None
 
-    def reset(self, plan: Plan) -> None:
-        """Load a new plan and clear execution state."""
-        self._plan = plan
-        self._ctx = {}
-        self._steps = 0
-        self._last_skill_result = None
-        self._continuation = None
-
-    def run(self) -> ExecutionBoundary:
-        """Run until a boundary (feedback, done, budget, or error)."""
-        if self._plan is None:
-            raise RuntimeError("Executor.run() called before reset(plan)")
-
-        steps_before = self._steps
+    def run(self, plan: Plan) -> ExecutionBoundary:
+        """Execute plan from scratch until feedback, done, budget, or error."""
+        ctx: dict[str, Any] = {}
+        run_steps: list[int] = [0]
+        last_skill_result: list[str | None] = [None]
         try:
-            if self._continuation is not None:
-                continuation = self._continuation
-                self._continuation = None
-                continuation()
-            else:
-                self._exec(self._plan.body, self._ctx)
+            self._exec(plan.body, ctx, run_steps, last_skill_result)
             return ExecutionBoundary(
                 reason=BoundaryReason.PLAN_DONE,
-                steps=self._steps - steps_before,
+                steps=run_steps[0],
                 return_value=None,
             )
         except ReturnSignal as sig:
             return ExecutionBoundary(
                 reason=BoundaryReason.PLAN_DONE,
-                steps=self._steps - steps_before,
+                steps=run_steps[0],
                 return_value=sig.value,
             )
         except FeedbackPause as pause:
             return ExecutionBoundary(
                 reason=BoundaryReason.FEEDBACK_POINT,
-                steps=self._steps - steps_before,
+                steps=run_steps[0],
                 feedback_description=pause.description,
                 feedback_prompt=pause.prompt,
                 image_bytes=pause.image_bytes,
@@ -206,45 +186,26 @@ class Executor:
         except StepBudgetExceeded:
             return ExecutionBoundary(
                 reason=BoundaryReason.STEP_BUDGET,
-                steps=self._steps - steps_before,
+                steps=run_steps[0],
             )
         except Exception as exc:
             logger.exception("Executor execution error")
             return ExecutionBoundary(
                 reason=BoundaryReason.EXECUTION_ERROR,
-                steps=self._steps - steps_before,
+                steps=run_steps[0],
                 error=str(exc),
             )
 
-    def _append_continuation(self, fn: Callable[[], None]) -> None:
-        previous = self._continuation
-        if previous is None:
-            self._continuation = fn
-            return
-
-        def chained() -> None:
-            previous()
-            fn()
-
-        self._continuation = chained
-
-    def _exec_steps(self, steps: list[StmtNode], ctx: dict[str, Any]) -> Any:
+    def _exec_steps(
+        self,
+        steps: list[StmtNode],
+        ctx: dict[str, Any],
+        run_steps: list[int],
+        last_skill_result: list[str | None],
+    ) -> Any:
         last: Any = None
-        for index, step in enumerate(steps):
-            try:
-                last = self._exec(step, ctx)
-            except FeedbackPause:
-                remaining = steps[index + 1 :]
-                if remaining:
-
-                    def continue_steps(
-                        remaining_steps: list[StmtNode] = remaining,
-                        context: dict[str, Any] = ctx,
-                    ) -> None:
-                        self._exec_steps(remaining_steps, context)
-
-                    self._append_continuation(continue_steps)
-                raise
+        for step in steps:
+            last = self._exec(step, ctx, run_steps, last_skill_result)
         return last
 
     def _manipulate(
@@ -275,15 +236,21 @@ class Executor:
             return {"status": "success"}
         return {"status": "failed", "steps": skill_steps}
 
-    def _exec(self, node: StmtNode, ctx: dict[str, Any]) -> Any:
+    def _exec(
+        self,
+        node: StmtNode,
+        ctx: dict[str, Any],
+        run_steps: list[int],
+        last_skill_result: list[str | None],
+    ) -> Any:
         if isinstance(node, SeqNode):
-            return self._exec_steps(node.steps, ctx)
+            return self._exec_steps(node.steps, ctx, run_steps, last_skill_result)
 
         if isinstance(node, IfNode):
             if self._eval(node.condition, ctx):
-                return self._exec(node.then_branch, ctx)
+                return self._exec(node.then_branch, ctx, run_steps, last_skill_result)
             if node.else_branch is not None:
-                return self._exec(node.else_branch, ctx)
+                return self._exec(node.else_branch, ctx, run_steps, last_skill_result)
             return None
 
         if isinstance(node, WhileNode):
@@ -293,12 +260,12 @@ class Executor:
                     raise RuntimeError(
                         f"while loop exceeded max_iterations={node.max_iterations}"
                     )
-                self._exec(node.body, ctx)
+                self._exec(node.body, ctx, run_steps, last_skill_result)
                 iterations += 1
             return None
 
         if isinstance(node, CallNode):
-            if self._steps >= self._step_budget:
+            if run_steps[0] >= self._step_budget:
                 raise StepBudgetExceeded()
             evaluated_args = {
                 key: self._eval(value, ctx) for key, value in node.args.items()
@@ -315,9 +282,9 @@ class Executor:
                 skill = self._registry.get(node.skill)
                 result = skill(**evaluated_args)
 
-            self._last_skill_result = str(result)
+            last_skill_result[0] = str(result)
             logger.info("Skill result (%s): %r", node.skill, result)
-            self._steps += 1
+            run_steps[0] += 1
             if node.assign_to is not None:
                 ctx[node.assign_to] = result
             return result
@@ -325,9 +292,9 @@ class Executor:
         if isinstance(node, FeedbackNode):
             image_bytes = self._env.observe()[0]
             prompt = node.description
-            if self._last_skill_result:
+            if last_skill_result[0]:
                 prompt = (
-                    f"{prompt}\n\nPrior skill result: {self._last_skill_result}"
+                    f"{prompt}\n\nPrior skill result: {last_skill_result[0]}"
                 )
             logger.info("Feedback checkpoint: %r", node.description)
             raise FeedbackPause(

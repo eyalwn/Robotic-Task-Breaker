@@ -107,7 +107,7 @@ def test_feedback_returns_boundary() -> None:
     assert result.image_bytes == b"main-image"
 
 
-def test_feedback_continue_resumes_plan() -> None:
+def test_feedback_discards_remaining_plan() -> None:
     skill = MockSkill("ok")
     executor = build_executor(skill)
     plan = make_plan(
@@ -120,103 +120,30 @@ def test_feedback_continue_resumes_plan() -> None:
             ],
         }
     )
+    result = run_plan(executor, plan)
+    assert result.reason == BoundaryReason.FEEDBACK_POINT
+    assert len(skill.calls) == 1
+
+
+def test_rerun_plan_restarts_from_scratch() -> None:
+    skill = MockSkill("ok")
+    executor = build_executor(skill)
+    plan = make_plan(
+        {
+            "kind": "seq",
+            "steps": [
+                {"kind": "call", "skill": "mock.skill"},
+                {"kind": "feedback", "description": "checkpoint"},
+            ],
+        }
+    )
     first = run_plan(executor, plan)
     assert first.reason == BoundaryReason.FEEDBACK_POINT
     assert len(skill.calls) == 1
 
-    second = executor.run()
-    assert second.reason == BoundaryReason.PLAN_DONE
+    second = executor.run(plan)
+    assert second.reason == BoundaryReason.FEEDBACK_POINT
     assert len(skill.calls) == 2
-
-
-def test_multi_feedback_continue_without_replay() -> None:
-    skill = MockSkill("ok")
-    executor = build_executor(skill)
-    plan = make_plan(
-        {
-            "kind": "seq",
-            "steps": [
-                {
-                    "kind": "call",
-                    "skill": "mock.skill",
-                    "args": {"x": {"kind": "literal", "value": 1}},
-                },
-                {"kind": "feedback", "description": "checkpoint 1"},
-                {
-                    "kind": "call",
-                    "skill": "mock.skill",
-                    "args": {"x": {"kind": "literal", "value": 2}},
-                },
-                {"kind": "feedback", "description": "checkpoint 2"},
-                {
-                    "kind": "call",
-                    "skill": "mock.skill",
-                    "args": {"x": {"kind": "literal", "value": 3}},
-                },
-            ],
-        }
-    )
-    first = run_plan(executor, plan)
-    assert first.reason == BoundaryReason.FEEDBACK_POINT
-    assert [call["x"] for call in skill.calls] == [1]
-
-    second = executor.run()
-    assert second.reason == BoundaryReason.FEEDBACK_POINT
-    assert [call["x"] for call in skill.calls] == [1, 2]
-
-    third = executor.run()
-    assert third.reason == BoundaryReason.PLAN_DONE
-    assert [call["x"] for call in skill.calls] == [1, 2, 3]
-
-
-def test_nested_seq_multi_feedback_continue() -> None:
-    skill = MockSkill("ok")
-    executor = build_executor(skill)
-    plan = make_plan(
-        {
-            "kind": "seq",
-            "steps": [
-                {
-                    "kind": "call",
-                    "skill": "mock.skill",
-                    "args": {"x": {"kind": "literal", "value": 1}},
-                },
-                {"kind": "feedback", "description": "outer checkpoint"},
-                {
-                    "kind": "seq",
-                    "steps": [
-                        {
-                            "kind": "call",
-                            "skill": "mock.skill",
-                            "args": {"x": {"kind": "literal", "value": 2}},
-                        },
-                        {"kind": "feedback", "description": "inner checkpoint"},
-                        {
-                            "kind": "call",
-                            "skill": "mock.skill",
-                            "args": {"x": {"kind": "literal", "value": 3}},
-                        },
-                    ],
-                },
-                {
-                    "kind": "call",
-                    "skill": "mock.skill",
-                    "args": {"x": {"kind": "literal", "value": 4}},
-                },
-            ],
-        }
-    )
-    first = run_plan(executor, plan)
-    assert first.reason == BoundaryReason.FEEDBACK_POINT
-    assert [call["x"] for call in skill.calls] == [1]
-
-    second = executor.run()
-    assert second.reason == BoundaryReason.FEEDBACK_POINT
-    assert [call["x"] for call in skill.calls] == [1, 2]
-
-    third = executor.run()
-    assert third.reason == BoundaryReason.PLAN_DONE
-    assert [call["x"] for call in skill.calls] == [1, 2, 3, 4]
 
 
 def test_return_node() -> None:
