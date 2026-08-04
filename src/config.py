@@ -59,5 +59,6 @@ MAX_SKILL_STEPS = 300
 ACTION_CLIP = 2.0
 
 # --- planner / executor -----------------------------------------------------
-STEP_BUDGET = 30
 MAX_PLAN_RETRIES = 3
+PROGRESS_HISTORY_WINDOW = 3
+STEP_BUDGET = 30
