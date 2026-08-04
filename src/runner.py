@@ -63,9 +63,9 @@ class Runner:
     def _run_loop(self) -> tuple[RunStatus, str, str, int]:
         total_steps = 0
         stop = None
-        snapshot = None
+        snapshot = self._env.observe()[0]
         while True:
-            current_plan = self._planner.plan(stop, snapshot)
+            current_plan = self._planner.plan(snapshot, stop)
             if is_a_stop_plan(current_plan):
                 return "stopped", get_stop_reason(current_plan), "", total_steps
 

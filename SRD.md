@@ -18,8 +18,9 @@ the work, not just an ordered step list.
    subtasks.
 2. The **executor** walks the plan. Perception steps call **skills**; arm
    manipulation steps run the VLA policy loop directly.
-3. **Feedback points** pause execution and hand control back to the runner. The
-   runner captures an RGB snapshot and re-invokes `planner.plan(stop, snapshot)`.
+3. Planning is snapshot-grounded. The runner captures an RGB snapshot before the
+   first plan and before every replan, then calls `planner.plan(snapshot, stop?)`.
+   **Feedback points** pause execution and provide the `stop` context for replans.
    The planner keeps a short `progress_history` across calls. It may emit a fresh
    plan or a sentinel STOP plan (return node with literal `"STOP: <reason>"`).
    The runner detects STOP before `validate_plan` / `executor.run`. The executor is
@@ -46,8 +47,8 @@ listed above it.
 | `src/plan.py` | Pydantic plan AST + `validate_plan()` + `is_a_stop_plan()` / `get_stop_reason()`. |
 | `src/skills.py` | `Skill` / `SkillParam` / `SkillRegistry` + LIBERO sim-GT perception skills. |
 | `src/executor.py` | Stateless `run(plan)`: walks one plan, owns VLA-to-environment execution, returns a typed `ExecutionStop`; no cross-run memory. |
-| `src/planner.py` | `LLMPlanner(goal, catalog, scene_objects)`: `plan(stop?, snapshot?) -> dict` (plan AST JSON); owns `progress_history` across calls; model/retries from `config`. |
-| `src/runner.py` | `Runner`: composition root — owns `LiberoEnv`, `SkillRegistry`; loop is `plan → validate → executor.run(plan) → observe + plan(stop, snapshot)` on feedback; checks sentinel STOP before execute. |
+| `src/planner.py` | `LLMPlanner(goal, catalog, scene_objects)`: `plan(snapshot, stop?) -> dict` (plan AST JSON); requires a snapshot on every call; owns `progress_history` across calls; model/retries from `config`. |
+| `src/runner.py` | `Runner`: composition root — owns `LiberoEnv`, `SkillRegistry`; loop is `observe → plan(snapshot) → validate → executor.run(plan)`, then `observe + plan(snapshot, stop)` on feedback; checks sentinel STOP before execute. |
 
 Plus `src/utils.py` (`load_env`, `configure_logging`) and
 `services/smolvla_service.py` (the policy server, run in a separate venv).
@@ -127,7 +128,7 @@ on current-state contracts only.
 
 Current runtime shape:
 
-- `planner.plan(stop?, snapshot?) -> dict` (validated plan AST JSON)
+- `planner.plan(snapshot, stop?) -> dict` (validated plan AST JSON)
 - STOP is represented by a sentinel return literal: `"STOP: <reason>"`
 - `runner` checks `is_a_stop_plan(...)` before `executor.run(plan)` and reads
   the reason via `get_stop_reason(...)`

@@ -1,4 +1,4 @@
-"""LLM-backed planner for initial and mid-loop plan generation."""
+"""LLM-backed planner for snapshot-grounded plan generation."""
 from __future__ import annotations
 
 import base64
@@ -187,7 +187,6 @@ def _build_feedback_human(
     snapshot: bytes,
     progress_history: list[str],
 ) -> HumanMessage:
-    image_b64 = base64.b64encode(snapshot).decode("utf-8")
     history_block = ""
     if progress_history:
         lines = "\n".join(f"- {line}" for line in progress_history)
@@ -205,6 +204,20 @@ def _build_feedback_human(
         '{"kind":"literal","value":"STOP: <reason>"}}}\n'
         "Otherwise emit a fresh plan for the goal."
     )
+    return _human_with_snapshot(text=text, snapshot=snapshot)
+
+
+def _build_initial_human(shaped_goal: str, snapshot: bytes) -> HumanMessage:
+    text = (
+        f"Goal: {shaped_goal}\n\n"
+        "Use the scene snapshot as the initial world state when choosing "
+        "objects, ordering actions, and feedback checkpoints."
+    )
+    return _human_with_snapshot(text=text, snapshot=snapshot)
+
+
+def _human_with_snapshot(text: str, snapshot: bytes) -> HumanMessage:
+    image_b64 = base64.b64encode(snapshot).decode("utf-8")
     human_content: list[Any] = [
         {"type": "text", "text": text},
         {
@@ -220,8 +233,8 @@ class Planner(Protocol):
 
     def plan(
         self,
+        snapshot: bytes,
         stop: ExecutionStop | None = None,
-        snapshot: bytes | None = None,
     ) -> Plan:
         ...
 
@@ -244,8 +257,8 @@ class LLMPlanner:
 
     def plan(
         self,
+        snapshot: bytes,
         stop: ExecutionStop | None = None,
-        snapshot: bytes | None = None,
     ) -> Plan:
         """Emit an initial or mid-loop plan AST dict."""
         shaped_goal = _shape_goal(self._goal, self._scene_objects)
@@ -253,12 +266,8 @@ class LLMPlanner:
             catalog=self._catalog, ast_format=_AST_FORMAT
         )
         if stop is None:
-            if snapshot is not None:
-                raise ValueError("snapshot requires a feedback stop")
-            first_human = HumanMessage(content=f"Goal: {shaped_goal}")
+            first_human = _build_initial_human(shaped_goal, snapshot)
         else:
-            if snapshot is None:
-                raise ValueError("feedback replan requires a snapshot")
             if stop.feedback_description is None or stop.feedback_prompt is None:
                 raise ValueError("feedback stop missing description or prompt")
             self._progress_history.append(_history_line(stop))
