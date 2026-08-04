@@ -16,19 +16,11 @@ from dotenv import find_dotenv, load_dotenv
 
 load_dotenv(find_dotenv())
 
-
-def _flag(name: str, default: bool = False) -> bool:
-    raw = os.environ.get(name)
-    if raw is None:
-        return default
-    return raw.strip().lower() in ("1", "true", "yes", "on")
-
-
 # --- from .env -------------------------------------------------------------
 # OPENAI_API_KEY is not read here; the LLM SDK picks it up from the environment.
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").strip() or "INFO"
 LLM_MODEL = os.environ.get("LLM_MODEL", "gpt-4.1-mini").strip()
-SAVE_VIDEO = _flag("SAVE_VIDEO")
+SAVE_VIDEO = os.environ.get("SAVE_VIDEO") == "1"
 
 # --- VLA HTTP service ------------------------------------------------------
 VLA_PORT = 8765
