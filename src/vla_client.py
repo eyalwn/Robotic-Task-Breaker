@@ -31,21 +31,35 @@ class VLAClient:
 
     def health(self) -> dict:
         """Query the service ``/health`` endpoint."""
-        return self._request("GET", "/health")
+        try:
+            response = requests.get(f"{self._url}/health", timeout=self._timeout)
+            response.raise_for_status()
+            return response.json()
+        except requests.RequestException as exc:
+            raise VLAError(f"VLA service GET /health failed: {exc}") from exc
+        except ValueError as exc:
+            raise VLAError(f"VLA service /health returned non-JSON: {exc}") from exc
 
     def predict(
         self, image: bytes, wrist: bytes, state: list[float], task: str
     ) -> list[list[float]]:
         """Return a chunk of 7-D actions for the current observation."""
-        payload = self._request(
-            "POST",
-            "/predict",
-            files={
-                "image": ("frame.jpg", image, "image/jpeg"),
-                "image_wrist": ("wrist.jpg", wrist, "image/jpeg"),
-            },
-            data={"task": task, "state": json.dumps(state)},
-        )
+        try:
+            response = requests.post(
+                f"{self._url}/predict",
+                timeout=self._timeout,
+                files={
+                    "image": ("frame.jpg", image, "image/jpeg"),
+                    "image_wrist": ("wrist.jpg", wrist, "image/jpeg"),
+                },
+                data={"task": task, "state": json.dumps(state)},
+            )
+            response.raise_for_status()
+            payload = response.json()
+        except requests.RequestException as exc:
+            raise VLAError(f"VLA service POST /predict failed: {exc}") from exc
+        except ValueError as exc:
+            raise VLAError(f"VLA service /predict returned non-JSON: {exc}") from exc
         actions = payload.get("actions")
         if not isinstance(actions, list) or not actions:
             raise VLAError(f"expected a non-empty 'actions' list, got {payload!r}")
@@ -66,15 +80,3 @@ class VLAClient:
         if clipped != values:
             logger.warning("action %d exceeded +-%.1f: %s", idx, clip, values)
         return clipped
-
-    def _request(self, method: str, path: str, **kwargs) -> dict:
-        try:
-            response = requests.request(
-                method, f"{self._url}{path}", timeout=self._timeout, **kwargs
-            )
-            response.raise_for_status()
-            return response.json()
-        except requests.RequestException as exc:
-            raise VLAError(f"VLA service {method} {path} failed: {exc}") from exc
-        except ValueError as exc:
-            raise VLAError(f"VLA service {path} returned non-JSON: {exc}") from exc

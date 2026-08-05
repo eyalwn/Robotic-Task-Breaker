@@ -19,11 +19,9 @@ def _ok_response(payload: dict) -> MagicMock:
 
 def test_health_get_request() -> None:
     client = VLAClient("http://127.0.0.1:8765", timeout=5.0)
-    with patch("vla_client.requests.request", return_value=_ok_response({"ok": True})) as mock_req:
+    with patch("vla_client.requests.get", return_value=_ok_response({"ok": True})) as mock_get:
         result = client.health()
-    mock_req.assert_called_once_with(
-        "GET", "http://127.0.0.1:8765/health", timeout=5.0
-    )
+    mock_get.assert_called_once_with("http://127.0.0.1:8765/health", timeout=5.0)
     assert result == {"ok": True}
 
 
@@ -31,9 +29,9 @@ def test_predict_multipart_request_shape() -> None:
     client = VLAClient("http://127.0.0.1:8765", timeout=5.0)
     actions = [[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, -1.0]]
     with patch(
-        "vla_client.requests.request",
+        "vla_client.requests.post",
         return_value=_ok_response({"actions": actions}),
-    ) as mock_req:
+    ) as mock_post:
         result = client.predict(
             b"main-jpeg",
             b"wrist-jpeg",
@@ -41,10 +39,9 @@ def test_predict_multipart_request_shape() -> None:
             "pick up cube",
         )
 
-    mock_req.assert_called_once()
-    args, kwargs = mock_req.call_args
-    assert args[0] == "POST"
-    assert args[1] == "http://127.0.0.1:8765/predict"
+    mock_post.assert_called_once()
+    args, kwargs = mock_post.call_args
+    assert args[0] == "http://127.0.0.1:8765/predict"
     assert kwargs["timeout"] == 5.0
     assert kwargs["files"]["image"] == ("frame.jpg", b"main-jpeg", "image/jpeg")
     assert kwargs["files"]["image_wrist"] == ("wrist.jpg", b"wrist-jpeg", "image/jpeg")
@@ -57,7 +54,7 @@ def test_predict_clips_actions() -> None:
     client = VLAClient("http://127.0.0.1:8765", timeout=5.0)
     raw = [[99.0, -99.0, 0.0, 0.0, 0.0, 0.0, 0.0]]
     with patch(
-        "vla_client.requests.request",
+        "vla_client.requests.post",
         return_value=_ok_response({"actions": raw}),
     ):
         clipped = client.predict(b"i", b"w", [], "task")
@@ -68,7 +65,7 @@ def test_predict_clips_actions() -> None:
 def test_predict_rejects_empty_actions() -> None:
     client = VLAClient("http://127.0.0.1:8765", timeout=5.0)
     with patch(
-        "vla_client.requests.request",
+        "vla_client.requests.post",
         return_value=_ok_response({"actions": []}),
     ):
         with pytest.raises(VLAError, match="non-empty 'actions' list"):
@@ -78,7 +75,7 @@ def test_predict_rejects_empty_actions() -> None:
 def test_predict_rejects_bad_action_dim() -> None:
     client = VLAClient("http://127.0.0.1:8765", timeout=5.0)
     with patch(
-        "vla_client.requests.request",
+        "vla_client.requests.post",
         return_value=_ok_response({"actions": [[1.0, 2.0]]}),
     ):
         with pytest.raises(VLAError, match="must be 7 floats"):
@@ -88,17 +85,17 @@ def test_predict_rejects_bad_action_dim() -> None:
 def test_predict_rejects_non_finite() -> None:
     client = VLAClient("http://127.0.0.1:8765", timeout=5.0)
     with patch(
-        "vla_client.requests.request",
+        "vla_client.requests.post",
         return_value=_ok_response({"actions": [[float("nan")] * 7]}),
     ):
         with pytest.raises(VLAError, match="not finite"):
             client.predict(b"i", b"w", [], "task")
 
 
-def test_request_failure_wraps_vla_error() -> None:
+def test_health_failure_wraps_vla_error() -> None:
     client = VLAClient("http://127.0.0.1:8765", timeout=5.0)
     with patch(
-        "vla_client.requests.request",
+        "vla_client.requests.get",
         side_effect=requests.ConnectionError("refused"),
     ):
         with pytest.raises(VLAError, match="failed"):
