@@ -1,169 +1,78 @@
 # Longor SRD
 
-Single source of truth for architecture and runtime contracts.
-
-Install: `pip install -r deps/requirements-libero.txt && pip install -e .` from the
-repo root. Source lives in `src/` as flat top-level modules; `pip install -e .`
-and `pyproject.toml`'s `pythonpath = src` both make them importable without
-`PYTHONPATH` juggling.
+Single source of truth for Longor runtime architecture and contracts.
+Operational setup/run instructions intentionally live in `README.md` and
+notebook launchers under `colab/`.
 
 ## Goal
 
-Enable robots to perform **long-horizon** tasks by separating **planning** (LLM)
-from **execution** (interpreter), so the agent reasons over the *structure* of
-the work, not just an ordered step list.
+Longor separates high-level reasoning from low-level control for long-horizon
+robot manipulation tasks.
 
-1. The **planner** (LLM) emits a **plan**: a structured algorithm with control
-   flow (sequencing, conditionals, loops, feedback points) — not a flat list of
-   subtasks.
-2. The **executor** walks the plan. Perception steps call **skills**; arm
-   manipulation steps run the VLA policy loop directly.
-3. Planning is snapshot-grounded. The runner captures an RGB snapshot before the
-   first plan and before every replan, then calls
-   `planner.plan(snapshot, execution_sum?)`.
-   **Feedback points** pause execution and provide the `stop` context for replans.
-   The planner keeps a short `progress_history` across calls. It may emit a fresh
-   plan or a sentinel STOP plan (return node with literal `"STOP: <reason>"`).
-   The runner detects STOP before `validate_plan` / `executor.run`. The executor is
-   stateless across `run(plan)` calls: no `reset`, no continuation. `STEP_BUDGET`
-   bounds skill calls **within one** `run(plan)` only. Stopping a stuck run is
-   the planner's job (via history + snapshot), not a runner replan cap.
-4. Plans are **declarative data, not executable Python**: no `exec` of generated
-   code, no `eval` of arbitrary expressions.
+- `LLMPlanner` turns a natural-language goal and RGB snapshot into a validated
+  plan AST.
+- Plans are declarative data (`plan.py`), not executable Python.
+- `Executor` walks the AST, executes skills, and uses the VLA HTTP service for
+  arm manipulation.
+- `Runner` closes the loop (`observe -> plan -> execute -> feedback -> replan`)
+  until success, failure, or planner STOP.
+- The planner may emit a sentinel STOP plan (`"STOP: <reason>"`) when
+  continuation is not useful.
 
-**Platform.** LIBERO on Linux + NVIDIA + CUDA (Colab T4 is sufficient). This is
-the only supported platform. Arm manipulation is **VLA only**, behind a single
-VLA HTTP service.
+## Platform
+
+Supported target: **LIBERO on Linux with NVIDIA/CUDA** (Colab T4 is sufficient).
+Runtime assumes one environment backend (LIBERO) and one policy transport
+(single VLA HTTP service).
 
 ## Architecture
 
-Eight flat modules. Dependencies point strictly downward — no module imports one
-listed above it.
+Source layout is flat modules under `src/`. Dependencies flow downward only:
 
-| Module | Responsibility |
-| --- | --- |
-| `src/config.py` | Every tunable constant; loads `.env`. Imports nothing from Longor. |
-| `src/libero_env.py` | `LiberoEnv`: builds `OffScreenRenderEnv`, `observe()`, `step()`, `success()`, `object_names()`, `body_position()`, run video. |
-| `src/vla_client.py` | `VLAClient`: HTTP to the policy service. Knows nothing about LIBERO. |
-| `src/plan.py` | Pydantic plan AST + `validate_plan()` + `is_a_stop_plan()` / `get_stop_reason()`. |
-| `src/skills.py` | `Skill` / `SkillParam` / `SkillRegistry` + LIBERO sim-GT perception skills. |
-| `src/executor.py` | Stateless `run(plan)`: walks one plan, owns VLA-to-environment execution, returns an `ExecutionSum`; no cross-run memory. |
-| `src/planner.py` | `LLMPlanner(goal, catalog, scene_objects)`: `plan(snapshot, execution_sum?) -> Plan`; requires a snapshot on every call; owns bounded `progress_history`; model/retries from `config`. |
-| `src/runner.py` | `Runner`: composition root — owns `LiberoEnv`, `SkillRegistry`; loop is `observe → plan(snapshot) → executor.run(plan)`, then `observe + plan(snapshot, execution_sum)` on feedback; checks sentinel STOP before execute. |
+`config -> libero_env / vla_client -> plan -> skills -> executor -> planner -> runner`
 
-Plus `src/utils.py` (`load_env`, `configure_logging`) and
-`services/smolvla_service.py` (the policy server, run in a separate venv).
+Module responsibilities:
 
-### Rules
+- `config.py`: single source of runtime defaults and `.env` switches.
+- `libero_env.py`: LIBERO wrapper for `observe`, `step`, `success`, and object
+  metadata access.
+- `vla_client.py`: HTTP client for the VLA policy service.
+- `plan.py`: plan AST models, validation, and STOP helpers.
+- `skills.py`: skill interfaces/registry and LIBERO state/perception skills.
+- `executor.py`: stateless plan interpreter; owns VLA-to-environment execution.
+- `planner.py`: LLM planner that emits validated AST plans from snapshot and
+  feedback context.
+- `runner.py`: composition root and orchestration loop for one task.
 
-- **The VLA-to-environment integration lives in the executor**, in one visible
-  method. An `arm.grab` / `arm.place` node is not a registered skill; the
-  executor branches on it and runs the policy loop inline. Debugging manipulation
-  means reading one function, not chasing six indirections.
-- **No hidden tuning layers.** No action rescaling, axis remapping, sign
-  flipping, adaptive scaling, proximity heuristics, or success rewriting between
-  the policy output and `env.step()`. The policy's action is applied as-is.
-- **No sim-GT fallback in a real-perception path.** Any fallback must be
-  explicit, opt-in, and recorded here.
-- **`config.py` is the only place defaults are defined.** Reading `os.environ`
-  anywhere else is a defect.
+Non-negotiable boundaries:
 
-### Manipulation loop
+- VLA-to-environment integration lives in `executor.py` in one visible path.
+- No hidden retuning layer between policy output and `env.step()` (no remap,
+  rescale, sign flips, or success rewriting).
+- `config.py` is the only place runtime defaults are defined.
 
-The reference OpenPI LIBERO evaluation loop is the contract. `LiberoEnv` and the
-executor's manipulation method together must stay behaviourally equivalent to it:
+## Configuration Contract
 
-- 7-D OSC action `[dx, dy, dz, drx, dry, drz, gripper]`, applied one action per
-  `env.step()`, no scaling.
-- `env.set_init_state(suite.get_task_init_states(task_idx)[0])` after `reset()` —
-  the benchmark's canonical initial state is part of the eval protocol.
-- `env.seed(SEED)` before reset; the seed perturbs object poses even with a fixed
-  initial state.
-- `SETTLE_STEPS` no-op actions (`[0]*6 + [-1]`) after init, because the simulator
-  drops objects onto the table.
-- Both camera frames rotated 180 degrees (`[::-1, ::-1]`) to match training
-  preprocessing.
-- 8-D state: `eef_pos(3) + quat2axisangle(eef_quat)(3) + gripper_qpos(2)`.
-- Re-query the policy every `REPLAN_STEPS` actions; discard the rest of the chunk.
-- Success is `env.check_success()`.
+`.env` is intentionally minimal: `OPENAI_API_KEY`, `LOG_LEVEL`, `LLM_MODEL`,
+`SAVE_VIDEO`.
+All other tunables live in `src/config.py`.
+Adding a new env var requires explicit SRD-level approval.
 
-## Configuration
+## VLA Service Contract
 
-`.env` holds **only** secrets and switches worth flipping between runs:
+Single policy service process (`services/smolvla_service.py`) exposes:
 
-| Variable | Purpose |
-| --- | --- |
-| `OPENAI_API_KEY` | Secret; read by the LLM SDK, never by our code. |
-| `LOG_LEVEL` | `DEBUG` / `INFO` / `WARNING` / `ERROR`. |
-| `LLM_MODEL` | Planner model id (initial and mid-loop `plan()`). |
-| `SAVE_VIDEO` | `1` to write the run video to `config.VIDEO_PATH`. |
+- `GET /health` -> `{"status":"ok","model":"<id>"}`
+- `POST /predict` (multipart):
+  - `image` (JPEG), `image_wrist` (JPEG), `task` (string),
+    `state` (JSON array of 8 floats)
+  - response: `{"actions": [[7 floats], ...]}`
 
-Everything else is a constant in `src/config.py`: `VLA_PORT` (8765), `VLA_URL`,
-`VLA_TIMEOUT`, `RESOLUTION` (256), `SEED`, `SETTLE_STEPS`, `SETTLE_ACTION`,
-`MAX_EPISODE_STEPS` (per suite), `VIDEO_PATH`, `VIDEO_FPS`, `REPLAN_STEPS`,
-`MAX_SKILL_STEPS`, `ACTION_CLIP`, `STEP_BUDGET`,
-`MAX_PLAN_RETRIES`.
+Contract changes must be recorded here before implementation changes.
 
-Adding a new constant is fine. Adding a new environment variable requires a
-mapped acceptance criterion in this document.
+## Future Work
 
-Headless rendering additionally needs `MUJOCO_GL=egl` and
-`PYOPENGL_PLATFORM=egl` exported in the shell (not application config).
-
-## VLA service contract
-
-One policy service process at a time, `services/smolvla_service.py`, on
-`VLA_PORT`. The wire format is fixed:
-
-- `GET /health` → `{"status": "ok", "model": "<id>"}`
-- `POST /predict`, multipart: `image` (JPEG), `image_wrist` (JPEG), `task`
-  (string), `state` (JSON array of 8 floats)
-  → `{"actions": [[7 floats], ...]}`
-
-Changing this contract requires updating this section first.
-
-## Delivery status
-
-The planned refactor phases are complete and retired. This document now focuses
-on current-state contracts only.
-
-Current runtime shape:
-
-- `planner.plan(snapshot, execution_sum?) -> Plan` (validated plan AST)
-- STOP is represented by a sentinel return literal: `"STOP: <reason>"`
-- `runner` checks `is_a_stop_plan(...)` before `executor.run(plan)` and reads
-  the reason via `get_stop_reason(...)`
-- `executor.run(plan)` is stateless across runs
-
-Example entrypoint:
-
-```python
-from runner import Runner
-from utils import configure_logging
-
-configure_logging()
-GOAL = "put the alphabet soup can and the cream cheese box in the basket"
-Runner(GOAL, task_suite="libero_10", task_idx=0).run()
-print("DONE")
-```
-
-## Future work
-
-Deliberately out of scope for the current runtime scope:
-
-- Real (RGB-based) perception replacing sim-GT, then deleting sim-GT.
-- LIBERO-10 campaign: independent per-task evaluation for `task_idx` 0..9.
-- Recursive sub-planning (a composite skill that re-invokes the planner).
-- XLeRobot simulation and hardware backends. The previous XLeRobot code is
-  deleted in phase 5; these would start fresh against the contracts above.
-- Slimming `deps/requirements-libero.txt` from `lerobot[libero]` to a direct
-  LIBERO pin.
-
-## Validation tooling (Colab)
-
-Colab notebooks are **launchers only**: collect secrets, sync the repo, install
-deps, start the policy service, run exactly one script under `validation/**`,
-print its stdout summary. Orchestration and verdict logic live in the script.
-
-Every script under `validation/**` must print a concise pass/fail summary with
-key metrics to stdout and exit 0 on pass, non-zero on fail.
+- Replace sim-GT perception skills with real RGB perception and retire sim-GT
+  paths.
+- Run systematic LIBERO-10 per-task evaluation campaigns.
+- Revisit recursive sub-planning only after baseline stability is demonstrated.

@@ -16,6 +16,9 @@ Ownership split (runtime):
 
 ## Setup
 
+Setup/runbook details live in this README. Notebook launchers under `colab/`
+are the executable setup path for Colab flows.
+
 Two virtualenvs in the repo root: `.venv` for the app and simulation, `.vla-venv`
 for the policy server. They must be separate — the policy stack and the sim stack
 pin incompatible dependencies.
@@ -102,8 +105,8 @@ never the orchestration.
 
 Set `SAVE_VIDEO=1` in `.env` to get `run.mp4` showing exactly what the policy saw.
 
-On Colab, use `colab/libero_probe.ipynb` — it installs deps, starts
-`services/smolvla_service.py`, and runs the probe.
+On Colab, use `colab/libero_probe.ipynb` as the setup launcher — it installs
+deps, starts `services/smolvla_service.py`, and runs the probe.
 
 ## Tests
 
