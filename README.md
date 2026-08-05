@@ -10,9 +10,9 @@ Platform: **LIBERO on Linux + NVIDIA** (Colab T4 is sufficient). Architecture an
 contracts: `SRD.md`.
 
 Ownership split (runtime):
-- `Runner`: composition root — owns `LiberoEnv` and `SkillRegistry`; builds `LLMPlanner`; loop is `plan -> validate -> executor.run(plan) -> observe + plan(stop, snapshot)` on feedback; checks sentinel STOP before execute.
-- `LLMPlanner`: `plan(snapshot, stop?) -> dict` (plan AST JSON); owns progress history across calls; stop = sentinel return literal `"STOP: <reason>"`; model/retries from `config`.
-- `Executor`: stateless `run(plan)` — VLA/env execution, typed `ExecutionStop` back to runner; no cross-run memory.
+- `Runner`: composition root — owns `LiberoEnv` and `SkillRegistry`; builds `LLMPlanner`; loop is `observe -> plan(snapshot) -> executor.run(plan)`, then `observe + plan(snapshot, execution_sum)` on feedback; checks sentinel STOP before execute.
+- `LLMPlanner`: `plan(snapshot, execution_sum?) -> Plan`; owns bounded progress history across calls; STOP is a sentinel return literal `"STOP: <reason>"`; model/retries from `config`.
+- `Executor`: stateless `run(plan) -> ExecutionSum`; owns VLA/env execution and no cross-run memory.
 
 ## Setup
 

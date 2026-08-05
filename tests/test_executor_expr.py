@@ -54,7 +54,7 @@ def test_binop_equality() -> None:
     )
 
 
-def test_status_coercion_from_dict() -> None:
+def test_strict_equality_dict_vs_string() -> None:
     ex = build_executor(MockSkill())
     result = ex._eval(
         BinOpExpr(
@@ -64,10 +64,10 @@ def test_status_coercion_from_dict() -> None:
         ),
         {"outcome": {"status": "success"}},
     )
-    assert result is True
+    assert result is False
 
 
-def test_status_coercion_from_json_string() -> None:
+def test_strict_equality_json_string_vs_string() -> None:
     value = _return_value(
         {
             "kind": "binop",
@@ -76,7 +76,21 @@ def test_status_coercion_from_json_string() -> None:
             "right": {"kind": "literal", "value": "success"},
         }
     )
-    assert value is True
+    assert value is False
+
+
+def test_strict_inequality_same_type() -> None:
+    assert (
+        _return_value(
+            {
+                "kind": "binop",
+                "op": "!=",
+                "left": {"kind": "literal", "value": "failed"},
+                "right": {"kind": "literal", "value": "success"},
+            }
+        )
+        is True
+    )
 
 
 def test_binop_and_short_circuit() -> None:

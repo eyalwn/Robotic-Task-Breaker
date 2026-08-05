@@ -1,4 +1,4 @@
-"""Composition root: wires env, planner, executor, and the run loop."""
+"""Wire and run the planner-executor loop for a single LIBERO task."""
 from __future__ import annotations
 
 import logging
@@ -17,11 +17,13 @@ RunStatus = Literal[
 ]
 
 
-def _as_str(value: object | None) -> str:
+def _stringify_optional(value: object | None) -> str:
+    """Convert optional values to logging-safe strings."""
     return "" if value is None else str(value)
 
 
 def _return_indicates_failure(value: str) -> bool:
+    """Detect explicit failure phrasing in a plan return value."""
     return "failed to" in value.lower()
 
 
@@ -51,7 +53,7 @@ class Runner:
         value = ""
         total_steps = 0
         try:
-            status, error, value, total_steps = self._run_loop()
+            status, error, value, total_steps = self._execute_plan_loop()
         except RuntimeError as exc:
             status = "plan_failed"
             error = str(exc)
@@ -60,37 +62,47 @@ class Runner:
             self._log_status(status, success, value, error, total_steps)
             self._env.close()
 
-    def _run_loop(self) -> tuple[RunStatus, str, str, int]:
+    def _execute_plan_loop(self) -> tuple[RunStatus, str, str, int]:
+        """Iterate plan/execute cycles until done, stop, budget, or execution error."""
         total_steps = 0
-        stop = None
+        execution_sum = None
         snapshot = self._env.observe()[0]
         while True:
-            current_plan = self._planner.plan(snapshot, stop)
+            current_plan = self._planner.plan(snapshot, execution_sum)
             if is_a_stop_plan(current_plan):
                 return "stopped", get_stop_reason(current_plan), "", total_steps
 
-            stop = self._executor.run(current_plan)
-            total_steps += stop.steps
+            execution_sum = self._executor.run(current_plan)
+            total_steps += execution_sum.steps
 
-            if stop.reason == StopReason.PLAN_DONE:
-                return "done", "", _as_str(stop.return_value), total_steps
+            if execution_sum.reason == StopReason.PLAN_DONE:
+                return "done", "", _stringify_optional(execution_sum.return_value), total_steps
 
-            if stop.reason == StopReason.STEP_BUDGET:
+            if execution_sum.reason == StopReason.STEP_BUDGET:
                 return "step_budget", "", "", total_steps
 
-            if stop.reason == StopReason.EXECUTION_ERROR:
-                return "execution_error", stop.error or "", "", total_steps
+            if execution_sum.reason == StopReason.EXECUTION_ERROR:
+                return "execution_error", execution_sum.error or "", "", total_steps
 
-            if stop.reason != StopReason.FEEDBACK_POINT:
-                msg = f"unexpected stop reason: {stop.reason.value}"
+            if execution_sum.reason != StopReason.FEEDBACK_POINT:
+                msg = f"unexpected stop reason: {execution_sum.reason.value}"
                 return "execution_error", msg, "", total_steps
 
-            if stop.feedback_description is None or stop.feedback_prompt is None:
-                return "execution_error", "feedback stop missing description or prompt", "", total_steps
+            if (
+                execution_sum.feedback_description is None
+                or execution_sum.feedback_prompt is None
+            ):
+                return (
+                    "execution_error",
+                    "feedback execution summary missing description or prompt",
+                    "",
+                    total_steps,
+                )
 
             snapshot = self._env.observe()[0]
 
     def _verdict(self, status: RunStatus, value: str) -> bool:
+        """Compute final success verdict from status, return value, and env goal check."""
         if status != "done":
             return False
         if _return_indicates_failure(value):
@@ -105,6 +117,7 @@ class Runner:
         error: str,
         total_steps: int,
     ) -> None:
+        """Emit outcome-specific logs and a compact run summary."""
         if success:
             logger.info("Task succeeded: %r", self._goal)
         elif status == "done":

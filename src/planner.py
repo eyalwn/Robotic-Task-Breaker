@@ -12,7 +12,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import ValidationError
 
 import config
-from executor import ExecutionStop, StopReason
+from executor import ExecutionSum, StopReason
 from plan import Plan, validate_plan
 
 logger = logging.getLogger(__name__)
@@ -67,7 +67,7 @@ Respond with ONLY the plan JSON object — no markdown, no code fences, no expla
 
 
 class LLMPlanner:
-    """LLM-backed planner"""
+    """Generate validated plan ASTs from goal, snapshot, and feedback context."""
 
     def __init__(
         self,
@@ -85,18 +85,23 @@ class LLMPlanner:
     def plan(
         self,
         snapshot: bytes,
-        stop: ExecutionStop | None = None,
+        execution_sum: ExecutionSum | None = None,
     ) -> Plan:
-        """Emit a plan AST dict."""
+        """Return a validated ``Plan`` AST."""
         system_prompt = _SYSTEM_TEMPLATE.format(
             catalog=self._catalog, ast_spec=_AST_SPEC
         )
-        if stop is None:
+        if execution_sum is None:
             task_text = f"Goal: {self._goal}\n\n"
         else:
-            if stop.feedback_description is None or stop.feedback_prompt is None:
-                raise ValueError("feedback stop missing description or prompt")
-            self._progress_history.append(_history_line(stop))
+            if (
+                execution_sum.feedback_description is None
+                or execution_sum.feedback_prompt is None
+            ):
+                raise ValueError(
+                    "feedback execution summary missing description or prompt"
+                )
+            self._progress_history.append(_format_progress_history_line(execution_sum))
             if len(self._progress_history) > config.PROGRESS_HISTORY_WINDOW:
                 self._progress_history = self._progress_history[
                     -config.PROGRESS_HISTORY_WINDOW:
@@ -108,12 +113,12 @@ class LLMPlanner:
             task_text = (
                 f"Goal: {self._goal}\n\n"
                 f"{history_block}"
-                f"Feedback checkpoint: {stop.feedback_description}\n"
-                f"{stop.feedback_prompt}\n"
+                f"Feedback checkpoint: {execution_sum.feedback_description}\n"
+                f"{execution_sum.feedback_prompt}\n"
             )
             logger.info(
                 "LLMPlanner: mid-loop replan at feedback checkpoint %r",
-                stop.feedback_description,
+                execution_sum.feedback_description,
             )
 
         image_b64 = base64.b64encode(snapshot).decode("utf-8")
@@ -168,6 +173,7 @@ class LLMPlanner:
 
 
 def _retry_prompt(raw: str, error_msg: str) -> str:
+    """Build a repair prompt after JSON or schema validation failure."""
     return (
         "The plan you emitted is invalid.\n"
         f"Invalid plan JSON:\n{raw}\n\n"
@@ -179,6 +185,7 @@ def _retry_prompt(raw: str, error_msg: str) -> str:
 
 
 def _strip_code_fences(raw: str) -> str:
+    """Remove markdown code fences if the model wrapped the JSON."""
     if raw.startswith("```"):
         raw = re.sub(r"^```[^\n]*\n?", "", raw)
         raw = raw.rstrip("`").strip()
@@ -186,6 +193,7 @@ def _strip_code_fences(raw: str) -> str:
 
 
 def _extract_json_object(raw: str) -> str:
+    """Extract the first balanced JSON object from mixed model output."""
     text = _strip_code_fences(raw.strip())
     if not text:
         return text
@@ -226,11 +234,13 @@ def _extract_json_object(raw: str) -> str:
 
 
 def _model_supports_json_object(model: str) -> bool:
+    """Return whether the model likely supports json_object response mode."""
     name = model.split(":", 1)[-1].lower()
     return name.startswith(("gpt-", "chatgpt-", "o1", "o3"))
 
 
 def _init_planning_llm(model: str):
+    """Initialize chat model and bind json_object mode when supported."""
     logger.info("initiating chat with model: %s", model)
     llm = init_chat_model(model)
     if not _model_supports_json_object(model):
@@ -243,6 +253,7 @@ def _init_planning_llm(model: str):
 
 
 def _shape_goal(goal: str, scene_objects: list[Any] | None) -> str:
+    """Append scene-object constraints to the goal when objects are available."""
     if not scene_objects:
         return goal
     names = ", ".join(str(o) for o in scene_objects)
@@ -253,17 +264,22 @@ def _shape_goal(goal: str, scene_objects: list[Any] | None) -> str:
     )
 
 
-def _history_line(stop: ExecutionStop) -> str:
-    reason = stop.reason.value
-    if stop.reason == StopReason.FEEDBACK_POINT:
-        detail = stop.feedback_description or ""
-    elif stop.reason == StopReason.PLAN_DONE:
-        detail = str(stop.return_value) if stop.return_value is not None else ""
-    elif stop.reason == StopReason.EXECUTION_ERROR:
-        detail = stop.error or ""
+def _format_progress_history_line(execution_sum: ExecutionSum) -> str:
+    """Format one compact progress-history line from an execution summary."""
+    reason = execution_sum.reason.value
+    if execution_sum.reason == StopReason.FEEDBACK_POINT:
+        detail = execution_sum.feedback_description or ""
+    elif execution_sum.reason == StopReason.PLAN_DONE:
+        detail = (
+            str(execution_sum.return_value)
+            if execution_sum.return_value is not None
+            else ""
+        )
+    elif execution_sum.reason == StopReason.EXECUTION_ERROR:
+        detail = execution_sum.error or ""
     else:
         detail = ""
-    return f"{reason}: {detail} | steps={stop.steps}"
+    return f"{reason}: {detail} | steps={execution_sum.steps}"
 
 
 __all__ = [

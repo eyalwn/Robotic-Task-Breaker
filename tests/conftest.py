@@ -64,11 +64,6 @@ def fake_env() -> FakeEnv:
     return FakeEnv()
 
 
-@pytest.fixture
-def fake_vla() -> FakeVLA:
-    return FakeVLA()
-
-
 def build_executor(
     skill: Skill,
     *,
@@ -78,12 +73,9 @@ def build_executor(
 ) -> Executor:
     registry = SkillRegistry()
     registry.register(skill)
-    executor = Executor(
-        registry=registry,
-        env=env or FakeEnv(),
-        vla=vla or FakeVLA(),
-        step_budget=step_budget,
-    )
+    executor = Executor(registry=registry, env=env or FakeEnv())  # type: ignore[arg-type]
+    executor._vla = vla or FakeVLA()
+    executor._step_budget = step_budget
     return executor
 
 

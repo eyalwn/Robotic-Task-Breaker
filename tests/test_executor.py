@@ -11,8 +11,7 @@ from conftest import (
     make_plan,
     run_plan,
 )
-from executor import Executor, StopReason
-from skills import SkillRegistry
+from executor import StopReason
 
 
 def test_seq_executes_in_order() -> None:
@@ -97,14 +96,14 @@ def test_call_assigns_return() -> None:
     assert result.return_value == "result"
 
 
-def test_feedback_returns_stop() -> None:
+def test_feedback_returns_summary() -> None:
     skill = MockSkill("ok")
     executor = build_executor(skill)
     plan = make_plan({"kind": "feedback", "description": "all good"})
     result = run_plan(executor, plan)
     assert result.reason == StopReason.FEEDBACK_POINT
     assert result.feedback_description == "all good"
-    assert result.image_bytes == b"main-image"
+    assert result.feedback_prompt == "all good"
 
 
 def test_feedback_discards_remaining_plan() -> None:
@@ -175,13 +174,7 @@ def test_step_budget() -> None:
 
 def test_feedback_appends_prior_skill_result() -> None:
     skill = MockSkill({"status": "stopped", "grasp_confirmed": False})
-    registry = SkillRegistry()
-    registry.register(skill)
-    executor = Executor(
-        registry=registry,
-        env=FakeEnv(),
-        vla=FakeVLA(),
-    )
+    executor = build_executor(skill)
     plan = make_plan(
         {
             "kind": "seq",
@@ -261,6 +254,6 @@ def test_manipulate_failure_contract() -> None:
     skill = MockSkill("unused")
     executor = build_executor(skill, env=env, vla=vla)
     with patch("config.MAX_SKILL_STEPS", 3):
-        outcome = executor._manipulate("arm.grab", "cube_1")
+        outcome = executor._manipulate("arm.grab", "cube_1", None)
     assert outcome == {"status": "failed", "steps": 3}
     assert len(env.step_calls) == 3

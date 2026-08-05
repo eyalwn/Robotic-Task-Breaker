@@ -5,7 +5,7 @@ import json
 
 import pytest
 
-from executor import ExecutionStop, StopReason
+from executor import ExecutionSum, StopReason
 from planner import LLMPlanner, _extract_json_object, _strip_code_fences
 from plan import get_stop_reason
 
@@ -29,12 +29,12 @@ STOP_PLAN = {
 SNAPSHOT = b"img"
 
 
-def _feedback_stop(
+def _feedback_sum(
     description: str = "check grasp",
     prompt: str | None = None,
     steps: int = 0,
-) -> ExecutionStop:
-    return ExecutionStop(
+) -> ExecutionSum:
+    return ExecutionSum(
         reason=StopReason.FEEDBACK_POINT,
         steps=steps,
         feedback_description=description,
@@ -243,7 +243,7 @@ def test_planner_feedback_multimodal_message(monkeypatch: pytest.MonkeyPatch) ->
     planner = LLMPlanner("goal", "catalog", [])
     result = planner.plan(
         b"img-bytes",
-        _feedback_stop("check grasp", "Is the object grasped?"),
+        _feedback_sum("check grasp", "Is the object grasped?"),
     )
     assert result.goal == "pick the cube"
     human_msg = spy.calls[0][-1]
@@ -268,8 +268,8 @@ def test_planner_init_llm_once(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("planner.init_chat_model", _track_init)
     planner = LLMPlanner("goal", "catalog", [])
     planner.plan(SNAPSHOT)
-    planner.plan(SNAPSHOT, _feedback_stop("step 1"))
-    planner.plan(SNAPSHOT, _feedback_stop("step 2"))
+    planner.plan(SNAPSHOT, _feedback_sum("step 1"))
+    planner.plan(SNAPSHOT, _feedback_sum("step 2"))
     assert init_calls == 1
 
 
@@ -282,7 +282,7 @@ def test_planner_progress_history_bounded(monkeypatch: pytest.MonkeyPatch) -> No
     for i in range(4):
         planner.plan(
             SNAPSHOT,
-            _feedback_stop(f"checkpoint {i}", steps=i),
+            _feedback_sum(f"checkpoint {i}", steps=i),
         )
     text_part = spy.calls[3][-1].content[0]
     history_text = text_part["text"]
@@ -303,8 +303,8 @@ def test_planner_keeps_progress_history_across_calls(
     )
     monkeypatch.setattr("planner.init_chat_model", lambda _model: spy)
     planner = LLMPlanner("goal", "catalog", [])
-    planner.plan(b"img", _feedback_stop("prior step", steps=1))
-    planner.plan(b"img-bytes", _feedback_stop("check grasp", "Is the object grasped?"))
+    planner.plan(b"img", _feedback_sum("prior step", steps=1))
+    planner.plan(b"img-bytes", _feedback_sum("check grasp", "Is the object grasped?"))
     text_part = spy.calls[1][-1].content[0]
     assert "Progress so far:" in text_part["text"]
     assert "feedback_point: prior step" in text_part["text"]
@@ -316,9 +316,9 @@ def test_planner_feedback_missing_description_raises(
 ) -> None:
     monkeypatch.setattr("planner.init_chat_model", lambda _model: _mock_llm(VALID_PLAN))
     planner = LLMPlanner("goal", "catalog", [])
-    stop = ExecutionStop(reason=StopReason.FEEDBACK_POINT, steps=0)
-    with pytest.raises(ValueError, match="feedback stop missing"):
-        planner.plan(SNAPSHOT, stop)
+    execution_sum = ExecutionSum(reason=StopReason.FEEDBACK_POINT, steps=0)
+    with pytest.raises(ValueError, match="feedback execution summary missing"):
+        planner.plan(SNAPSHOT, execution_sum)
 
 
 def test_planner_stop_sentinel_on_feedback(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -327,7 +327,7 @@ def test_planner_stop_sentinel_on_feedback(monkeypatch: pytest.MonkeyPatch) -> N
         lambda _model: _LLM([_Response(json.dumps(STOP_PLAN))]),
     )
     planner = LLMPlanner("goal", "catalog", [])
-    result = planner.plan(b"img", _feedback_stop("done?", "done?"))
+    result = planner.plan(b"img", _feedback_sum("done?", "done?"))
     assert get_stop_reason(result) == "goal achieved"
 
 
@@ -344,5 +344,5 @@ def test_planner_stop_sentinel_on_initial_call(monkeypatch: pytest.MonkeyPatch) 
 def test_planner_feedback_returns_valid_plan(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("planner.init_chat_model", lambda _model: _mock_llm(VALID_PLAN))
     planner = LLMPlanner("goal", "catalog", [])
-    result = planner.plan(b"img", _feedback_stop("grasp failed"))
+    result = planner.plan(b"img", _feedback_sum("grasp failed"))
     assert result.goal == "pick the cube"
