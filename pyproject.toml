@@ -16,5 +16,5 @@ py-modules = ["utils", "config", "libero_env", "vla_client", "plan", "skills", "
 [tool.pytest.ini_options]
 pythonpath = ["src"]
 markers = [
-    "integration: live-server tests (run with pytest -m integration)",
+    "integration: live-server and live planner LLM tests (run with pytest -m integration)",
 ]

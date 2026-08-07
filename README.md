@@ -118,5 +118,18 @@ pytest
 
 Unit tests are hermetic: no live sim, no network. They cover the plan AST,
 executor (control flow + expression eval), VLA client wire contract, and
-planner JSON extraction/retry. `pytest -m integration` stays reserved for a
-live policy service.
+planner JSON extraction/retry.
+
+Opt-in live planner check (non-hermetic, billed OpenAI calls; Windows-ok; no
+LIBERO). Needs `OPENAI_API_KEY` in `.env` / environment:
+
+```bash
+pytest -m integration tests/test_planner_live_llm.py -q
+```
+
+Before running, download a real LIBERO task-start snapshot and place it at:
+`tests/fixtures/libero_object_task0_start.jpg`.
+
+The test forces `MAX_PLAN_RETRIES=1` across a few independent `plan()` calls.
+It skips unless you run with `-m integration`, set the API key, and provide the
+snapshot file.
