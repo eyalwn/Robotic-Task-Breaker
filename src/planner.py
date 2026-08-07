@@ -12,7 +12,7 @@ from langchain_core.messages import HumanMessage, SystemMessage
 from pydantic import ValidationError
 
 import config
-from executor import ExecutionSum, StopReason
+from executor import ExecutionSum
 from plan import Plan, validate_plan
 
 logger = logging.getLogger(__name__)
@@ -24,7 +24,6 @@ PLAN AST (JSON):
 Statements:
   seq:      {"kind":"seq", "steps":[<stmt>,...]}
   call:     {"kind":"call", "skill":"<name>", "args":{...}}
-  feedback: {"kind":"feedback", "description":"<str>"}
   return:   {"kind":"return", "value":<expr>?}
 
 Args/values use {"kind":"literal","value":...} or {"kind":"var","name":"..."}.
@@ -32,14 +31,13 @@ Optional advanced: if/while are allowed.
 
 Rules:
 - Only call skills from the catalog.
-- Use exact object names from the goal/scene context.
-- Insert feedback after major actions (grab, place).
+- Name objects from the scene snapshot and natural-language goal, not sim ground-truth IDs.
 - Emit valid JSON.
 
 Example:
 {"goal":"grab cube","body":{"kind":"seq","steps":[
   {"kind":"call","skill":"arm.grab","args":{"object_name":{"kind":"literal","value":"cube"}}},
-  {"kind":"feedback","description":"Is the cube grasped?"}
+  {"kind":"call","skill":"arm.place","args":{"object_name":{"kind":"literal","value":"cube"},"location":{"kind":"literal","value":"basket"}}}
 ]}}\
 """
 
@@ -52,34 +50,26 @@ SKILL CATALOG:
 
 {ast_spec}
 
-Use the scene snapshot as the initial world state when choosing objects,
-ordering actions, and feedback checkpoints.
+Use the scene snapshot as the initial world state when choosing objects and
+ordering actions.
 
-When replanning from a feedback checkpoint, review progress history and the
-scene snapshot. Do not repeat failed approaches. If the goal is achieved,
-irrecoverable, or no progress after repeated attempts, respond with a sentinel
-STOP plan instead of an executable plan:
+If the goal is achieved, irrecoverable, or cannot be attempted, respond with a
+sentinel STOP plan instead of an executable plan:
 {{"goal":"<same goal>","body":{{"kind":"return","value":{{"kind":"literal","value":"STOP: <reason>"}}}}}}
-Otherwise emit a fresh plan for the goal.
+Otherwise emit a plan that achieves the goal.
 
 Respond with ONLY the plan JSON object — no markdown, no code fences, no explanation.\
 """
 
 
 class LLMPlanner:
-    """Generate validated plan ASTs from goal, snapshot, and feedback context."""
+    """Generate validated plan ASTs from a goal and RGB snapshot."""
 
-    def __init__(
-        self,
-        goal: str,
-        catalog: str,
-        scene_objects: list[Any],
-    ) -> None:
-        self._goal = _shape_goal(goal, scene_objects)
+    def __init__(self, goal: str, catalog: str) -> None:
+        self._goal = goal
         self._catalog = catalog
         self._model_name = config.LLM_MODEL
         self._max_plan_retries = config.MAX_PLAN_RETRIES
-        self._progress_history: list[str] = []
         self._llm = _init_planning_llm(self._model_name)
 
     def plan(
@@ -88,38 +78,12 @@ class LLMPlanner:
         execution_sum: ExecutionSum | None = None,
     ) -> Plan:
         """Return a validated ``Plan`` AST."""
+        if execution_sum is not None:
+            raise ValueError("replanning is not supported; pass execution_sum=None")
         system_prompt = _SYSTEM_TEMPLATE.format(
             catalog=self._catalog, ast_spec=_AST_SPEC
         )
-        if execution_sum is None:
-            task_text = f"Goal: {self._goal}\n\n"
-        else:
-            if (
-                execution_sum.feedback_description is None
-                or execution_sum.feedback_prompt is None
-            ):
-                raise ValueError(
-                    "feedback execution summary missing description or prompt"
-                )
-            self._progress_history.append(_format_progress_history_line(execution_sum))
-            if len(self._progress_history) > config.PROGRESS_HISTORY_WINDOW:
-                self._progress_history = self._progress_history[
-                    -config.PROGRESS_HISTORY_WINDOW:
-                ]
-            history_block = ""
-            if self._progress_history:
-                lines = "\n".join(f"- {line}" for line in self._progress_history)
-                history_block = f"Progress so far:\n{lines}\n\n"
-            task_text = (
-                f"Goal: {self._goal}\n\n"
-                f"{history_block}"
-                f"Feedback checkpoint: {execution_sum.feedback_description}\n"
-                f"{execution_sum.feedback_prompt}\n"
-            )
-            logger.info(
-                "LLMPlanner: mid-loop replan at feedback checkpoint %r",
-                execution_sum.feedback_description,
-            )
+        task_text = f"Goal: {self._goal}\n\n"
 
         image_b64 = base64.b64encode(snapshot).decode("utf-8")
         task_prompt: list[Any] = [
@@ -250,36 +214,6 @@ def _init_planning_llm(model: str):
     except (TypeError, ValueError, NotImplementedError) as exc:
         logger.debug("LLMPlanner: json_object mode unavailable for %r: %s", model, exc)
         return llm
-
-
-def _shape_goal(goal: str, scene_objects: list[Any] | None) -> str:
-    """Append scene-object constraints to the goal when objects are available."""
-    if not scene_objects:
-        return goal
-    names = ", ".join(str(o) for o in scene_objects)
-    return (
-        goal
-        + "\n\nAvailable scene objects (use these exact names in all skill args): "
-        + names
-    )
-
-
-def _format_progress_history_line(execution_sum: ExecutionSum) -> str:
-    """Format one compact progress-history line from an execution summary."""
-    reason = execution_sum.reason.value
-    if execution_sum.reason == StopReason.FEEDBACK_POINT:
-        detail = execution_sum.feedback_description or ""
-    elif execution_sum.reason == StopReason.PLAN_DONE:
-        detail = (
-            str(execution_sum.return_value)
-            if execution_sum.return_value is not None
-            else ""
-        )
-    elif execution_sum.reason == StopReason.EXECUTION_ERROR:
-        detail = execution_sum.error or ""
-    else:
-        detail = ""
-    return f"{reason}: {detail} | steps={execution_sum.steps}"
 
 
 __all__ = [

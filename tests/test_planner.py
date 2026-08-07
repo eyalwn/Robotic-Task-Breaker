@@ -119,7 +119,7 @@ def test_extract_json_object_brace_balanced_with_string_braces() -> None:
 
 def test_planner_success(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("planner.init_chat_model", lambda _model: _mock_llm(VALID_PLAN))
-    planner = LLMPlanner("pick cube", "catalog", [])
+    planner = LLMPlanner("pick cube", "catalog")
     result = planner.plan(SNAPSHOT)
     assert result.goal == "pick the cube"
 
@@ -131,7 +131,7 @@ def test_planner_retry_on_invalid(monkeypatch: pytest.MonkeyPatch) -> None:
     ]
     monkeypatch.setattr("planner.init_chat_model", lambda _model: _LLM(responses))
     monkeypatch.setattr("planner.config.MAX_PLAN_RETRIES", 2)
-    planner = LLMPlanner("pick cube", "catalog", [])
+    planner = LLMPlanner("pick cube", "catalog")
     result = planner.plan(SNAPSHOT)
     assert result.goal == "pick the cube"
 
@@ -149,7 +149,7 @@ def test_planner_retry_prompt_content(monkeypatch: pytest.MonkeyPatch) -> None:
     )
     monkeypatch.setattr("planner.init_chat_model", lambda _model: spy)
     monkeypatch.setattr("planner.config.MAX_PLAN_RETRIES", 2)
-    planner = LLMPlanner("pick cube", "catalog", [])
+    planner = LLMPlanner("pick cube", "catalog")
     result = planner.plan(SNAPSHOT)
     assert result.goal == "pick the cube"
     assert len(spy.calls) == 2
@@ -161,7 +161,7 @@ def test_planner_exhausts_retries(monkeypatch: pytest.MonkeyPatch) -> None:
     responses = [_Response("{bad"), _Response("{bad")]
     monkeypatch.setattr("planner.init_chat_model", lambda _model: _LLM(responses))
     monkeypatch.setattr("planner.config.MAX_PLAN_RETRIES", 1)
-    planner = LLMPlanner("pick cube", "catalog", [])
+    planner = LLMPlanner("pick cube", "catalog")
     with pytest.raises(RuntimeError, match="plan validation failed"):
         planner.plan(SNAPSHOT)
 
@@ -172,33 +172,19 @@ def test_planner_strips_markdown_fences(monkeypatch: pytest.MonkeyPatch) -> None
         "planner.init_chat_model",
         lambda _model: _LLM([_Response(fenced)]),
     )
-    planner = LLMPlanner("pick cube", "catalog", [])
+    planner = LLMPlanner("pick cube", "catalog")
     result = planner.plan(SNAPSHOT)
     assert result.goal == "pick the cube"
 
 
-def test_planner_shape_goal_with_scene_objects(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_planner_goal_used_as_is(monkeypatch: pytest.MonkeyPatch) -> None:
     spy = _SpyLLM([_Response(json.dumps(VALID_PLAN))])
     monkeypatch.setattr("planner.init_chat_model", lambda _model: spy)
-    planner = LLMPlanner(
-        "put items in basket",
-        "catalog",
-        ["alphabet_soup_1", "cream_cheese_1"],
-    )
+    planner = LLMPlanner("put items in basket", "catalog")
     planner.plan(SNAPSHOT)
     human_text = _human_text(spy.calls[0][-1].content)
-    assert "put items in basket" in human_text
-    assert "alphabet_soup_1" in human_text
-    assert "Available scene objects" in human_text
-
-
-def test_planner_shape_goal_without_scene_objects(monkeypatch: pytest.MonkeyPatch) -> None:
-    spy = _SpyLLM([_Response(json.dumps(VALID_PLAN))])
-    monkeypatch.setattr("planner.init_chat_model", lambda _model: spy)
-    planner = LLMPlanner("pick cube", "catalog", [])
-    planner.plan(SNAPSHOT)
-    human_text = _human_text(spy.calls[0][-1].content)
-    assert human_text == "Goal: pick cube\n\n"
+    assert human_text == "Goal: put items in basket\n\n"
+    assert "Available scene objects" not in human_text
 
 
 def test_planner_system_prompt_is_ultra_minimal(
@@ -207,26 +193,28 @@ def test_planner_system_prompt_is_ultra_minimal(
     spy = _SpyLLM([_Response(json.dumps(VALID_PLAN))])
     monkeypatch.setattr("planner.init_chat_model", lambda _model: spy)
     catalog = "arm.grab(object_name)\narm.place(object_name, location)"
-    planner = LLMPlanner("pick cube", catalog, [])
+    planner = LLMPlanner("pick cube", catalog)
     planner.plan(SNAPSHOT)
     system_content = spy.calls[0][0].content
     assert "You are a robot task planner" in system_content
     assert catalog in system_content
     assert "Respond with ONLY the plan JSON object" in system_content
-    for shape in ('"kind":"seq"', '"kind":"call"', '"kind":"feedback"', '"kind":"return"'):
+    for shape in ('"kind":"seq"', '"kind":"call"', '"kind":"return"'):
         assert shape in system_content
+    assert '"kind":"feedback"' not in system_content
     assert '"kind":"literal"' in system_content
     assert '"kind":"var"' in system_content
     assert "Optional advanced: if/while are allowed." in system_content
     assert system_content.count("Example:") == 1
     assert "Only call skills from the catalog." in system_content
-    assert "Use exact object names" in system_content
-    assert "Insert feedback after major actions" in system_content
+    assert "Name objects from the scene snapshot" in system_content
+    assert "Insert feedback" not in system_content
     assert "Emit valid JSON." in system_content
     assert "Use the scene snapshot as the initial world state" in system_content
-    assert "Do not repeat failed approaches" in system_content
+    assert "replanning" not in system_content.lower()
+    assert "feedback checkpoint" not in system_content.lower()
     assert '"STOP: <reason>"' in system_content
-    assert "Otherwise emit a fresh plan for the goal." in system_content
+    assert "Otherwise emit a plan that achieves the goal." in system_content
     assert "then_branch" not in system_content
     assert "max_iterations" not in system_content
     assert '"kind":"binop"' not in system_content
@@ -237,24 +225,11 @@ def test_planner_system_prompt_is_ultra_minimal(
     assert "state.list_objects" not in system_content
 
 
-def test_planner_feedback_multimodal_message(monkeypatch: pytest.MonkeyPatch) -> None:
-    spy = _SpyLLM([_Response(json.dumps(VALID_PLAN))])
-    monkeypatch.setattr("planner.init_chat_model", lambda _model: spy)
-    planner = LLMPlanner("goal", "catalog", [])
-    result = planner.plan(
-        b"img-bytes",
-        _feedback_sum("check grasp", "Is the object grasped?"),
-    )
-    assert result.goal == "pick the cube"
-    human_msg = spy.calls[0][-1]
-    assert isinstance(human_msg.content, list)
-    text_part = human_msg.content[0]
-    assert text_part["type"] == "text"
-    assert "check grasp" in text_part["text"]
-    assert "Is the object grasped?" in text_part["text"]
-    image_part = human_msg.content[1]
-    assert image_part["type"] == "image_url"
-    assert "base64," in image_part["image_url"]["url"]
+def test_planner_replanning_not_supported(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("planner.init_chat_model", lambda _model: _mock_llm(VALID_PLAN))
+    planner = LLMPlanner("goal", "catalog")
+    with pytest.raises(ValueError, match="replanning is not supported"):
+        planner.plan(SNAPSHOT, _feedback_sum("checkpoint"))
 
 
 def test_planner_init_llm_once(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -266,69 +241,10 @@ def test_planner_init_llm_once(monkeypatch: pytest.MonkeyPatch) -> None:
         return _mock_llm(VALID_PLAN)
 
     monkeypatch.setattr("planner.init_chat_model", _track_init)
-    planner = LLMPlanner("goal", "catalog", [])
+    planner = LLMPlanner("goal", "catalog")
     planner.plan(SNAPSHOT)
-    planner.plan(SNAPSHOT, _feedback_sum("step 1"))
-    planner.plan(SNAPSHOT, _feedback_sum("step 2"))
+    planner.plan(SNAPSHOT)
     assert init_calls == 1
-
-
-def test_planner_progress_history_bounded(monkeypatch: pytest.MonkeyPatch) -> None:
-    spy = _SpyLLM(
-        [_Response(json.dumps(VALID_PLAN)) for _ in range(5)]
-    )
-    monkeypatch.setattr("planner.init_chat_model", lambda _model: spy)
-    planner = LLMPlanner("goal", "catalog", [])
-    for i in range(4):
-        planner.plan(
-            SNAPSHOT,
-            _feedback_sum(f"checkpoint {i}", steps=i),
-        )
-    text_part = spy.calls[3][-1].content[0]
-    history_text = text_part["text"]
-    assert "checkpoint 0" not in history_text
-    assert "checkpoint 1" in history_text
-    assert "checkpoint 2" in history_text
-    assert "checkpoint 3" in history_text
-
-
-def test_planner_keeps_progress_history_across_calls(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    spy = _SpyLLM(
-        [
-            _Response(json.dumps(VALID_PLAN)),
-            _Response(json.dumps(VALID_PLAN)),
-        ]
-    )
-    monkeypatch.setattr("planner.init_chat_model", lambda _model: spy)
-    planner = LLMPlanner("goal", "catalog", [])
-    planner.plan(b"img", _feedback_sum("prior step", steps=1))
-    planner.plan(b"img-bytes", _feedback_sum("check grasp", "Is the object grasped?"))
-    text_part = spy.calls[1][-1].content[0]
-    assert "Progress so far:" in text_part["text"]
-    assert "feedback_point: prior step" in text_part["text"]
-    assert "feedback_point: check grasp" in text_part["text"]
-
-
-def test_planner_feedback_missing_description_raises(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr("planner.init_chat_model", lambda _model: _mock_llm(VALID_PLAN))
-    planner = LLMPlanner("goal", "catalog", [])
-    execution_sum = ExecutionSum(reason=StopReason.FEEDBACK_POINT, steps=0)
-    with pytest.raises(ValueError, match="feedback execution summary missing"):
-        planner.plan(SNAPSHOT, execution_sum)
-
-
-def test_planner_stop_sentinel_on_feedback(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(
-        "planner.init_chat_model",
-        lambda _model: _LLM([_Response(json.dumps(STOP_PLAN))]),
-    )
-    planner = LLMPlanner("goal", "catalog", [])
-    result = planner.plan(b"img", _feedback_sum("done?", "done?"))
-    assert get_stop_reason(result) == "goal achieved"
 
 
 def test_planner_stop_sentinel_on_initial_call(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -336,13 +252,6 @@ def test_planner_stop_sentinel_on_initial_call(monkeypatch: pytest.MonkeyPatch) 
         "planner.init_chat_model",
         lambda _model: _LLM([_Response(json.dumps(STOP_PLAN))]),
     )
-    planner = LLMPlanner("goal", "catalog", [])
+    planner = LLMPlanner("goal", "catalog")
     result = planner.plan(SNAPSHOT)
     assert get_stop_reason(result) == "goal achieved"
-
-
-def test_planner_feedback_returns_valid_plan(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("planner.init_chat_model", lambda _model: _mock_llm(VALID_PLAN))
-    planner = LLMPlanner("goal", "catalog", [])
-    result = planner.plan(b"img", _feedback_sum("grasp failed"))
-    assert result.goal == "pick the cube"

@@ -154,22 +154,29 @@ def test_return_node() -> None:
     assert result.return_value == 42
 
 
-def test_step_budget() -> None:
-    skill = MockSkill("ok")
-    executor = build_executor(skill, step_budget=2)
+def test_step_budget_from_env_steps() -> None:
+    """Episode budget exhaustion stops execution when env steps are consumed."""
+    env = FakeEnv(succeed_after=None, max_steps=2)
+    vla = FakeVLA(actions=[[0.0] * 7])
+    skill = MockSkill("unused")
+    executor = build_executor(skill, env=env, vla=vla)
     plan = make_plan(
         {
             "kind": "seq",
             "steps": [
-                {"kind": "call", "skill": "mock.skill"},
-                {"kind": "call", "skill": "mock.skill"},
+                {
+                    "kind": "call",
+                    "skill": "arm.grab",
+                    "args": {"object_name": {"kind": "literal", "value": "cube_1"}},
+                },
                 {"kind": "call", "skill": "mock.skill"},
             ],
         }
     )
     result = run_plan(executor, plan)
     assert result.reason == StopReason.STEP_BUDGET
-    assert len(skill.calls) == 2
+    assert len(env.step_calls) == 2
+    assert len(skill.calls) == 0
 
 
 def test_feedback_appends_prior_skill_result() -> None:
@@ -248,12 +255,23 @@ def test_arm_place_task_string() -> None:
     assert vla.calls[0][3] == "put the cream cheese in the basket"
 
 
-def test_manipulate_failure_contract() -> None:
+def test_arm_skill_attempt_contract() -> None:
+    """Arm skills return attempt-only payload, never status=failed from BDDL."""
     env = FakeEnv(succeed_after=None)
     vla = FakeVLA(actions=[[0.0] * 7])
     skill = MockSkill("unused")
     executor = build_executor(skill, env=env, vla=vla)
     with patch("config.MAX_SKILL_STEPS", 3):
-        outcome = executor._manipulate("arm.grab", "cube_1", None)
-    assert outcome == {"status": "failed", "steps": 3}
+        outcome = executor._run_arm_skill("arm.grab", "cube_1", None)
+    assert outcome == {"status": "attempted", "env_steps": 3, "task_success": False}
     assert len(env.step_calls) == 3
+
+
+def test_arm_skill_attempt_when_task_already_solved() -> None:
+    env = FakeEnv(succeed_after=0)
+    vla = FakeVLA()
+    skill = MockSkill("unused")
+    executor = build_executor(skill, env=env, vla=vla)
+    outcome = executor._run_arm_skill("arm.grab", "cube_1", None)
+    assert outcome == {"status": "attempted", "env_steps": 0, "task_success": True}
+    assert vla.calls == []

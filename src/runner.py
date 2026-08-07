@@ -1,4 +1,4 @@
-"""Wire and run the planner-executor loop for a single LIBERO task."""
+"""Wire and run single-pass planner-executor for one LIBERO task."""
 from __future__ import annotations
 
 import logging
@@ -8,7 +8,7 @@ from executor import Executor, StopReason
 from libero_env import LiberoEnv
 from plan import get_stop_reason, is_a_stop_plan
 from planner import LLMPlanner
-from skills import SkillRegistry, arm_skill_catalog, register_libero_skills
+from skills import SkillRegistry, arm_skill_catalog
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,7 @@ def _return_indicates_failure(value: str) -> bool:
 
 
 class Runner:
-    """Orchestrates plan → execute → plan feedback cycles until done or stopped."""
+    """Orchestrates a single observe → plan → execute pass for one LIBERO task."""
 
     def __init__(self, goal: str, task_suite: str, task_idx: int) -> None:
         """Wire env, skills, planner, and executor for one LIBERO task."""
@@ -36,11 +36,8 @@ class Runner:
         self._env = LiberoEnv(task_suite, task_idx)
         try:
             self._skills = SkillRegistry()
-            register_libero_skills(self._skills, self._env)
-            scene_objects = self._skills.get("state.list_objects")()
-            logger.info("Scene objects: %s", scene_objects)
-            skills_catalog = self._skills.render_catalog() + "\n" + arm_skill_catalog()
-            self._planner = LLMPlanner(goal, skills_catalog, scene_objects)
+            skills_catalog = arm_skill_catalog()
+            self._planner = LLMPlanner(goal, skills_catalog)
             self._executor = Executor(self._skills, env=self._env)
         except Exception:
             self._env.close()
@@ -53,7 +50,7 @@ class Runner:
         value = ""
         total_steps = 0
         try:
-            status, error, value, total_steps = self._execute_plan_loop()
+            status, error, value, total_steps = self._execute_once()
         except RuntimeError as exc:
             status = "plan_failed"
             error = str(exc)
@@ -62,44 +59,46 @@ class Runner:
             self._log_status(status, success, value, error, total_steps)
             self._env.close()
 
-    def _execute_plan_loop(self) -> tuple[RunStatus, str, str, int]:
-        """Iterate plan/execute cycles until done, stop, budget, or execution error."""
-        total_steps = 0
-        execution_sum = None
+    def _execute_once(self) -> tuple[RunStatus, str, str, int]:
+        """Observe once, plan once, and execute the plan."""
+        if self._env.steps >= self._env.max_steps:
+            return "step_budget", "episode step budget exhausted before plan", "", 0
+
         snapshot = self._env.observe()[0]
-        while True:
-            current_plan = self._planner.plan(snapshot, execution_sum)
-            if is_a_stop_plan(current_plan):
-                return "stopped", get_stop_reason(current_plan), "", total_steps
+        current_plan = self._planner.plan(snapshot, None)
+        if is_a_stop_plan(current_plan):
+            return "stopped", get_stop_reason(current_plan), "", 0
 
-            execution_sum = self._executor.run(current_plan)
-            total_steps += execution_sum.steps
+        execution_sum = self._executor.run(current_plan)
+        total_steps = execution_sum.steps
 
-            if execution_sum.reason == StopReason.PLAN_DONE:
-                return "done", "", _stringify_optional(execution_sum.return_value), total_steps
+        if self._env.steps >= self._env.max_steps:
+            return "step_budget", "episode step budget exhausted", "", total_steps
 
-            if execution_sum.reason == StopReason.STEP_BUDGET:
-                return "step_budget", "", "", total_steps
+        if execution_sum.reason == StopReason.PLAN_DONE:
+            return (
+                "done",
+                "",
+                _stringify_optional(execution_sum.return_value),
+                total_steps,
+            )
 
-            if execution_sum.reason == StopReason.EXECUTION_ERROR:
-                return "execution_error", execution_sum.error or "", "", total_steps
+        if execution_sum.reason == StopReason.STEP_BUDGET:
+            return "step_budget", "executor step budget exceeded", "", total_steps
 
-            if execution_sum.reason != StopReason.FEEDBACK_POINT:
-                msg = f"unexpected stop reason: {execution_sum.reason.value}"
-                return "execution_error", msg, "", total_steps
+        if execution_sum.reason == StopReason.EXECUTION_ERROR:
+            return "execution_error", execution_sum.error or "", "", total_steps
 
-            if (
-                execution_sum.feedback_description is None
-                or execution_sum.feedback_prompt is None
-            ):
-                return (
-                    "execution_error",
-                    "feedback execution summary missing description or prompt",
-                    "",
-                    total_steps,
-                )
+        if execution_sum.reason == StopReason.FEEDBACK_POINT:
+            return (
+                "execution_error",
+                "plan hit feedback checkpoint (unsupported in single-pass mode)",
+                "",
+                total_steps,
+            )
 
-            snapshot = self._env.observe()[0]
+        msg = f"unexpected stop reason: {execution_sum.reason.value}"
+        return "execution_error", msg, "", total_steps
 
     def _verdict(self, status: RunStatus, value: str) -> bool:
         """Compute final success verdict from status, return value, and env goal check."""
@@ -132,11 +131,12 @@ class Runner:
                     self._goal,
                 )
         elif status == "plan_failed":
-            logger.info("Task failed: %r (planner error during replan)", self._goal)
+            logger.info("Task failed: %r (planner error)", self._goal)
         elif status == "stopped":
             logger.info("Task stopped: %r (%s)", self._goal, error)
         elif status == "step_budget":
-            logger.info("Task failed: %r (executor step budget exceeded)", self._goal)
+            detail = error or "episode step budget exceeded"
+            logger.info("Task failed: %r (%s)", self._goal, detail)
         else:
             logger.info("Task failed: %r (status=%s)", self._goal, status)
 

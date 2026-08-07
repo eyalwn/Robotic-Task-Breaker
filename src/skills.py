@@ -1,39 +1,24 @@
-"""Skill registry and LIBERO state/perception skills for plan execution."""
+"""Skill registry and arm-skill catalog for plan execution."""
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
 from typing import Any
 
-from libero_env import LiberoEnv
 
-
-@dataclass
-class Pose:
-    """3-D position in world coordinates."""
-
-    x: float
-    y: float
-    z: float
-
-
-@dataclass
-class DetectedObject:
-    """Named object with pose and detection confidence."""
-
-    name: str
-    pose: Pose
-    confidence: float = 1.0
-
-
-@dataclass
 class SkillParam:
     """Catalog metadata for one skill parameter."""
 
-    name: str
-    type_hint: str
-    description: str
-    required: bool = True
+    def __init__(
+        self,
+        name: str,
+        type_hint: str,
+        description: str,
+        required: bool = True,
+    ) -> None:
+        self.name = name
+        self.type_hint = type_hint
+        self.description = description
+        self.required = required
 
 
 class Skill(ABC):
@@ -93,72 +78,13 @@ class SkillRegistry:
         return "\n".join(lines)
 
 
-class ListObjectsSkill(Skill):
-    name = "state.list_objects"
-    description = "Return the names of manipulable objects in the current LIBERO scene."
-    parameters: list[SkillParam] = []
-    returns = "list[str]: object names"
-
-    def __init__(self, env: LiberoEnv) -> None:
-        self._env = env
-
-    def __call__(self, **kwargs: Any) -> list[str]:
-        return self._env.object_names()
-
-
-class DetectSkill(Skill):
-    name = "perception.detect"
-    description = "Detect a named object in the LIBERO scene and return its pose."
-    parameters = [
-        SkillParam("object_name", "str", "Name of the object to detect"),
-    ]
-    returns = "DetectedObject | None"
-
-    def __init__(self, env: LiberoEnv) -> None:
-        self._env = env
-
-    def __call__(self, **kwargs: Any) -> DetectedObject | None:
-        object_name = str(kwargs.get("object_name", ""))
-        xyz = self._env.body_position(object_name)
-        if xyz is None:
-            return None
-        return DetectedObject(
-            name=object_name,
-            pose=Pose(x=xyz[0], y=xyz[1], z=xyz[2]),
-        )
-
-
-class LocateSkill(Skill):
-    name = "perception.locate"
-    description = "Return the 3-D position of a named object in the LIBERO scene."
-    parameters = [
-        SkillParam("object_name", "str", "Name of the object to locate"),
-    ]
-    returns = "Pose | None"
-
-    def __init__(self, env: LiberoEnv) -> None:
-        self._detect = DetectSkill(env)
-
-    def __call__(self, **kwargs: Any) -> Pose | None:
-        result = self._detect(object_name=kwargs.get("object_name", ""))
-        return result.pose if result is not None else None
-
-
-def register_libero_skills(registry: SkillRegistry, env: LiberoEnv) -> None:
-    """Register LIBERO state and perception skills bound to ``env``."""
-    registry.register(ListObjectsSkill(env))
-    registry.register_alias("list_objects", "state.list_objects")
-    registry.register(DetectSkill(env))
-    registry.register(LocateSkill(env))
-
-
 _ARM_CATALOG = """\
   arm.grab(object_name: str) -> dict
     Pick up a named object using the VLA manipulation policy.
-    :param object_name: BDDL object id (e.g. alphabet_soup_1)
+    :param object_name: Object name from the scene snapshot or goal (e.g. alphabet soup)
   arm.place(object_name: str, location: str) -> dict
     Place a named object at a location using the VLA manipulation policy.
-    :param object_name: BDDL object id (e.g. alphabet_soup_1)
+    :param object_name: Object name from the scene snapshot or goal
     :param location: Target location name (e.g. basket)"""
 
 

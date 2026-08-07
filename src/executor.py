@@ -46,7 +46,7 @@ class ReturnSignal(Exception):
 
 
 class StepBudgetExceeded(Exception):
-    """Raised when the step budget is exhausted."""
+    """Raised when the episode step budget is exhausted."""
 
 
 class FeedbackPause(Exception):
@@ -65,45 +65,53 @@ class Executor:
         self._registry = registry
         self._env = env
         self._vla = VLAClient()
-        self._step_budget = config.STEP_BUDGET
 
     def run(self, plan: plan_ast.Plan) -> ExecutionSum:
         """Execute plan from scratch until feedback, done, budget, or error."""
         ctx: dict[str, object] = {}
-        self._run_steps = 0
+        steps_at_start = self._env.steps
         self._last_skill_result: str | None = None
         try:
             self._execute_stmt(plan.body, ctx)
             return ExecutionSum(
                 reason=StopReason.PLAN_DONE,
-                steps=self._run_steps,
+                steps=self._env.steps - steps_at_start,
                 return_value=None,
             )
         except ReturnSignal as sig:
             return ExecutionSum(
                 reason=StopReason.PLAN_DONE,
-                steps=self._run_steps,
+                steps=self._env.steps - steps_at_start,
                 return_value=sig.value,
             )
         except FeedbackPause as pause:
             return ExecutionSum(
                 reason=StopReason.FEEDBACK_POINT,
-                steps=self._run_steps,
+                steps=self._env.steps - steps_at_start,
                 feedback_description=pause.description,
                 feedback_prompt=pause.prompt,
             )
         except StepBudgetExceeded:
             return ExecutionSum(
                 reason=StopReason.STEP_BUDGET,
-                steps=self._run_steps,
+                steps=self._env.steps - steps_at_start,
             )
         except Exception as exc:
             logger.exception("Executor execution error")
             return ExecutionSum(
                 reason=StopReason.EXECUTION_ERROR,
-                steps=self._run_steps,
+                steps=self._env.steps - steps_at_start,
                 error=str(exc),
             )
+
+    def _episode_budget_remaining(self) -> int:
+        """Return how many env steps remain before the episode cap."""
+        return self._env.max_steps - self._env.steps
+
+    def _check_episode_budget(self) -> None:
+        """Raise if the episode step budget is already exhausted."""
+        if self._episode_budget_remaining() <= 0:
+            raise StepBudgetExceeded()
 
     def _run_arm_skill(
         self,
@@ -111,7 +119,7 @@ class Executor:
         object_name: str,
         location: str | None,
     ) -> dict[str, object]:
-        """Run a low-level arm skill by querying VLA chunks until success or timeout."""
+        """Run a low-level arm skill by querying VLA chunks until budget or cap."""
         cleaned = re.sub(r"_\d+$", "", object_name).replace("_", " ")
         if skill == "arm.grab":
             task = f"pick up the {cleaned}"
@@ -120,19 +128,37 @@ class Executor:
         else:
             raise ValueError(f"unsupported arm skill: {skill!r}")
 
+        task_success = self._env.success()
+        if task_success:
+            return {"status": "attempted", "env_steps": 0, "task_success": True}
+
         skill_steps = 0
-        while not self._env.success() and skill_steps < config.MAX_SKILL_STEPS:
+        steps_at_start = self._env.steps
+
+        while (
+            not self._env.success()
+            and skill_steps < config.MAX_SKILL_STEPS
+            and self._episode_budget_remaining() > 0
+        ):
             image, wrist, state = self._env.observe()
             chunk = self._vla.predict(image, wrist, state, task)
             for action in chunk[: config.REPLAN_STEPS]:
+                if (
+                    skill_steps >= config.MAX_SKILL_STEPS
+                    or self._episode_budget_remaining() <= 0
+                ):
+                    break
                 self._env.step(action)
                 skill_steps += 1
-                if self._env.success() or skill_steps >= config.MAX_SKILL_STEPS:
+                if self._env.success():
                     break
 
-        if self._env.success():
-            return {"status": "success"}
-        return {"status": "failed", "steps": skill_steps}
+        env_steps = self._env.steps - steps_at_start
+        return {
+            "status": "attempted",
+            "env_steps": env_steps,
+            "task_success": self._env.success(),
+        }
 
     def _execute_stmt(
         self, node: plan_ast.StmtNode, ctx: dict[str, object]
@@ -163,8 +189,7 @@ class Executor:
             return None
 
         if isinstance(node, plan_ast.CallNode):
-            if self._run_steps >= self._step_budget:
-                raise StepBudgetExceeded()
+            self._check_episode_budget()
             evaluated_args = {
                 key: self._evaluate_expr(value, ctx) for key, value in node.args.items()
             }
@@ -182,7 +207,6 @@ class Executor:
 
             self._last_skill_result = str(result)
             logger.info("Skill result (%s): %r", node.skill, result)
-            self._run_steps += 1
             if node.assign_to is not None:
                 ctx[node.assign_to] = result
             return result

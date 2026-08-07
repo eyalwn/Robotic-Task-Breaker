@@ -20,13 +20,13 @@ def test_literal() -> None:
 
 def test_var_bound() -> None:
     ex = build_executor(MockSkill())
-    assert ex._eval(VarExpr(name="x"), {"x": 99}) == 99
+    assert ex._evaluate_expr(VarExpr(name="x"), {"x": 99}) == 99
 
 
 def test_var_unbound_raises() -> None:
     ex = build_executor(MockSkill())
-    with pytest.raises(NameError, match="missing"):
-        ex._eval(VarExpr(name="missing"), {})
+    with pytest.raises(NameError, match="not bound"):
+        ex._evaluate_expr(VarExpr(name="missing"), {})
 
 
 def test_binop_equality() -> None:
@@ -56,7 +56,7 @@ def test_binop_equality() -> None:
 
 def test_strict_equality_dict_vs_string() -> None:
     ex = build_executor(MockSkill())
-    result = ex._eval(
+    result = ex._evaluate_expr(
         BinOpExpr(
             op="==",
             left=VarExpr(name="outcome"),
@@ -95,7 +95,7 @@ def test_strict_inequality_same_type() -> None:
 
 def test_binop_and_short_circuit() -> None:
     ex = build_executor(MockSkill())
-    result = ex._eval(
+    result = ex._evaluate_expr(
         BinOpExpr(
             op="and",
             left=LiteralExpr(value=False),
@@ -108,7 +108,7 @@ def test_binop_and_short_circuit() -> None:
 
 def test_binop_or_short_circuit() -> None:
     ex = build_executor(MockSkill())
-    result = ex._eval(
+    result = ex._evaluate_expr(
         BinOpExpr(
             op="or",
             left=LiteralExpr(value=True),
@@ -121,7 +121,7 @@ def test_binop_or_short_circuit() -> None:
 
 def test_binop_in_true() -> None:
     ex = build_executor(MockSkill())
-    result = ex._eval(
+    result = ex._evaluate_expr(
         BinOpExpr(
             op="in",
             left=LiteralExpr(value="apple"),
@@ -148,14 +148,14 @@ def test_binop_in_none_right() -> None:
 
 def test_not_expr() -> None:
     ex = build_executor(MockSkill())
-    result = ex._eval(NotExpr(operand=LiteralExpr(value=True)), {})
+    result = ex._evaluate_expr(NotExpr(operand=LiteralExpr(value=True)), {})
     assert result is False
 
 
 def test_incomparable_operands_type_error() -> None:
     ex = build_executor(MockSkill())
     with pytest.raises(TypeError, match="Incomparable operands"):
-        ex._eval(
+        ex._evaluate_expr(
             BinOpExpr(
                 op="<",
                 left=LiteralExpr(value="a"),

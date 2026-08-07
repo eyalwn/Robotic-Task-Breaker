@@ -11,10 +11,21 @@ from skills import Skill, SkillRegistry
 class FakeEnv:
     """Minimal env stub for executor arm-skill and feedback tests."""
 
-    def __init__(self, *, succeed_after: int | None = 0) -> None:
+    def __init__(
+        self,
+        *,
+        succeed_after: int | None = 0,
+        max_steps: int = 520,
+        steps: int = 0,
+    ) -> None:
         self._succeed_after = succeed_after
-        self._steps = 0
+        self._steps = steps
+        self.max_steps = max_steps
         self.step_calls: list[list[float]] = []
+
+    @property
+    def steps(self) -> int:
+        return self._steps
 
     def observe(self) -> tuple[bytes, bytes, list[float]]:
         return b"main-image", b"wrist-image", [0.0] * 8
@@ -69,13 +80,11 @@ def build_executor(
     *,
     env: FakeEnv | None = None,
     vla: FakeVLA | None = None,
-    step_budget: int = 30,
 ) -> Executor:
     registry = SkillRegistry()
     registry.register(skill)
     executor = Executor(registry=registry, env=env or FakeEnv())  # type: ignore[arg-type]
     executor._vla = vla or FakeVLA()
-    executor._step_budget = step_budget
     return executor
 
 

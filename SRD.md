@@ -14,8 +14,8 @@ robot manipulation tasks.
 - Plans are declarative data (`plan.py`), not executable Python.
 - `Executor` walks the AST, executes skills, and uses the VLA HTTP service for
   arm manipulation.
-- `Runner` closes the loop (`observe -> plan -> execute -> feedback -> replan`)
-  until success, failure, or planner STOP.
+- `Runner` runs one observe → plan → execute pass per episode until success,
+  failure, planner STOP, or episode step budget.
 - The planner may emit a sentinel STOP plan (`"STOP: <reason>"`) when
   continuation is not useful.
 
@@ -34,15 +34,16 @@ Source layout is flat modules under `src/`. Dependencies flow downward only:
 Module responsibilities:
 
 - `config.py`: single source of runtime defaults and `.env` switches.
-- `libero_env.py`: LIBERO wrapper for `observe`, `step`, `success`, and object
-  metadata access.
+- `libero_env.py`: LIBERO wrapper for `observe`, `step`, `success`, and episode
+  step accounting (`steps` / `max_steps`).
 - `vla_client.py`: HTTP client for the VLA policy service.
 - `plan.py`: plan AST models, validation, and STOP helpers.
-- `skills.py`: skill interfaces/registry and LIBERO state/perception skills.
-- `executor.py`: stateless plan interpreter; owns VLA-to-environment execution.
-- `planner.py`: LLM planner that emits validated AST plans from snapshot and
-  feedback context.
-- `runner.py`: composition root and orchestration loop for one task.
+- `skills.py`: skill interfaces/registry and static arm-skill catalog text.
+- `executor.py`: plan interpreter; owns VLA-to-environment execution for
+  `arm.grab` / `arm.place`.
+- `planner.py`: LLM planner that emits validated AST plans from a goal and
+  snapshot (no sim ground-truth object injection; no feedback nodes).
+- `runner.py`: composition root for single-pass observe → plan → execute per task.
 
 Non-negotiable boundaries:
 
@@ -50,6 +51,20 @@ Non-negotiable boundaries:
 - No hidden retuning layer between policy output and `env.step()` (no remap,
   rescale, sign flips, or success rewriting).
 - `config.py` is the only place runtime defaults are defined.
+- No sim ground-truth object names or poses in the planner/runtime skill path.
+  Object naming comes from the RGB snapshot and natural-language goal.
+
+## Episode budget and arm-skill contract
+
+- Episode hard cap is suite `MAX_EPISODE_STEPS` via `LiberoEnv.max_steps`
+  (e.g. `libero_10` = 520). Budgeting counts real `env.step()` calls.
+- Per-skill cap is `MAX_SKILL_STEPS`, also clamped by remaining episode budget.
+- `arm.grab` / `arm.place` are attempt primitives, not subtask oracles. Normal
+  completion returns:
+  `{"status": "attempted", "env_steps": <int>, "task_success": <bool>}`
+  where `task_success` is only the global LIBERO BDDL predicate. Execution
+  exceptions surface as `StopReason.EXECUTION_ERROR`, not as a fake skill
+  failure status.
 
 ## Configuration Contract
 
@@ -72,7 +87,6 @@ Contract changes must be recorded here before implementation changes.
 
 ## Future Work
 
-- Replace sim-GT perception skills with real RGB perception and retire sim-GT
-  paths.
-- Run systematic LIBERO-10 per-task evaluation campaigns.
+- Run systematic LIBERO-10 per-task evaluation campaigns under the episode
+  budget parity contract above.
 - Revisit recursive sub-planning only after baseline stability is demonstrated.

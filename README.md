@@ -2,16 +2,14 @@
 
 Long-horizon robot tasks: an **LLM** emits a structured plan, a stateless
 **executor** walks one plan at a time, a **VLA** policy does the arm
-manipulation, and **RGB** feedback checkpoints re-invoke planning with a runner
-snapshot (planner keeps progress history and may emit a new plan or a sentinel
-STOP plan).
+manipulation, and **RGB** snapshots feed the planner once per episode.
 
 Platform: **LIBERO on Linux + NVIDIA** (Colab T4 is sufficient). Architecture and
 contracts: `SRD.md`.
 
 Ownership split (runtime):
-- `Runner`: composition root — owns `LiberoEnv` and `SkillRegistry`; builds `LLMPlanner`; loop is `observe -> plan(snapshot) -> executor.run(plan)`, then `observe + plan(snapshot, execution_sum)` on feedback; checks sentinel STOP before execute.
-- `LLMPlanner`: `plan(snapshot, execution_sum?) -> Plan`; owns bounded progress history across calls; STOP is a sentinel return literal `"STOP: <reason>"`; model/retries from `config`.
+- `Runner`: composition root — owns `LiberoEnv` and `SkillRegistry`; builds `LLMPlanner`; single pass is `observe -> plan(snapshot) -> executor.run(plan)`; checks sentinel STOP before execute.
+- `LLMPlanner`: `plan(snapshot) -> Plan`; single-pass planning from goal and snapshot; STOP is a sentinel return literal `"STOP: <reason>"`; model/retries from `config`.
 - `Executor`: stateless `run(plan) -> ExecutionSum`; owns VLA/env execution and no cross-run memory.
 
 ## Setup
@@ -87,26 +85,7 @@ python examples/long_horizon_llm_libero.py
 
 The client talks to `http://127.0.0.1:8765`.
 
-## Validating the VLA to environment path
-
-Before debugging anything in the planner or executor, confirm the policy can
-solve a task with nothing else in the loop:
-
-```bash
-source .venv/bin/activate
-python validation/libero_probe.py                    # libero_object, task 0
-python validation/libero_probe.py --suite libero_10 --task 0
-```
-
-It prints EE displacement, closest approach to each task object, gripper travel,
-and mean action magnitude per dimension, then exits 0 only if the task was
-solved. A failure here means the environment, the service, or the checkpoint —
-never the orchestration.
-
 Set `SAVE_VIDEO=1` in `.env` to get `run.mp4` showing exactly what the policy saw.
-
-On Colab, use `colab/libero_probe.ipynb` as the setup launcher — it installs
-deps, starts `services/smolvla_service.py`, and runs the probe.
 
 ## Tests
 

@@ -128,23 +128,6 @@ class LiberoEnv:
     def success(self) -> bool:
         return bool(self._env.check_success())
 
-    def object_names(self) -> list[str]:
-        """Task-relevant object names as declared in the task's BDDL file."""
-        return [str(name) for name in self._env.obj_of_interest]
-
-    def body_position(self, name: str) -> list[float] | None:
-        """World xyz of a MuJoCo body, or None when no such body exists."""
-        sim = self._env.sim
-        for candidate in (name, f"{name}_main"):
-            try:
-                body_id = sim.model.body_name2id(candidate)
-            except Exception:
-                continue
-            pos = np.asarray(sim.data.body_xpos[body_id], dtype=np.float64)
-            return pos.flatten()[:3].tolist()
-        logger.debug("body_position: no MuJoCo body named %r", name)
-        return None
-
     def _record(self) -> None:
         """Append the policy's view of the current frame to the run video."""
         if not config.SAVE_VIDEO:
