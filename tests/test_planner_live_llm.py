@@ -28,6 +28,11 @@ GOAL = "Pick the alphabet soup and place it in the basket"
 ALLOWED_SKILLS = {
     "arm.grab",
     "arm.place",
+    "arm.transfer",
+    "arm.open",
+    "arm.close",
+    "arm.push",
+    "arm.pull",
 }
 
 CATALOG = arm_skill_catalog()

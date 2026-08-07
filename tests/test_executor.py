@@ -3,6 +3,8 @@ from __future__ import annotations
 
 from unittest.mock import patch
 
+import pytest
+
 from conftest import (
     FakeEnv,
     FakeVLA,
@@ -262,7 +264,9 @@ def test_arm_skill_attempt_contract() -> None:
     skill = MockSkill("unused")
     executor = build_executor(skill, env=env, vla=vla)
     with patch("config.MAX_SKILL_STEPS", 3):
-        outcome = executor._run_arm_skill("arm.grab", "cube_1", None)
+        outcome = executor._run_arm_skill(
+            "arm.grab", {"object_name": "cube_1"}
+        )
     assert outcome == {"status": "attempted", "env_steps": 3, "task_success": False}
     assert len(env.step_calls) == 3
 
@@ -272,6 +276,75 @@ def test_arm_skill_attempt_when_task_already_solved() -> None:
     vla = FakeVLA()
     skill = MockSkill("unused")
     executor = build_executor(skill, env=env, vla=vla)
-    outcome = executor._run_arm_skill("arm.grab", "cube_1", None)
+    outcome = executor._run_arm_skill("arm.grab", {"object_name": "cube_1"})
     assert outcome == {"status": "attempted", "env_steps": 0, "task_success": True}
     assert vla.calls == []
+
+
+@pytest.mark.parametrize(
+    ("skill", "args", "expected_task"),
+    [
+        (
+            "arm.transfer",
+            {"object_name": "bowl_1", "location": "plate"},
+            "move the bowl to the plate",
+        ),
+        (
+            "arm.open",
+            {"target_name": "top_drawer_1"},
+            "open the top drawer",
+        ),
+        (
+            "arm.close",
+            {"target_name": "microwave_1"},
+            "close the microwave",
+        ),
+        (
+            "arm.push",
+            {"target_name": "mug_1", "destination_or_direction": "left"},
+            "push the mug to the left",
+        ),
+        (
+            "arm.pull",
+            {"target_name": "mug_1", "destination_or_direction": "left"},
+            "pull the mug to the left",
+        ),
+    ],
+)
+def test_arm_skill_task_strings(skill: str, args: dict, expected_task: str) -> None:
+    env = FakeEnv(succeed_after=1)
+    vla = FakeVLA()
+    skill_obj = MockSkill("unused")
+    executor = build_executor(skill_obj, env=env, vla=vla)
+    plan = make_plan(
+        {
+            "kind": "call",
+            "skill": skill,
+            "args": {
+                key: {"kind": "literal", "value": value} for key, value in args.items()
+            },
+        }
+    )
+    run_plan(executor, plan)
+    assert vla.calls[0][3] == expected_task
+
+
+@pytest.mark.parametrize(
+    ("skill", "args", "missing"),
+    [
+        ("arm.grab", {}, "object_name"),
+        ("arm.place", {"object_name": "cube"}, "location"),
+        ("arm.transfer", {"object_name": "bowl"}, "location"),
+        ("arm.open", {}, "target_name"),
+        ("arm.close", {}, "target_name"),
+        ("arm.push", {"target_name": "mug"}, "destination_or_direction"),
+        ("arm.pull", {"target_name": "mug"}, "destination_or_direction"),
+    ],
+)
+def test_arm_skill_requires_args(skill: str, args: dict, missing: str) -> None:
+    env = FakeEnv()
+    vla = FakeVLA()
+    skill_obj = MockSkill("unused")
+    executor = build_executor(skill_obj, env=env, vla=vla)
+    with pytest.raises(ValueError, match=f"{skill} requires {missing!r}"):
+        executor._run_arm_skill(skill, args)

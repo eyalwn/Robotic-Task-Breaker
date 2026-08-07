@@ -40,7 +40,8 @@ Module responsibilities:
 - `plan.py`: plan AST models, validation, and STOP helpers.
 - `skills.py`: skill interfaces/registry and static arm-skill catalog text.
 - `executor.py`: plan interpreter; owns VLA-to-environment execution for
-  `arm.grab` / `arm.place`.
+  `arm.grab`, `arm.place`, `arm.transfer`, `arm.open`, `arm.close`,
+  `arm.push`, and `arm.pull`.
 - `planner.py`: LLM planner that emits validated AST plans from a goal and
   snapshot (no sim ground-truth object injection; no feedback nodes).
 - `runner.py`: composition root for single-pass observe → plan → execute per task.
@@ -59,7 +60,7 @@ Non-negotiable boundaries:
 - Episode hard cap is suite `MAX_EPISODE_STEPS` via `LiberoEnv.max_steps`
   (e.g. `libero_10` = 520). Budgeting counts real `env.step()` calls.
 - Per-skill cap is `MAX_SKILL_STEPS`, also clamped by remaining episode budget.
-- `arm.grab` / `arm.place` are attempt primitives, not subtask oracles. Normal
+- Executor-handled arm skills are attempt primitives, not subtask oracles. Normal
   completion returns:
   `{"status": "attempted", "env_steps": <int>, "task_success": <bool>}`
   where `task_success` is only the global LIBERO BDDL predicate. Execution

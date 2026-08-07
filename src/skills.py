@@ -83,9 +83,27 @@ _ARM_CATALOG = """\
     Pick up a named object using the VLA manipulation policy.
     :param object_name: Object name from the scene snapshot or goal (e.g. alphabet soup)
   arm.place(object_name: str, location: str) -> dict
-    Place a named object at a location using the VLA manipulation policy.
+    Place a held object at a location using the VLA manipulation policy.
     :param object_name: Object name from the scene snapshot or goal
-    :param location: Target location name (e.g. basket)"""
+    :param location: Target location name (e.g. basket)
+  arm.transfer(object_name: str, location: str) -> dict
+    Move a named object to a location using the VLA manipulation policy.
+    :param object_name: Object name from the scene snapshot or goal
+    :param location: Target location name
+  arm.open(target_name: str) -> dict
+    Open a named target (e.g. drawer, door) using the VLA manipulation policy.
+    :param target_name: Target name from the scene snapshot or goal
+  arm.close(target_name: str) -> dict
+    Close a named target using the VLA manipulation policy.
+    :param target_name: Target name from the scene snapshot or goal
+  arm.push(target_name: str, destination_or_direction: str) -> dict
+    Push a named object toward a destination or direction using the VLA policy.
+    :param target_name: Object name from the scene snapshot or goal
+    :param destination_or_direction: Destination location or push direction
+  arm.pull(target_name: str, destination_or_direction: str) -> dict
+    Pull a named object toward a destination or direction using the VLA policy.
+    :param target_name: Object name from the scene snapshot or goal
+    :param destination_or_direction: Destination location or pull direction"""
 
 
 def arm_skill_catalog() -> str:

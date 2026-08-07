@@ -13,7 +13,17 @@ from skills import SkillRegistry
 from vla_client import VLAClient
 
 logger = logging.getLogger(__name__)
-_ARM_SKILLS = frozenset({"arm.grab", "arm.place"})
+_ARM_SKILLS = frozenset(
+    {
+        "arm.grab",
+        "arm.place",
+        "arm.transfer",
+        "arm.open",
+        "arm.close",
+        "arm.push",
+        "arm.pull",
+    }
+)
 
 
 class StopReason(Enum):
@@ -113,20 +123,55 @@ class Executor:
         if self._episode_budget_remaining() <= 0:
             raise StepBudgetExceeded()
 
+    def _clean_arm_name(self, name: str) -> str:
+        """Normalize scene object names for VLA task strings."""
+        return re.sub(r"_\d+$", "", name).replace("_", " ")
+
+    def _require_arm_arg(
+        self, args: dict[str, object], key: str, skill: str
+    ) -> str:
+        """Return a cleaned required arm-skill argument or raise."""
+        value = args.get(key)
+        if value is None or (isinstance(value, str) and not value):
+            raise ValueError(f"{skill} requires {key!r}")
+        return self._clean_arm_name(str(value))
+
+    def _build_arm_task(self, skill: str, args: dict[str, object]) -> str:
+        """Build the VLA task string for an executor-handled arm skill."""
+        if skill == "arm.grab":
+            obj = self._require_arm_arg(args, "object_name", skill)
+            return f"pick up the {obj}"
+        if skill == "arm.place":
+            obj = self._require_arm_arg(args, "object_name", skill)
+            loc = self._require_arm_arg(args, "location", skill)
+            return f"put the {obj} in the {loc}"
+        if skill == "arm.transfer":
+            obj = self._require_arm_arg(args, "object_name", skill)
+            loc = self._require_arm_arg(args, "location", skill)
+            return f"move the {obj} to the {loc}"
+        if skill == "arm.open":
+            target = self._require_arm_arg(args, "target_name", skill)
+            return f"open the {target}"
+        if skill == "arm.close":
+            target = self._require_arm_arg(args, "target_name", skill)
+            return f"close the {target}"
+        if skill == "arm.push":
+            target = self._require_arm_arg(args, "target_name", skill)
+            dest = self._require_arm_arg(args, "destination_or_direction", skill)
+            return f"push the {target} to the {dest}"
+        if skill == "arm.pull":
+            target = self._require_arm_arg(args, "target_name", skill)
+            dest = self._require_arm_arg(args, "destination_or_direction", skill)
+            return f"pull the {target} to the {dest}"
+        raise ValueError(f"unsupported arm skill: {skill!r}")
+
     def _run_arm_skill(
         self,
         skill: str,
-        object_name: str,
-        location: str | None,
+        args: dict[str, object],
     ) -> dict[str, object]:
         """Run a low-level arm skill by querying VLA chunks until budget or cap."""
-        cleaned = re.sub(r"_\d+$", "", object_name).replace("_", " ")
-        if skill == "arm.grab":
-            task = f"pick up the {cleaned}"
-        elif skill == "arm.place":
-            task = f"put the {cleaned} in the {location}"
-        else:
-            raise ValueError(f"unsupported arm skill: {skill!r}")
+        task = self._build_arm_task(skill, args)
 
         task_success = self._env.success()
         if task_success:
@@ -197,10 +242,7 @@ class Executor:
             logger.info("Uses skill: %s(%s)", node.skill, args_str)
 
             if node.skill in _ARM_SKILLS:
-                object_name = str(evaluated_args.get("object_name", ""))
-                location = evaluated_args.get("location")
-                location_str = str(location) if location is not None else None
-                result = self._run_arm_skill(node.skill, object_name, location_str)
+                result = self._run_arm_skill(node.skill, evaluated_args)
             else:
                 skill = self._registry.get(node.skill)
                 result = skill(**evaluated_args)
