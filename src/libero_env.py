@@ -7,6 +7,8 @@ rotated 180 degrees, and an 8-D proprioceptive state.
 """
 from __future__ import annotations
 
+import builtins
+from contextlib import contextmanager
 import logging
 import math
 import os
@@ -19,10 +21,29 @@ import config
 logger = logging.getLogger(__name__)
 
 
+@contextmanager
+def _auto_decline_dependency_prompt():
+    """Answer ``n`` to dependency ``input()`` prompts to keep runs non-interactive."""
+    original_input = builtins.input
+
+    def _decline(prompt: object = "") -> str:
+        prompt_text = str(prompt).strip()
+        if prompt_text:
+            logger.warning("auto-declined dependency prompt: %s", prompt_text)
+        return "n"
+
+    builtins.input = _decline
+    try:
+        yield
+    finally:
+        builtins.input = original_input
+
+
 def _import_libero():
     try:
-        from libero.libero import benchmark, get_libero_path
-        from libero.libero.envs import OffScreenRenderEnv
+        with _auto_decline_dependency_prompt():
+            from libero.libero import benchmark, get_libero_path
+            from libero.libero.envs import OffScreenRenderEnv
     except ImportError as exc:
         raise ImportError(
             "LIBERO is not installed (Linux only). Install with: "
@@ -84,11 +105,12 @@ class LiberoEnv:
         self._init_states = init_states
         self._init_state_idx = init_state_idx
 
-        self._env = OffScreenRenderEnv(
-            bddl_file_name=bddl_path,
-            camera_heights=config.RESOLUTION,
-            camera_widths=config.RESOLUTION,
-        )
+        with _auto_decline_dependency_prompt():
+            self._env = OffScreenRenderEnv(
+                bddl_file_name=bddl_path,
+                camera_heights=config.RESOLUTION,
+                camera_widths=config.RESOLUTION,
+            )
         # Seeding matters even with a fixed initial state: it perturbs object poses.
         self._env.seed(config.SEED)
         self._env.reset()

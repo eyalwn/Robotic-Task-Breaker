@@ -36,14 +36,17 @@ and bug fixes are tasks inside a milestone, never milestones of their own.
   skills, or plan AST, and reached the BDDL success predicate. Establishes that
   the env wrapper, policy service, and checkpoint are correctly wired.
 
-- **M2 — Monolithic baseline success rate on `libero_10` task 0.**
+- **M2 — DONE. Monolithic baseline success rate on `libero_10` task 0.**
   N episodes over distinct initial states, single direct task prompt, no planner.
-  Acceptance: a success rate over N >= 10 episodes, plus a `REPLAN_STEPS` value
-  justified by a `{1, 5, 10}` sweep. This is the control arm for every later
-  comparison, so it is measured on our own stack rather than taken from
-  published numbers. For reference, SmolVLA 0.45B reports 71% on LIBERO-Long,
-  while independent reproductions of the `HuggingFaceVLA/smolvla_libero`
-  checkpoint report 38-56%.
+  Measured on our stack (10 episodes each):
+  - `REPLAN_STEPS=1`: `3/10` (30%)
+  - `REPLAN_STEPS=5`: `6/10` (60%)
+  - `REPLAN_STEPS=10`: `4/10` (40%)
+  Selected baseline setting: **`REPLAN_STEPS=5`**.
+  This is the control arm for every later comparison, so it is measured on our
+  own stack rather than taken from published numbers. For reference, SmolVLA
+  0.45B reports 71% on LIBERO-Long, while independent reproductions of the
+  `HuggingFaceVLA/smolvla_libero` checkpoint report 38-56%.
 
 - **M3 — Longor solves `libero_10` task 0 end to end.**
   LLM plan, decomposed arm skills, real perception, at least one episode
