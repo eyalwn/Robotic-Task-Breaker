@@ -52,7 +52,7 @@ VIDEO_FPS = 10
 # --- VLA manipulation loop --------------------------------------------------
 # Actions consumed from each predicted chunk before re-querying the policy.
 # Closing the loop this often is what makes the policy reactive.
-REPLAN_STEPS = 5
+VLA_ACTIONS_PER_CHUNK = 5
 # Per-skill step cap (guard against a failing subtask; success path ends earlier).
 MAX_SKILL_STEPS = 120
 # Guards against a policy returning garbage; the services clip to this too.

@@ -39,10 +39,10 @@ and bug fixes are tasks inside a milestone, never milestones of their own.
 - **M2 — DONE. Monolithic baseline success rate on `libero_10` task 0.**
   N episodes over distinct initial states, single direct task prompt, no planner.
   Measured on our stack (10 episodes each):
-  - `REPLAN_STEPS=1`: `3/10` (30%)
-  - `REPLAN_STEPS=5`: `6/10` (60%)
-  - `REPLAN_STEPS=10`: `4/10` (40%)
-  Selected baseline setting: **`REPLAN_STEPS=5`**.
+  - `VLA_ACTIONS_PER_CHUNK=1`: `3/10` (30%)
+  - `VLA_ACTIONS_PER_CHUNK=5`: `6/10` (60%)
+  - `VLA_ACTIONS_PER_CHUNK=10`: `4/10` (40%)
+  Selected baseline setting: **`VLA_ACTIONS_PER_CHUNK=5`**.
   This is the control arm for every later comparison, so it is measured on our
   own stack rather than taken from published numbers. For reference, SmolVLA
   0.45B reports 71% on LIBERO-Long, while independent reproductions of the
@@ -154,8 +154,8 @@ naming mismatch rather than a manipulation failure.
   sensitive to this because error compounds across stages.
 - Comparison arms must match on everything but the variable under test: same task
   string (`LiberoEnv.task_description`, never a hand-written goal), same initial
-  states, same episode budget, same `REPLAN_STEPS`.
-- `REPLAN_STEPS` is LeRobot's `n_action_steps`: how many actions of each predicted
+  states, same episode budget, same `VLA_ACTIONS_PER_CHUNK`.
+- `VLA_ACTIONS_PER_CHUNK` is LeRobot's `n_action_steps`: how many actions of each predicted
   chunk are executed before re-querying the policy. It is known to swing LIBERO-10
   results substantially and is therefore a measured parameter, not a free one.
 

@@ -359,7 +359,7 @@ class Executor:
 
             image, wrist, state = self._env.observe()
             chunk = self._vla.predict(image, wrist, state, task)
-            for action in chunk[: config.REPLAN_STEPS]:
+            for action in chunk[: config.VLA_ACTIONS_PER_CHUNK]:
                 if (
                     skill_steps >= config.MAX_SKILL_STEPS
                     or self._episode_budget_remaining() <= 0
