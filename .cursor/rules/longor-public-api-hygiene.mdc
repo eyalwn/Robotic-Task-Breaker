@@ -23,7 +23,8 @@ Apply this rule to all runtime code under `src/**`.
 
 Examples:
 
-- Good: `Runner(goal, task_suite, task_idx)` with no DI args or extra defaults.
+- Good: `Runner(task_suite, task_idx)` with no DI args or extra defaults; goal
+  comes from `LiberoEnv.task_description`.
 - Bad: `Runner(..., planner=None, executor=None, env=None, max_replans=...)`.
 - Good: planner prompt/goal shaping lives in `planner.py`.
 - Bad: LLM-facing goal shaping in `runner.py`.

@@ -64,6 +64,10 @@ class _StubPlanner:
 
 
 class _StubEnv:
+    task_description = (
+        "put both the alphabet soup and the tomato sauce in the basket"
+    )
+
     def __init__(self, *, success: bool = True, max_steps: int = 520) -> None:
         self._success = success
         self._steps = 0
@@ -120,17 +124,19 @@ def _runner_with_stub_executor(
     monkeypatch.setattr("runner.LLMPlanner", _planner_factory)
     monkeypatch.setattr("runner.Executor", lambda *_args, **_kwargs: executor)
 
-    runner = Runner("test goal", "libero_10", 0)
+    runner = Runner("libero_10", 0)
     return runner, planner, executor
 
 
-def test_runner_passes_raw_goal_to_planner(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_runner_uses_env_task_description_for_planner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     runner, planner, _ = _runner_with_stub_executor(
         [ExecutionSum(reason=StopReason.PLAN_DONE, return_value="done")],
         monkeypatch,
     )
     assert runner.run() is None
-    assert planner.init_goal == "test goal"
+    assert planner.init_goal == _StubEnv.task_description
 
 
 def test_runner_plan_done_success(monkeypatch: pytest.MonkeyPatch) -> None:

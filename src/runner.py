@@ -30,14 +30,14 @@ def _return_indicates_failure(value: str) -> bool:
 class Runner:
     """Orchestrates a single observe → plan → execute pass for one LIBERO task."""
 
-    def __init__(self, goal: str, task_suite: str, task_idx: int) -> None:
+    def __init__(self, task_suite: str, task_idx: int) -> None:
         """Wire env, skills, planner, and executor for one LIBERO task."""
-        self._goal = goal
         self._env = LiberoEnv(task_suite, task_idx)
+        self._goal = self._env.task_description
         try:
             self._skills = SkillRegistry()
             skills_catalog = arm_skill_catalog()
-            self._planner = LLMPlanner(goal, skills_catalog)
+            self._planner = LLMPlanner(self._goal, skills_catalog)
             self._executor = Executor(self._skills, env=self._env)
         except Exception:
             self._env.close()

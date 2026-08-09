@@ -140,11 +140,16 @@ Two signals, because LIBERO has no BDDL grasp predicate:
 
 Conjunct resolution matches a skill's primary object against each conjunct's
 first argument under the same normalisation the executor already applies to
-build VLA task strings (strip a trailing `_<n>`, underscores to spaces). If
-exactly one conjunct matches, it is the subtask predicate. **If zero or several
-match, the skill falls back to the step-budget cap and logs a warning** — an
-unresolvable name must not abort the episode, because it indicates a planner
-naming mismatch rather than a manipulation failure.
+build VLA task strings (strip a trailing `_<n>`, underscores to spaces):
+1. exact normalised equality;
+2. if none, bidirectional containment (`a in b` or `b in a`).
+If exactly one conjunct matches, it is the subtask predicate. **If zero or
+several match, the skill falls back to the step-budget cap and logs a warning**
+— an unresolvable name must not abort the episode, because it indicates a
+planner naming mismatch rather than a manipulation failure.
+
+`Runner(task_suite, task_idx)` always plans from `LiberoEnv.task_description`
+(no hand-written goal argument).
 
 ## Evaluation protocol
 

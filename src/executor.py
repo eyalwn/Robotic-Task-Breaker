@@ -127,6 +127,25 @@ class Executor:
         """Normalize scene object names for VLA task strings."""
         return re.sub(r"_\d+$", "", name).replace("_", " ")
 
+    def _match_conjunct_indices(
+        self, primary_object: str, conjuncts: list[list[str]]
+    ) -> list[int]:
+        """Return conjunct indices matching a planner object name (exact, then containment)."""
+        normalized = self._clean_arm_name(primary_object)
+        candidates = [
+            (index, self._clean_arm_name(str(conjunct[1])))
+            for index, conjunct in enumerate(conjuncts)
+            if len(conjunct) >= 2
+        ]
+        exact = [index for index, conjunct_name in candidates if conjunct_name == normalized]
+        if exact:
+            return exact
+        return [
+            index
+            for index, conjunct_name in candidates
+            if normalized in conjunct_name or conjunct_name in normalized
+        ]
+
     def _require_arm_arg(
         self, args: dict[str, object], key: str, skill: str
     ) -> str:
@@ -163,13 +182,7 @@ class Executor:
             )
             return None
 
-        normalized = self._clean_arm_name(primary_object)
-        matches = [
-            index
-            for index, conjunct in enumerate(conjuncts)
-            if len(conjunct) >= 2
-            and self._clean_arm_name(str(conjunct[1])) == normalized
-        ]
+        matches = self._match_conjunct_indices(primary_object, conjuncts)
         if len(matches) == 1:
             return matches[0]
         if not matches:
@@ -209,13 +222,7 @@ class Executor:
                     exc_info=True,
                 )
 
-        normalized = self._clean_arm_name(primary_object)
-        matches = [
-            index
-            for index, conjunct in enumerate(conjuncts)
-            if len(conjunct) >= 2
-            and self._clean_arm_name(str(conjunct[1])) == normalized
-        ]
+        matches = self._match_conjunct_indices(primary_object, conjuncts)
         if len(matches) == 1:
             return str(conjuncts[matches[0]][1])
 
