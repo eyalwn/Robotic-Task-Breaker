@@ -53,8 +53,8 @@ VIDEO_FPS = 10
 # Actions consumed from each predicted chunk before re-querying the policy.
 # Closing the loop this often is what makes the policy reactive.
 REPLAN_STEPS = 5
-# Environment steps allowed for a single arm.grab / arm.place.
-MAX_SKILL_STEPS = 300
+# Per-skill step cap (guard against a failing subtask; success path ends earlier).
+MAX_SKILL_STEPS = 120
 # Guards against a policy returning garbage; the services clip to this too.
 ACTION_CLIP = 2.0
 

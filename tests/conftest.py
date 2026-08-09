@@ -17,11 +17,19 @@ class FakeEnv:
         succeed_after: int | None = 0,
         max_steps: int = 520,
         steps: int = 0,
+        goal_conjuncts: list[list[str]] | None = None,
+        conjunct_satisfied: dict[int, bool] | None = None,
+        grasping_objects: set[str] | None = None,
+        grasp_after: dict[str, int] | None = None,
     ) -> None:
         self._succeed_after = succeed_after
         self._steps = steps
         self.max_steps = max_steps
         self.step_calls: list[list[float]] = []
+        self._goal_conjuncts = goal_conjuncts
+        self._conjunct_satisfied = conjunct_satisfied
+        self._grasping_objects = grasping_objects
+        self._grasp_after = grasp_after or {}
 
     @property
     def steps(self) -> int:
@@ -39,6 +47,22 @@ class FakeEnv:
         if self._succeed_after is None:
             return False
         return self._steps >= self._succeed_after
+
+    def goal_conjuncts(self) -> list[list[str]]:
+        return [list(conjunct) for conjunct in (self._goal_conjuncts or [])]
+
+    def eval_goal_conjunct(self, index: int) -> bool:
+        if self._conjunct_satisfied is not None:
+            return bool(self._conjunct_satisfied.get(index, False))
+        return False
+
+    def is_grasping(self, object_name: str) -> bool:
+        if self._grasping_objects is not None:
+            return object_name in self._grasping_objects
+        grasp_after = self._grasp_after.get(object_name)
+        if grasp_after is not None:
+            return self._steps >= grasp_after
+        return False
 
 
 class FakeVLA:

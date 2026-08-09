@@ -136,6 +136,171 @@ class Executor:
             raise ValueError(f"{skill} requires {key!r}")
         return self._clean_arm_name(str(value))
 
+    def _arm_primary_object_name(self, skill: str, args: dict[str, object]) -> str | None:
+        """Return the raw primary object argument for subtask signal resolution."""
+        if skill in ("arm.grab", "arm.place", "arm.transfer"):
+            value = args.get("object_name")
+        elif skill in ("arm.open", "arm.close", "arm.push", "arm.pull"):
+            value = args.get("target_name")
+        else:
+            return None
+        if value is None or (isinstance(value, str) and not value):
+            return None
+        return str(value)
+
+    def _resolve_conjunct_index(self, primary_object: str) -> int | None:
+        """Map a skill object name to exactly one goal conjunct, else budget-only."""
+        goal_conjuncts = getattr(self._env, "goal_conjuncts", None)
+        if goal_conjuncts is None:
+            return None
+        try:
+            conjuncts = goal_conjuncts()
+        except Exception:
+            logger.warning(
+                "goal_conjuncts() failed for %r; using step-budget-only termination",
+                primary_object,
+                exc_info=True,
+            )
+            return None
+
+        normalized = self._clean_arm_name(primary_object)
+        matches = [
+            index
+            for index, conjunct in enumerate(conjuncts)
+            if len(conjunct) >= 2
+            and self._clean_arm_name(str(conjunct[1])) == normalized
+        ]
+        if len(matches) == 1:
+            return matches[0]
+        if not matches:
+            logger.warning(
+                "no goal conjunct matched %r; using step-budget-only termination",
+                primary_object,
+            )
+        else:
+            logger.warning(
+                "ambiguous goal conjuncts %s for %r; using step-budget-only termination",
+                matches,
+                primary_object,
+            )
+        return None
+
+    def _looks_like_grasp_object_id(
+        self, name: str, conjuncts: list[list[str]]
+    ) -> bool:
+        """Return whether ``name`` is already a BDDL-style object instance token."""
+        if re.search(r"_\d+$", name):
+            return True
+        return any(
+            len(conjunct) >= 2 and str(conjunct[1]) == name for conjunct in conjuncts
+        )
+
+    def _resolve_grasp_object(self, primary_object: str) -> str | None:
+        """Map a planner object name to a grasp-check object ID, else budget-only."""
+        goal_conjuncts = getattr(self._env, "goal_conjuncts", None)
+        conjuncts: list[list[str]] = []
+        if goal_conjuncts is not None:
+            try:
+                conjuncts = goal_conjuncts()
+            except Exception:
+                logger.warning(
+                    "goal_conjuncts() failed for %r; using step-budget-only termination",
+                    primary_object,
+                    exc_info=True,
+                )
+
+        normalized = self._clean_arm_name(primary_object)
+        matches = [
+            index
+            for index, conjunct in enumerate(conjuncts)
+            if len(conjunct) >= 2
+            and self._clean_arm_name(str(conjunct[1])) == normalized
+        ]
+        if len(matches) == 1:
+            return str(conjuncts[matches[0]][1])
+
+        if self._looks_like_grasp_object_id(primary_object, conjuncts):
+            return primary_object
+
+        if not matches:
+            logger.warning(
+                "no goal conjunct matched %r; using step-budget-only termination",
+                primary_object,
+            )
+        else:
+            logger.warning(
+                "ambiguous goal conjuncts %s for %r; using step-budget-only termination",
+                matches,
+                primary_object,
+            )
+        return None
+
+    def _subtask_satisfied(
+        self,
+        skill: str,
+        *,
+        grasp_object: str | None,
+        conjunct_index: int | None,
+    ) -> bool:
+        """Return whether the arm skill's subtask-completion signal is true."""
+        if skill == "arm.grab":
+            if grasp_object is None:
+                return False
+            is_grasping = getattr(self._env, "is_grasping", None)
+            if is_grasping is None:
+                return False
+            try:
+                return bool(is_grasping(grasp_object))
+            except Exception:
+                logger.warning(
+                    "is_grasping(%r) failed; using step-budget-only termination",
+                    grasp_object,
+                    exc_info=True,
+                )
+                return False
+
+        if conjunct_index is None:
+            return False
+        eval_conjunct = getattr(self._env, "eval_goal_conjunct", None)
+        if eval_conjunct is None:
+            return False
+        try:
+            return bool(eval_conjunct(conjunct_index))
+        except Exception:
+            logger.warning(
+                "eval_goal_conjunct(%d) failed; using step-budget-only termination",
+                conjunct_index,
+                exc_info=True,
+            )
+            return False
+
+    def _resolve_subtask_signal(
+        self, skill: str, args: dict[str, object]
+    ) -> tuple[str | None, int | None]:
+        """Return grasp object name and/or goal-conjunct index for subtask checks."""
+        primary_object = self._arm_primary_object_name(skill, args)
+        if primary_object is None:
+            return None, None
+        if skill == "arm.grab":
+            return self._resolve_grasp_object(primary_object), None
+        return None, self._resolve_conjunct_index(primary_object)
+
+    def _arm_skill_payload(
+        self,
+        *,
+        env_steps: int,
+        subtask_success: bool,
+        task_success: bool,
+    ) -> dict[str, object]:
+        """Build the arm-skill return dict."""
+        status = "done" if subtask_success or task_success else "timeout"
+        return {
+            "status": status,
+            "env_steps": env_steps,
+            "subtask_success": subtask_success,
+            "task_success": task_success,
+        }
+
     def _build_arm_task(self, skill: str, args: dict[str, object]) -> str:
         """Build the VLA task string for an executor-handled arm skill."""
         if skill == "arm.grab":
@@ -170,21 +335,28 @@ class Executor:
         skill: str,
         args: dict[str, object],
     ) -> dict[str, object]:
-        """Run a low-level arm skill by querying VLA chunks until budget or cap."""
+        """Run a low-level arm skill until subtask, task success, or budget."""
         task = self._build_arm_task(skill, args)
+        grasp_object, conjunct_index = self._resolve_subtask_signal(skill, args)
 
-        task_success = self._env.success()
-        if task_success:
-            return {"status": "attempted", "env_steps": 0, "task_success": True}
+        if self._env.success():
+            return self._arm_skill_payload(
+                env_steps=0,
+                subtask_success=True,
+                task_success=True,
+            )
 
         skill_steps = 0
         steps_at_start = self._env.steps
 
-        while (
-            not self._env.success()
-            and skill_steps < config.MAX_SKILL_STEPS
-            and self._episode_budget_remaining() > 0
-        ):
+        while skill_steps < config.MAX_SKILL_STEPS and self._episode_budget_remaining() > 0:
+            if self._subtask_satisfied(
+                skill,
+                grasp_object=grasp_object,
+                conjunct_index=conjunct_index,
+            ) or self._env.success():
+                break
+
             image, wrist, state = self._env.observe()
             chunk = self._vla.predict(image, wrist, state, task)
             for action in chunk[: config.REPLAN_STEPS]:
@@ -195,15 +367,25 @@ class Executor:
                     break
                 self._env.step(action)
                 skill_steps += 1
-                if self._env.success():
+                if self._subtask_satisfied(
+                    skill,
+                    grasp_object=grasp_object,
+                    conjunct_index=conjunct_index,
+                ) or self._env.success():
                     break
 
         env_steps = self._env.steps - steps_at_start
-        return {
-            "status": "attempted",
-            "env_steps": env_steps,
-            "task_success": self._env.success(),
-        }
+        task_success = self._env.success()
+        subtask_success = self._subtask_satisfied(
+            skill,
+            grasp_object=grasp_object,
+            conjunct_index=conjunct_index,
+        )
+        return self._arm_skill_payload(
+            env_steps=env_steps,
+            subtask_success=subtask_success,
+            task_success=task_success,
+        )
 
     def _execute_stmt(
         self, node: plan_ast.StmtNode, ctx: dict[str, object]

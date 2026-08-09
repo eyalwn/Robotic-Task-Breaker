@@ -54,7 +54,9 @@ def to_jpeg(rgb: np.ndarray) -> bytes:
 class LiberoEnv:
     """One LIBERO task episode: build, observe, step, check success."""
 
-    def __init__(self, task_suite: str, task_idx: int) -> None:
+    def __init__(
+        self, task_suite: str, task_idx: int, init_state_idx: int = 0
+    ) -> None:
         benchmark, get_libero_path, OffScreenRenderEnv = _import_libero()
         if task_suite not in config.MAX_EPISODE_STEPS:
             raise ValueError(
@@ -66,12 +68,21 @@ class LiberoEnv:
         bddl_path = os.path.join(
             get_libero_path("bddl_files"), task.problem_folder, task.bddl_file
         )
+        init_states = suite.get_task_init_states(task_idx)
+        count = len(init_states)
+        if init_state_idx < 0 or init_state_idx >= count:
+            raise ValueError(
+                f"init_state_idx {init_state_idx} out of range for "
+                f"{task_suite!r} task {task_idx} (have {count} initial states)"
+            )
 
         self.task_description = str(task.language)
         self.max_steps = config.MAX_EPISODE_STEPS[task_suite]
         self.done = False
         self._steps = 0
         self._writer = None
+        self._init_states = init_states
+        self._init_state_idx = init_state_idx
 
         self._env = OffScreenRenderEnv(
             bddl_file_name=bddl_path,
@@ -83,12 +94,71 @@ class LiberoEnv:
         self._env.reset()
         # The benchmark's canonical initial states are part of the eval protocol;
         # a bare reset() leaves the scene off the distribution policies trained on.
-        self._obs = self._env.set_init_state(suite.get_task_init_states(task_idx)[0])
+        self._obs = self._env.set_init_state(init_states[init_state_idx])
         for _ in range(config.SETTLE_STEPS):
             self.step(config.SETTLE_ACTION)
 
         logger.info(
-            "LIBERO ready: %s task %d - %r", task_suite, task_idx, self.task_description
+            "LIBERO ready: %s task %d init %d/%d - %r",
+            task_suite,
+            task_idx,
+            init_state_idx,
+            count,
+            self.task_description,
+        )
+
+    @property
+    def init_state_idx(self) -> int:
+        """Index of the initial state used for this episode."""
+        return self._init_state_idx
+
+    def init_state_count(self) -> int:
+        """Return how many canonical initial states exist for this task."""
+        return len(self._init_states)
+
+    @staticmethod
+    def init_state_idx_for_episode(episode_idx: int, init_state_count: int) -> int:
+        """Map a campaign episode index to an initial-state index."""
+        if init_state_count <= 0:
+            raise ValueError("init_state_count must be positive")
+        if episode_idx < 0:
+            raise ValueError(f"episode_idx must be >= 0, got {episode_idx}")
+        return episode_idx % init_state_count
+
+    def _inner(self):
+        """Return the inner LIBERO problem env (sim ground truth lives here)."""
+        return self._env.env
+
+    def goal_conjuncts(self) -> list[list[str]]:
+        """Return a copy of the parsed BDDL goal conjuncts for this task."""
+        return [list(conjunct) for conjunct in self._inner().parsed_problem["goal_state"]]
+
+    def eval_goal_conjunct(self, index: int) -> bool:
+        """Evaluate one BDDL goal conjunct by index."""
+        conjuncts = self._inner().parsed_problem["goal_state"]
+        if index < 0 or index >= len(conjuncts):
+            raise ValueError(
+                f"goal conjunct index {index} out of range (have {len(conjuncts)})"
+            )
+        return bool(self._inner()._eval_predicate(conjuncts[index]))
+
+    def eval_predicate(self, predicate: str, *args: str) -> bool:
+        """Evaluate an arbitrary LIBERO predicate tuple (lowercase name)."""
+        state = [predicate.lower(), *args]
+        if len(state) not in (2, 3):
+            raise ValueError(
+                f"predicate needs 1 or 2 object args, got {len(args)} for {predicate!r}"
+            )
+        return bool(self._inner()._eval_predicate(state))
+
+    def is_grasping(self, object_name: str) -> bool:
+        """Return whether the gripper is grasping ``object_name`` (robosuite check)."""
+        inner = self._inner()
+        return bool(
+            inner._check_grasp(
+                gripper=inner.robots[0].gripper,
+                object_geoms=inner.get_object(object_name).contact_geoms,
+            )
         )
 
     @property

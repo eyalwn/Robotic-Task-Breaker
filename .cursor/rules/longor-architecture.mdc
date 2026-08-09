@@ -26,6 +26,13 @@ alwaysApply: true
   or stall heuristics, and no rewriting a failed result into a success. The
   action is applied as-is. The reference OpenPI LIBERO evaluation loop is the
   behavioural contract (summarised in `SRD.md`).
+- Action selection and object naming must stay perception-first: the planner
+  names objects from RGB+goal text, and policy actions are chosen from camera
+  frames + proprioception only.
+- Sim ground truth is allowed only for documented subtask-termination checks in
+  `src/libero_env.py` / `src/executor.py` per `SRD.md`. This exception is
+  explicit, opt-in, and must be reported as "given a subtask-completion
+  oracle" in evaluation results.
 - LIBERO is Linux-only and imported lazily behind a clear install error, so the
   modules stay importable on any host for unit tests.
 

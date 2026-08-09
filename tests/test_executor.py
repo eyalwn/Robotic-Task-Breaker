@@ -257,8 +257,8 @@ def test_arm_place_task_string() -> None:
     assert vla.calls[0][3] == "put the cream cheese in the basket"
 
 
-def test_arm_skill_attempt_contract() -> None:
-    """Arm skills return attempt-only payload, never status=failed from BDDL."""
+def test_arm_skill_timeout_contract() -> None:
+    """Arm skills without a subtask signal time out at the per-skill cap."""
     env = FakeEnv(succeed_after=None)
     vla = FakeVLA(actions=[[0.0] * 7])
     skill = MockSkill("unused")
@@ -267,18 +267,157 @@ def test_arm_skill_attempt_contract() -> None:
         outcome = executor._run_arm_skill(
             "arm.grab", {"object_name": "cube_1"}
         )
-    assert outcome == {"status": "attempted", "env_steps": 3, "task_success": False}
+    assert outcome == {
+        "status": "timeout",
+        "env_steps": 3,
+        "subtask_success": False,
+        "task_success": False,
+    }
     assert len(env.step_calls) == 3
 
 
-def test_arm_skill_attempt_when_task_already_solved() -> None:
+def test_arm_skill_done_when_task_already_solved() -> None:
     env = FakeEnv(succeed_after=0)
     vla = FakeVLA()
     skill = MockSkill("unused")
     executor = build_executor(skill, env=env, vla=vla)
     outcome = executor._run_arm_skill("arm.grab", {"object_name": "cube_1"})
-    assert outcome == {"status": "attempted", "env_steps": 0, "task_success": True}
+    assert outcome == {
+        "status": "done",
+        "env_steps": 0,
+        "subtask_success": True,
+        "task_success": True,
+    }
     assert vla.calls == []
+
+
+def test_arm_place_subtask_success_ends_early() -> None:
+    env = FakeEnv(
+        succeed_after=None,
+        goal_conjuncts=[["in", "cream_cheese_1", "basket_1_contain_region"]],
+        conjunct_satisfied={0: True},
+    )
+    vla = FakeVLA(actions=[[0.0] * 7])
+    skill = MockSkill("unused")
+    executor = build_executor(skill, env=env, vla=vla)
+    outcome = executor._run_arm_skill(
+        "arm.place",
+        {"object_name": "cream_cheese_1", "location": "basket"},
+    )
+    assert outcome["status"] == "done"
+    assert outcome["subtask_success"] is True
+    assert outcome["task_success"] is False
+    assert outcome["env_steps"] == 0
+    assert vla.calls == []
+
+
+def test_arm_place_unresolved_conjunct_times_out(caplog: pytest.LogCaptureFixture) -> None:
+    env = FakeEnv(succeed_after=None, goal_conjuncts=[])
+    vla = FakeVLA(actions=[[0.0] * 7])
+    skill = MockSkill("unused")
+    executor = build_executor(skill, env=env, vla=vla)
+    with patch("config.MAX_SKILL_STEPS", 2):
+        outcome = executor._run_arm_skill(
+            "arm.place",
+            {"object_name": "cream_cheese_1", "location": "basket"},
+        )
+    assert outcome == {
+        "status": "timeout",
+        "env_steps": 2,
+        "subtask_success": False,
+        "task_success": False,
+    }
+    assert "no goal conjunct matched" in caplog.text
+
+
+def test_arm_place_ambiguous_conjunct_times_out(caplog: pytest.LogCaptureFixture) -> None:
+    env = FakeEnv(
+        succeed_after=None,
+        goal_conjuncts=[
+            ["in", "cream_cheese_1", "basket_1_contain_region"],
+            ["on", "cream_cheese_1", "plate_1"],
+        ],
+    )
+    vla = FakeVLA(actions=[[0.0] * 7])
+    skill = MockSkill("unused")
+    executor = build_executor(skill, env=env, vla=vla)
+    with patch("config.MAX_SKILL_STEPS", 2):
+        outcome = executor._run_arm_skill(
+            "arm.place",
+            {"object_name": "cream_cheese_1", "location": "basket"},
+        )
+    assert outcome["status"] == "timeout"
+    assert outcome["subtask_success"] is False
+    assert "ambiguous goal conjuncts" in caplog.text
+
+
+def test_arm_grab_human_readable_name_resolves_via_conjunct() -> None:
+    env = FakeEnv(
+        succeed_after=None,
+        goal_conjuncts=[["in", "alphabet_soup_1", "basket_1_contain_region"]],
+        grasp_after={"alphabet_soup_1": 1},
+    )
+    vla = FakeVLA(actions=[[0.0] * 7, [0.1] * 7])
+    skill = MockSkill("unused")
+    executor = build_executor(skill, env=env, vla=vla)
+    outcome = executor._run_arm_skill(
+        "arm.grab", {"object_name": "alphabet soup"}
+    )
+    assert outcome == {
+        "status": "done",
+        "env_steps": 1,
+        "subtask_success": True,
+        "task_success": False,
+    }
+    assert len(vla.calls) == 1
+    assert vla.calls[0][3] == "pick up the alphabet soup"
+    assert len(env.step_calls) == 1
+
+
+def test_arm_grab_ambiguous_conjunct_times_out(caplog: pytest.LogCaptureFixture) -> None:
+    env = FakeEnv(
+        succeed_after=None,
+        goal_conjuncts=[
+            ["in", "cream_cheese_1", "basket_1_contain_region"],
+            ["on", "cream_cheese_2", "plate_1"],
+        ],
+        grasp_after={"cream_cheese_1": 0, "cream_cheese_2": 0},
+    )
+    vla = FakeVLA(actions=[[0.0] * 7])
+    skill = MockSkill("unused")
+    executor = build_executor(skill, env=env, vla=vla)
+    with patch("config.MAX_SKILL_STEPS", 2):
+        outcome = executor._run_arm_skill(
+            "arm.grab", {"object_name": "cream cheese"}
+        )
+    assert outcome == {
+        "status": "timeout",
+        "env_steps": 2,
+        "subtask_success": False,
+        "task_success": False,
+    }
+    assert "ambiguous goal conjuncts" in caplog.text
+
+
+def test_arm_grab_uses_grasp_check_when_resolvable() -> None:
+    env = FakeEnv(
+        succeed_after=None,
+        grasp_after={"alphabet_soup_1": 1},
+    )
+    vla = FakeVLA(actions=[[0.0] * 7, [0.1] * 7])
+    skill = MockSkill("unused")
+    executor = build_executor(skill, env=env, vla=vla)
+    outcome = executor._run_arm_skill(
+        "arm.grab", {"object_name": "alphabet_soup_1"}
+    )
+    assert outcome == {
+        "status": "done",
+        "env_steps": 1,
+        "subtask_success": True,
+        "task_success": False,
+    }
+    assert len(vla.calls) == 1
+    assert len(env.step_calls) == 1
 
 
 @pytest.mark.parametrize(
