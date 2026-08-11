@@ -32,10 +32,25 @@ def _build_env_with_mocks(
     ]
     inner = MagicMock()
     inner.parsed_problem = {"goal_state": goal_state}
-    inner._eval_predicate.side_effect = lambda state: state[1].startswith("alphabet")
-    inner.robots = [SimpleNamespace(gripper="gripper")]
+    inner.object_states_dict = {
+        "alphabet_soup_1": SimpleNamespace(name="alphabet_soup_1"),
+        "tomato_sauce_1": SimpleNamespace(name="tomato_sauce_1"),
+        "basket_1_contain_region": SimpleNamespace(name="basket_1_contain_region"),
+        "microwave_1": SimpleNamespace(name="microwave_1"),
+        "stove_1": SimpleNamespace(name="stove_1"),
+        "plate_1": SimpleNamespace(name="plate_1"),
+        "table_1": SimpleNamespace(name="table_1"),
+    }
+    gripper = SimpleNamespace(
+        important_geoms={
+            "left_fingerpad": ["left_pad_geom"],
+            "right_fingerpad": ["right_pad_geom"],
+        },
+        contact_geoms=["left_pad_geom", "right_pad_geom"],
+    )
+    inner.robots = [SimpleNamespace(gripper=gripper)]
     inner.get_object.return_value = SimpleNamespace(contact_geoms=["geom_a"])
-    inner._check_grasp.return_value = True
+    inner.check_contact.return_value = True
 
     offscreen = MagicMock()
     offscreen.env = inner
@@ -55,11 +70,20 @@ def _build_env_with_mocks(
 
     benchmark = MagicMock()
     benchmark.get_benchmark_dict.return_value = {"libero_10": lambda: suite}
+    get_predicate_fn = MagicMock(
+        side_effect=lambda name: (
+            lambda obj1, obj2=None: (
+                obj1.name.startswith("alphabet")
+                if name in {"in", "on"}
+                else name in {"close", "turnon"}
+            )
+        )
+    )
 
     with patch.object(
         libero_env,
         "_import_libero",
-        return_value=(benchmark, lambda _: "/bddl", offscreen_cls),
+        return_value=(benchmark, lambda _: "/bddl", offscreen_cls, get_predicate_fn),
     ):
         return libero_env.LiberoEnv("libero_10", 0, init_state_idx=init_state_idx)
 
@@ -121,9 +145,6 @@ def test_eval_predicate_builds_lowercase_tuple():
     env = _build_env_with_mocks(init_states=[b"s"])
     try:
         assert env.eval_predicate("In", "alphabet_soup_1", "basket_1_contain_region")
-        env._inner()._eval_predicate.assert_called_with(
-            ["in", "alphabet_soup_1", "basket_1_contain_region"]
-        )
         with pytest.raises(ValueError, match="predicate needs"):
             env.eval_predicate("on", "obj", "region", "extra")
     finally:
@@ -136,10 +157,9 @@ def test_is_grasping_uses_robosuite_check():
         assert env.is_grasping("alphabet_soup_1") is True
         inner = env._inner()
         inner.get_object.assert_called_once_with("alphabet_soup_1")
-        inner._check_grasp.assert_called_once_with(
-            gripper="gripper",
-            object_geoms=["geom_a"],
-        )
+        assert inner.check_contact.call_count == 2
+        inner.check_contact.assert_any_call(["left_pad_geom"], ["geom_a"])
+        inner.check_contact.assert_any_call(["right_pad_geom"], ["geom_a"])
     finally:
         env.close()
 
@@ -164,17 +184,14 @@ def test_check_subtask_place_inside_uses_in_predicate():
             "position": "inside",
         }
         assert env.check_subtask(step) is True
-        env._inner()._eval_predicate.assert_called_with(
-            ["in", "alphabet_soup_1", "basket_1_contain_region"]
-        )
     finally:
         env.close()
 
 
 def test_check_subtask_place_on_uses_on_predicate():
     env = _build_env_with_mocks(init_states=[b"s"])
-    env._inner()._eval_predicate.side_effect = (
-        lambda state: state[0] == "on" and state[1].startswith("plate")
+    env._get_predicate_fn = lambda name: (
+        lambda obj1, obj2=None: name == "on" and obj1.name.startswith("plate")
     )
     try:
         step = {
@@ -184,23 +201,15 @@ def test_check_subtask_place_on_uses_on_predicate():
             "position": "on",
         }
         assert env.check_subtask(step) is True
-        env._inner()._eval_predicate.assert_called_with(
-            ["on", "plate_1", "table_1"]
-        )
     finally:
         env.close()
 
 
 def test_check_subtask_close_and_turn_on():
     env = _build_env_with_mocks(init_states=[b"s"])
-    env._inner()._eval_predicate.side_effect = lambda state: state[0] in {
-        "close",
-        "turnon",
-    }
+    env._get_predicate_fn = lambda name: (lambda obj1, obj2=None: name in {"close", "turnon"})
     try:
         assert env.check_subtask({"skill": "close", "target_name": "microwave_1"})
         assert env.check_subtask({"skill": "turn_on", "target_name": "stove_1"})
-        env._inner()._eval_predicate.assert_any_call(["close", "microwave_1"])
-        env._inner()._eval_predicate.assert_any_call(["turnon", "stove_1"])
     finally:
         env.close()

@@ -43,13 +43,13 @@ def _import_libero():
     try:
         with _auto_decline_dependency_prompt():
             from libero.libero import benchmark, get_libero_path
-            from libero.libero.envs import OffScreenRenderEnv
+            from libero.libero.envs import OffScreenRenderEnv, predicates
     except ImportError as exc:
         raise ImportError(
             "LIBERO is not installed (Linux only). Install with: "
             "pip install -r deps/requirements-libero.txt"
         ) from exc
-    return benchmark, get_libero_path, OffScreenRenderEnv
+    return benchmark, get_libero_path, OffScreenRenderEnv, predicates.get_predicate_fn
 
 
 def quat2axisangle(quat) -> np.ndarray:
@@ -78,7 +78,7 @@ class LiberoEnv:
     def __init__(
         self, task_suite: str, task_idx: int, init_state_idx: int = 0
     ) -> None:
-        benchmark, get_libero_path, OffScreenRenderEnv = _import_libero()
+        benchmark, get_libero_path, OffScreenRenderEnv, get_predicate_fn = _import_libero()
         if task_suite not in config.MAX_EPISODE_STEPS:
             raise ValueError(
                 f"unknown task_suite {task_suite!r}; "
@@ -104,6 +104,7 @@ class LiberoEnv:
         self._writer = None
         self._init_states = init_states
         self._init_state_idx = init_state_idx
+        self._get_predicate_fn = get_predicate_fn
 
         with _auto_decline_dependency_prompt():
             self._env = OffScreenRenderEnv(
@@ -162,26 +163,43 @@ class LiberoEnv:
             raise ValueError(
                 f"goal conjunct index {index} out of range (have {len(conjuncts)})"
             )
-        return bool(self._inner()._eval_predicate(conjuncts[index]))
+        return bool(self.eval_predicate(*conjuncts[index]))
 
     def eval_predicate(self, predicate: str, *args: str) -> bool:
         """Evaluate an arbitrary LIBERO predicate tuple (lowercase name)."""
-        state = [predicate.lower(), *args]
-        if len(state) not in (2, 3):
+        predicate_name = predicate.lower()
+        if len(args) not in (1, 2):
             raise ValueError(
                 f"predicate needs 1 or 2 object args, got {len(args)} for {predicate!r}"
             )
-        return bool(self._inner()._eval_predicate(state))
+        states = self._inner().object_states_dict
+        try:
+            predicate_fn = self._get_predicate_fn(predicate_name)
+            object_state_1 = states[args[0]]
+            if len(args) == 1:
+                return bool(predicate_fn(object_state_1))
+            object_state_2 = states[args[1]]
+            return bool(predicate_fn(object_state_1, object_state_2))
+        except KeyError as exc:
+            raise ValueError(
+                f"unknown object for predicate {predicate_name!r}: {exc.args[0]!r}"
+            ) from exc
 
     def is_grasping(self, object_name: str) -> bool:
-        """Return whether the gripper is grasping ``object_name`` (robosuite check)."""
+        """Return whether both fingerpads contact ``object_name`` geoms."""
         inner = self._inner()
-        return bool(
-            inner._check_grasp(
-                gripper=inner.robots[0].gripper,
-                object_geoms=inner.get_object(object_name).contact_geoms,
+        object_geoms = inner.get_object(object_name).contact_geoms
+        gripper = inner.robots[0].gripper
+        important_geoms = getattr(gripper, "important_geoms", {})
+        left_fingerpad = list(important_geoms.get("left_fingerpad", []))
+        right_fingerpad = list(important_geoms.get("right_fingerpad", []))
+        if left_fingerpad and right_fingerpad:
+            return bool(
+                inner.check_contact(left_fingerpad, object_geoms)
+                and inner.check_contact(right_fingerpad, object_geoms)
             )
-        )
+        # Fallback for non-standard grippers where fingerpad groups are missing.
+        return bool(inner.check_contact(gripper.contact_geoms, object_geoms))
 
     def check_subtask(self, step: dict[str, str]) -> bool:
         """Evaluate structured subtask completion for one executor step."""
