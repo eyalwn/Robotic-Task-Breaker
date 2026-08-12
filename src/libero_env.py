@@ -148,17 +148,17 @@ class LiberoEnv:
             raise ValueError(f"episode_idx must be >= 0, got {episode_idx}")
         return episode_idx % init_state_count
 
-    def _inner(self):
+    def _get_sim_gt(self):
         """Return the inner LIBERO problem env (sim ground truth lives here)."""
         return self._env.env
 
     def goal_conjuncts(self) -> list[list[str]]:
         """Return a copy of the parsed BDDL goal conjuncts for this task."""
-        return [list(conjunct) for conjunct in self._inner().parsed_problem["goal_state"]]
+        return [list(conjunct) for conjunct in self._get_sim_gt().parsed_problem["goal_state"]]
 
     def eval_goal_conjunct(self, index: int) -> bool:
         """Evaluate one BDDL goal conjunct by index."""
-        conjuncts = self._inner().parsed_problem["goal_state"]
+        conjuncts = self._get_sim_gt().parsed_problem["goal_state"]
         if index < 0 or index >= len(conjuncts):
             raise ValueError(
                 f"goal conjunct index {index} out of range (have {len(conjuncts)})"
@@ -172,7 +172,7 @@ class LiberoEnv:
             raise ValueError(
                 f"predicate needs 1 or 2 object args, got {len(args)} for {predicate!r}"
             )
-        states = self._inner().object_states_dict
+        states = self._get_sim_gt().object_states_dict
         try:
             predicate_fn = self._get_predicate_fn(predicate_name)
             object_state_1 = states[args[0]]
@@ -187,19 +187,19 @@ class LiberoEnv:
 
     def is_grasping(self, object_name: str) -> bool:
         """Return whether both fingerpads contact ``object_name`` geoms."""
-        inner = self._inner()
-        object_geoms = inner.get_object(object_name).contact_geoms
-        gripper = inner.robots[0].gripper
+        env_gt = self._get_sim_gt()
+        object_geoms = env_gt.get_object(object_name).contact_geoms
+        gripper = env_gt.robots[0].gripper
         important_geoms = getattr(gripper, "important_geoms", {})
         left_fingerpad = list(important_geoms.get("left_fingerpad", []))
         right_fingerpad = list(important_geoms.get("right_fingerpad", []))
         if left_fingerpad and right_fingerpad:
             return bool(
-                inner.check_contact(left_fingerpad, object_geoms)
-                and inner.check_contact(right_fingerpad, object_geoms)
+                env_gt.check_contact(left_fingerpad, object_geoms)
+                and env_gt.check_contact(right_fingerpad, object_geoms)
             )
         # Fallback for non-standard grippers where fingerpad groups are missing.
-        return bool(inner.check_contact(gripper.contact_geoms, object_geoms))
+        return bool(env_gt.check_contact(gripper.contact_geoms, object_geoms))
 
     def check_subtask(self, step: dict[str, str]) -> bool:
         """Evaluate structured subtask completion for one executor step."""

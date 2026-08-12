@@ -155,7 +155,7 @@ def test_is_grasping_uses_robosuite_check():
     env = _build_env_with_mocks(init_states=[b"s"])
     try:
         assert env.is_grasping("alphabet_soup_1") is True
-        inner = env._inner()
+        inner = env._get_sim_gt()
         inner.get_object.assert_called_once_with("alphabet_soup_1")
         assert inner.check_contact.call_count == 2
         inner.check_contact.assert_any_call(["left_pad_geom"], ["geom_a"])
@@ -169,7 +169,7 @@ def test_check_subtask_grab_uses_is_grasping():
     try:
         step = {"skill": "grab", "object_name": "alphabet_soup_1"}
         assert env.check_subtask(step) is True
-        env._inner().get_object.assert_called_with("alphabet_soup_1")
+        env._get_sim_gt().get_object.assert_called_with("alphabet_soup_1")
     finally:
         env.close()
 
