@@ -188,7 +188,10 @@ class LiberoEnv:
     def is_grasping(self, object_name: str) -> bool:
         """Return whether both fingerpads contact ``object_name`` geoms."""
         env_gt = self._get_sim_gt()
-        object_geoms = env_gt.get_object(object_name).contact_geoms
+        obj = env_gt.get_object(object_name)
+        if obj is None:
+            raise ValueError(f"unknown object for grasp check: {object_name!r}")
+        object_geoms = obj.contact_geoms
         gripper = env_gt.robots[0].gripper
         important_geoms = getattr(gripper, "important_geoms", {})
         left_fingerpad = list(important_geoms.get("left_fingerpad", []))
@@ -205,25 +208,59 @@ class LiberoEnv:
         """Evaluate structured subtask completion for one executor step."""
         skill = step["skill"]
         if skill == "grab":
-            return self.is_grasping(step["object_name"])
+            return self.is_grasping(self._resolve_name(step["object_name"]))
         if skill == "place":
             return self._place_subtask_satisfied(step)
         if skill == "close":
-            return self.eval_predicate("close", step["target_name"])
+            return self.eval_predicate("close", self._resolve_name(step["target_name"]))
         if skill == "turn_on":
-            return self.eval_predicate("turnon", step["target_name"])
+            return self.eval_predicate("turnon", self._resolve_name(step["target_name"]))
         raise KeyError(f"unsupported skill: {skill!r}")
 
     def _place_subtask_satisfied(self, step: dict[str, str]) -> bool:
         """Return whether a place step's structured predicate holds."""
         position = step["position"].lower()
-        obj = step["object_name"]
-        target = step["target_name"]
+        obj = self._resolve_name(step["object_name"])
+        prefer_region = position == "inside"
+        target = self._resolve_name(step["target_name"], prefer_region=prefer_region)
         if position == "inside":
             return self.eval_predicate("in", obj, target)
         if position in {"on", "center", "left", "right", "top", "bottom"}:
             return self.eval_predicate("on", obj, target)
         raise ValueError(f"unsupported place position: {position!r}")
+
+    def _resolve_name(self, name: str, *, prefer_region: bool = False) -> str:
+        """Map an NL or GT name to a unique ``object_states_dict`` key."""
+        keys = list(self._get_sim_gt().object_states_dict.keys())
+        norm = _normalize_object_name(name)
+        if not norm:
+            raise ValueError(f"empty object name: {name!r}")
+        if name in keys:
+            return name
+        if norm in keys:
+            return norm
+
+        candidates = [key for key in keys if key == norm or key.startswith(norm + "_")]
+        if prefer_region:
+            region_hits = [key for key in candidates if _is_region_key(key)]
+            if region_hits:
+                candidates = region_hits
+        else:
+            candidates = [key for key in candidates if not _is_region_key(key)]
+
+        if len(candidates) == 1:
+            return candidates[0]
+        if not candidates:
+            sample = ", ".join(repr(k) for k in keys[:8])
+            more = "" if len(keys) <= 8 else f", ... ({len(keys)} total)"
+            raise ValueError(
+                f"unknown object name {name!r} (normalized {norm!r}); "
+                f"available: {sample}{more}"
+            )
+        raise ValueError(
+            f"ambiguous object name {name!r} (normalized {norm!r}); "
+            f"candidates: {candidates}"
+        )
 
     @property
     def steps(self) -> int:
@@ -289,3 +326,13 @@ class LiberoEnv:
             self._writer = None
             logger.info("video saved: %s", config.VIDEO_PATH)
         self._env.close()
+
+
+def _normalize_object_name(name: str) -> str:
+    """Lowercase and turn spaces into underscores for GT-ID matching."""
+    return name.strip().lower().replace(" ", "_")
+
+
+def _is_region_key(key: str) -> bool:
+    """Return whether a GT key looks like a LIBERO region site."""
+    return key.endswith("_contain_region") or key.endswith("_place_region")

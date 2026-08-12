@@ -66,13 +66,13 @@ Non-negotiable boundaries:
 
 Planner output must be one of:
 
-1. Executable steps:
+1. Executable steps (NL object/target names from the scene snapshot and goal):
    ```json
    [
-     {"skill":"grab","object_name":"alphabet_soup_1"},
-     {"skill":"place","object_name":"alphabet_soup_1","target_name":"basket_1_contain_region","position":"inside"},
-     {"skill":"close","target_name":"microwave_1"},
-     {"skill":"turn_on","target_name":"flat_stove_1"}
+     {"skill":"grab","object_name":"alphabet soup"},
+     {"skill":"place","object_name":"alphabet soup","target_name":"basket","position":"inside"},
+     {"skill":"close","target_name":"microwave"},
+     {"skill":"turn_on","target_name":"flat stove"}
    ]
    ```
 2. STOP sentinel:
@@ -107,7 +107,9 @@ Runtime skills are:
 
 ## Subtask Termination Contract
 
-`LiberoEnv.check_subtask(step)` evaluates structured checks (no free-form NLP parsing):
+`LiberoEnv.check_subtask(step)` evaluates structured checks (no free-form NLP parsing).
+It resolves planner NL names to LIBERO GT object/region IDs before predicate /
+grasp checks; exact GT-IDs are also accepted.
 
 - `grab` -> `is_grasping(object_name)`
 - `place`:

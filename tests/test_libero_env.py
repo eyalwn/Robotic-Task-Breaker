@@ -213,3 +213,75 @@ def test_check_subtask_close_and_turn_on():
         assert env.check_subtask({"skill": "turn_on", "target_name": "stove_1"})
     finally:
         env.close()
+
+
+def test_check_subtask_grab_resolves_nl_name():
+    env = _build_env_with_mocks(init_states=[b"s"])
+    try:
+        step = {"skill": "grab", "object_name": "alphabet soup"}
+        assert env.check_subtask(step) is True
+        env._get_sim_gt().get_object.assert_called_with("alphabet_soup_1")
+    finally:
+        env.close()
+
+
+def test_check_subtask_place_inside_resolves_nl_to_contain_region():
+    env = _build_env_with_mocks(init_states=[b"s"])
+    inner = env._get_sim_gt()
+    inner.object_states_dict["basket_1"] = SimpleNamespace(name="basket_1")
+    try:
+        with patch.object(env, "eval_predicate", return_value=True) as eval_pred:
+            step = {
+                "skill": "place",
+                "object_name": "alphabet soup",
+                "target_name": "basket",
+                "position": "inside",
+            }
+            assert env.check_subtask(step) is True
+            eval_pred.assert_called_once_with(
+                "in", "alphabet_soup_1", "basket_1_contain_region"
+            )
+    finally:
+        env.close()
+
+
+def test_resolve_name_accepts_exact_gt_id():
+    env = _build_env_with_mocks(init_states=[b"s"])
+    try:
+        assert env._resolve_name("alphabet_soup_1") == "alphabet_soup_1"
+        assert (
+            env._resolve_name("basket_1_contain_region", prefer_region=True)
+            == "basket_1_contain_region"
+        )
+    finally:
+        env.close()
+
+
+def test_resolve_name_unknown_raises():
+    env = _build_env_with_mocks(init_states=[b"s"])
+    try:
+        with pytest.raises(ValueError, match="unknown object name 'no such object'"):
+            env._resolve_name("no such object")
+    finally:
+        env.close()
+
+
+def test_resolve_name_ambiguous_raises():
+    env = _build_env_with_mocks(init_states=[b"s"])
+    inner = env._get_sim_gt()
+    inner.object_states_dict["alphabet_soup_2"] = SimpleNamespace(name="alphabet_soup_2")
+    try:
+        with pytest.raises(ValueError, match="ambiguous object name 'alphabet soup'"):
+            env._resolve_name("alphabet soup")
+    finally:
+        env.close()
+
+
+def test_is_grasping_unknown_object_raises():
+    env = _build_env_with_mocks(init_states=[b"s"])
+    env._get_sim_gt().get_object.return_value = None
+    try:
+        with pytest.raises(ValueError, match="unknown object for grasp check"):
+            env.is_grasping("alphabet_soup_1")
+    finally:
+        env.close()
