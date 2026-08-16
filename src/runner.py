@@ -31,13 +31,12 @@ class Runner:
 
     def run(self) -> None:
         """Run the task loop and log its outcome."""
-        status: RunStatus = "done"
+        status: RunStatus = "plan_failed"
         error = ""
         total_steps = 0
         try:
             status, error, total_steps = self._execute_once()
         except RuntimeError as exc:
-            status = "plan_failed"
             error = str(exc)
         finally:
             success = self._verdict(status)

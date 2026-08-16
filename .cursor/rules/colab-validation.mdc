@@ -26,7 +26,7 @@ alwaysApply: false
 
 ## One notebook ↔ one script
 
-- Each notebook must declare one explicit script path (for example `RUN_SCRIPT="validation/libero_probe.py"`).
+- Each notebook must declare one explicit script path (for example `RUN_SCRIPT="validation/success_rate_campaign.py"`).
 - Variants use CLI args/env passed to the same script, not notebook cell branching.
 - For test/debug on Colab, use a dedicated tiny notebook that calls a dedicated script (for example `validation/run_pytest.py` or `validation/m7_debug_smoke.py`).
 - Do not use `GITHUB_BRANCH` in validation notebooks. Clone the repository default branch only.

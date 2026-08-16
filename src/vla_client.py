@@ -71,7 +71,6 @@ class VLAClient:
         if not isinstance(actions, list) or not actions:
             raise VLAError(f"expected a non-empty 'actions' list, got {payload!r}")
         validated = [self._validate(action, idx) for idx, action in enumerate(actions)]
-        logger.debug("vla predict response actions=%d", len(validated))
         return validated
 
     @staticmethod

@@ -204,6 +204,27 @@ class LiberoEnv:
         # Fallback for non-standard grippers where fingerpad groups are missing.
         return bool(env_gt.check_contact(gripper.contact_geoms, object_geoms))
 
+    def eef_goal_distance(self, step: dict[str, str]) -> float:
+        """Return ||EEF xyz - current skill goal site|| from sim GT (debug)."""
+        skill = step["skill"]
+        if skill == "grab":
+            name = self._resolve_name(step["object_name"])
+        elif skill == "place":
+            name = self._resolve_name(
+                step["target_name"],
+                prefer_region=step["position"].lower() == "inside",
+            )
+        elif skill in {"close", "turn_on"}:
+            name = self._resolve_name(step["target_name"])
+        else:
+            raise KeyError(f"unsupported skill: {skill!r}")
+        goal = np.asarray(
+            self._get_sim_gt().object_states_dict[name].get_geom_state()["pos"],
+            dtype=np.float64,
+        ).flatten()
+        eef = np.asarray(self._obs["robot0_eef_pos"], dtype=np.float64).flatten()
+        return float(np.linalg.norm(eef - goal))
+
     def check_subtask(self, step: dict[str, str]) -> bool:
         """Evaluate structured subtask completion for one executor step."""
         skill = step["skill"]

@@ -40,7 +40,7 @@ alwaysApply: true
 
 - Prefer small reversible passes. Put experiments, sweeps, and diagnostics in
   `validation/**`, never in the runtime modules.
-- Reproduce manipulation defects with `validation/libero_probe.py` first. It runs
+- Reproduce manipulation defects with `validation/success_rate_campaign.py` first. It runs
   the policy against the environment with no planner, executor, skills, or plan
   AST, so a failure there rules the orchestration out.
 - If a run claims real-perception behaviour, it must not silently fall back to

@@ -6,8 +6,8 @@ No planner, executor, skills, or plan AST. Direct policy loop only:
 ``export MUJOCO_GL=egl PYOPENGL_PLATFORM=egl``.
 
 Usage:
-    python validation/libero_probe.py
-    python validation/libero_probe.py --suite libero_10 --task 0 --episodes 10
+    python validation/success_rate_campaign.py
+    python validation/success_rate_campaign.py --suite libero_10 --task 0 --episodes 10
 """
 from __future__ import annotations
 
