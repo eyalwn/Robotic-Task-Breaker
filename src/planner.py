@@ -97,7 +97,7 @@ class LLMPlanner:
 
             raw = response.content.strip()
             raw = _extract_json(raw)
-            logger.debug("raw plan_json from LLM: %s", raw)
+            logger.info("raw plan_json from LLM: %s", raw)
 
             try:
                 data = json.loads(raw)

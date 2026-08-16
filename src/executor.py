@@ -46,8 +46,10 @@ class Executor:
         steps_at_start = self._env.steps
         try:
             for step in steps:
-                logger.info("skill: %s", step["skill"])
-                if not self._run_skill(step):
+                logger.info("executing skill: %s", step["skill"])
+                if self._run_skill_successfuly(step):
+                    logger.info("skill done successfuly: %s", step["skill"])
+                else:
                     return ExecutionSum(
                         reason=StopReason.SUBTASK_TIMEOUT,
                         steps=self._env.steps - steps_at_start,
@@ -80,7 +82,7 @@ class Executor:
             return f"turn on the {step['target_name']}"
         return skill
 
-    def _run_skill(self, step: dict[str, str]) -> bool:
+    def _run_skill_successfuly(self, step: dict[str, str]) -> bool:
         """Run one skill until subtask success or per-skill cap. Returns subtask ok."""
         prompt = self._build_vla_task(step)
         skill_steps = 0
@@ -93,6 +95,10 @@ class Executor:
                 self._env.step(action)
                 skill_steps += 1
             is_subtask_done = self._env.check_subtask(step)
+            # for debugging
+            logger.debug(
+                f"steps={skill_steps}, eef_delta={self._env.eef_goal_distance(step)},"
+                f"check_subtask={is_subtask_done}")
             if is_subtask_done:
                 return True
         return self._env.check_subtask(step)

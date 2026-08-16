@@ -23,14 +23,13 @@ Runtime assumes one environment backend (LIBERO) and one policy transport
 
 ## Milestones
 
-Only runtime accomplishments are milestones. Supporting refactors and harness
-code are tasks inside milestones.
+Note: validated with π0.5
 
-- **M1 — DONE (validated of π0.5).** Closed-loop VLA control solves a LIBERO task.
+- **M1 — DONE.** Closed-loop VLA control solves a LIBERO task.
 - **M2 — SKIPPED (cost).** Local monolithic baseline campaign is not re-run.
   M4/M5 compare against official OpenPI published LIBERO numbers instead
   (see Evaluation Protocol).
-- **M3.** Longor solves `libero_10` task 0 end to end (on π0.5).
+- **M3 — DONE.** Longor solves `libero_10` task 0 end to end (on π0.5).
 - **M4.** Longor beats the published OpenPI π0.5 baseline on `libero_10` task 0
   under matched conditions.
 - **M5.** Full LIBERO-10 campaign vs published OpenPI π0.5 suite rates.

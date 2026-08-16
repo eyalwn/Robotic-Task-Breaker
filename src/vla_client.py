@@ -45,13 +45,6 @@ class VLAClient:
         self, image: bytes, wrist: bytes, state: list[float], task: str
     ) -> list[list[float]]:
         """Return a chunk of 7-D actions for the current observation."""
-        logger.debug(
-            "vla predict task=%r image_bytes=%d wrist_bytes=%d state_dim=%d",
-            task,
-            len(image),
-            len(wrist),
-            len(state),
-        )
         try:
             response = requests.post(
                 f"{self._url}/predict",
