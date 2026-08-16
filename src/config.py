@@ -22,6 +22,10 @@ LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").strip() or "INFO"
 LLM_MODEL = os.environ.get("LLM_MODEL", "gpt-4.1-mini").strip()
 SAVE_VIDEO = os.environ.get("SAVE_VIDEO") == "1"
 
+# --- VLA backend selection (launcher default) ------------------------------
+VLA_POLICY = "pi05"  # "pi05" | "smolvla"
+VLA_POLICIES = ("pi05", "smolvla")
+
 # --- VLA HTTP service ------------------------------------------------------
 VLA_PORT = 8765
 VLA_URL = f"http://127.0.0.1:{VLA_PORT}"

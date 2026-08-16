@@ -57,9 +57,28 @@ export PYOPENGL_PLATFORM=egl
 
 
 
-### 3 - Policy venv
+### 3 - Policy venv (default: π0.5 / OpenPI)
+
+Default backend is **π0.5** (`pi05_libero`). Linux + NVIDIA only.
 
 ```bash
+python3 -m venv .vla-venv
+source .vla-venv/bin/activate
+# Install OpenPI first (clone with submodules; follow upstream README):
+#   git clone --recurse-submodules https://github.com/Physical-Intelligence/openpi
+#   cd openpi && uv sync   # or pip install -e . per upstream docs
+pip install -r deps/requirements-vla-pi05-linux.txt
+pip install -e .
+```
+
+Default OpenPI train config is `pi05_libero` with checkpoint
+`gs://openpi-assets/checkpoints/pi05_libero/`. Override with service-local
+`OPENPI_CONFIG` / `OPENPI_CHECKPOINT` when needed.
+
+#### Fallback: SmolVLA
+
+```bash
+# Prefer a fresh .vla-venv if switching backends (dep conflicts are common).
 python3 -m venv .vla-venv
 .vla-venv/bin/python -m pip install -U pip
 .vla-venv/bin/python -m pip install -r deps/requirements-vla-smolvla-linux.txt
@@ -67,7 +86,7 @@ python3 -m venv .vla-venv
 ```
 
 Default checkpoint is `HuggingFaceVLA/smolvla_libero`; override with
-`SMOLVLA_CHECKPOINT` in `.env` if needed.
+`SMOLVLA_CHECKPOINT` when needed.
 
 ## Usage
 
@@ -76,7 +95,8 @@ Default checkpoint is `HuggingFaceVLA/smolvla_libero`; override with
 
 ```bash
 source .vla-venv/bin/activate
-python services/smolvla_service.py
+python services/run_vla_server.py          # default: pi05
+# python services/run_vla_server.py --policy smolvla   # fallback
 ```
 
 **Terminal B - the run.**
@@ -86,9 +106,16 @@ source .venv/bin/activate
 python examples/long_horizon_llm_libero.py
 ```
 
-The client talks to `http://127.0.0.1:8765`.
+The client talks to `http://127.0.0.1:8765` and is backend-agnostic.
 
 Set `SAVE_VIDEO=1` in `.env` to write `run.mp4`.
+
+## Evaluation note
+
+Local M2 (monolithic SmolVLA baseline campaign) is skipped for cost. M4/M5
+compare Longor results against official OpenPI π0.5 LIBERO published rates
+under matched conditions. See `SRD.md` Evaluation Protocol and
+`validation/libero_published_baseline.py`.
 
 ## Tests
 

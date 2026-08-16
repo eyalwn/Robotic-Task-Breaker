@@ -1,0 +1,14 @@
+# Linux + NVIDIA GPU only.
+# Usage: clone openpi with submodules, `pip install -e /path/to/openpi`, then install this file
+# in the same venv, then `pip install -e .` (Longor repo root).
+
+setuptools
+wheel
+jax[cuda12]
+git+https://github.com/huggingface/lerobot@0cf864870cf29f4738d3ade893e6fd13fbd7cdb5
+transformers
+fastapi>=0.100
+uvicorn[standard]>=0.20
+python-multipart>=0.0.6
+python-dotenv>=1.0
+Pillow>=10.0

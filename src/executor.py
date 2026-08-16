@@ -93,12 +93,6 @@ class Executor:
                 self._env.step(action)
                 skill_steps += 1
             is_subtask_done = self._env.check_subtask(step)
-            # temporary for debugging
-            grip_q = self._env.state()[-2:]
-            logger.debug(
-            "steps=%d eef_delta=%.4f check_subtask=%s gripper_qpos=%s last_grip_cmd=%.3f",
-                skill_steps, self._env.eef_goal_distance(step), is_subtask_done, grip_q,
-                actions_chunk[-1][6])
             if is_subtask_done:
                 return True
         return self._env.check_subtask(step)

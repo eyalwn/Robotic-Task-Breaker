@@ -2,7 +2,7 @@
 
 No planner, executor, skills, or plan AST. Direct policy loop only:
 ``LiberoEnv`` + ``VLAClient``. Requires the policy service
-(``python services/smolvla_service.py``) and on headless Linux:
+(``python services/run_vla_server.py``) and on headless Linux:
 ``export MUJOCO_GL=egl PYOPENGL_PLATFORM=egl``.
 
 Usage:
@@ -81,7 +81,7 @@ def main() -> int:
         print(f"vla service       {vla.health()}")
     except VLAError as exc:
         print(f"FAIL: {exc}", file=sys.stderr)
-        print("Start it first: python services/smolvla_service.py", file=sys.stderr)
+        print("Start it first: python services/run_vla_server.py", file=sys.stderr)
         return 2
 
     probe_env = LiberoEnv(args.suite, args.task, init_state_idx=0)

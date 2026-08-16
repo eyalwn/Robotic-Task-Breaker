@@ -197,7 +197,7 @@ def main() -> int:
         print(f"vla service       {vla.health()}")
     except VLAError as exc:
         print(f"FAIL: {exc}", file=sys.stderr)
-        print("Start it first: python services/smolvla_service.py", file=sys.stderr)
+        print("Start it first: python services/run_vla_server.py", file=sys.stderr)
         return 2
 
     probe_env = LiberoEnv(args.suite, args.task, init_state_idx=args.init_state_idx)

@@ -1,7 +1,8 @@
 """
 SmolVLA (LeRobot) FastAPI inference service — Linux + NVIDIA (T4-class OK).
+Fallback VLA backend; default is π0.5 via services/run_vla_server.py.
 Install deps in .vla-venv: pip install -r deps/requirements-vla-smolvla-linux.txt
-Run: python services/smolvla_service.py
+Run: python services/run_vla_server.py --policy smolvla
 
 Env: VLA_PORT, VLA_ACTION_CLIP, SMOLVLA_CHECKPOINT (default HuggingFaceVLA/smolvla_libero).
 """
@@ -123,7 +124,8 @@ def _import_smolvla():
             raise ImportError(
                 "LeRobot SmolVLA is not installed. On Linux: "
                 "pip install -r deps/requirements-vla-smolvla-linux.txt "
-                "in .vla-venv, then run: python services/smolvla_service.py."
+                "in .vla-venv, then run: python services/run_vla_server.py --policy smolvla "
+                "(or python services/smolvla_service.py directly)."
             ) from exc
 
     try:

@@ -1,7 +1,8 @@
-"""HTTP client for the VLA policy service (``services/smolvla_service.py``).
+"""HTTP client for the VLA policy service (``services/run_vla_server.py``).
 
 Wire contract: ``POST /predict`` with multipart JPEG frames plus a JSON-encoded
-state, answered with ``{"actions": [[...7 floats...], ...]}``.
+state, answered with ``{"actions": [[...7 floats...], ...]}``. Backend-agnostic:
+works with π0.5 (OpenPI) or SmolVLA depending on which service is running.
 """
 from __future__ import annotations
 
@@ -23,7 +24,7 @@ class VLAError(Exception):
 
 
 class VLAClient:
-    """HTTP client for the SmolVLA policy service."""
+    """HTTP client for the VLA policy service."""
 
     def __init__(self, url: str = config.VLA_URL, timeout: float = config.VLA_TIMEOUT):
         self._url = url.rstrip("/")

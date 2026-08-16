@@ -26,11 +26,14 @@ Runtime assumes one environment backend (LIBERO) and one policy transport
 Only runtime accomplishments are milestones. Supporting refactors and harness
 code are tasks inside milestones.
 
-- **M1 — DONE.** Closed-loop VLA control solves a LIBERO task.
-- **M2 — DONE.** Monolithic baseline success rate on `libero_10` task 0.
-- **M3.** Longor solves `libero_10` task 0 end to end.
-- **M4.** Longor beats the M2 baseline on `libero_10` task 0.
-- **M5.** Full LIBERO-10 campaign.
+- **M1.** Closed-loop VLA control solves a LIBERO task (re-validate on π0.5).
+- **M2 — SKIPPED (cost).** Local monolithic baseline campaign is not re-run.
+  M4/M5 compare against official OpenPI published LIBERO numbers instead
+  (see Evaluation Protocol).
+- **M3.** Longor solves `libero_10` task 0 end to end (on π0.5).
+- **M4.** Longor beats the published OpenPI π0.5 baseline on `libero_10` task 0
+  under matched conditions.
+- **M5.** Full LIBERO-10 campaign vs published OpenPI π0.5 suite rates.
 
 ## Architecture
 
@@ -128,6 +131,18 @@ This subtask oracle is deliberate research scaffolding and must be reported as
   `VLA_ACTIONS_PER_CHUNK` (service-side; restart the VLA service after changing it).
 - Campaign-level step ceilings (if used) belong to validation harnesses, not
   the executor runtime loop.
+- **Published baseline (replaces local M2):** Official OpenPI π0.5 @ 30k
+  finetuned on LIBERO (`gs://openpi-assets/checkpoints/pi05_libero/`, config
+  `pi05_libero`), as reported in
+  https://github.com/Physical-Intelligence/openpi/blob/main/examples/libero/README.md:
+  Spatial 98.8%, Object 98.2%, Goal 98.0%, LIBERO-10 92.4%, Average 96.85%.
+- Condition matching for M4/M5 claims must follow the OpenPI LIBERO eval loop
+  (resolution 256, seed 7, settle/wait steps, suite step caps, 50 trials/task
+  for suite campaigns, action chunk / replan horizon aligned with
+  `VLA_ACTIONS_PER_CHUNK`). Oracle-based Longor runs must still disclose
+  "given a subtask-completion oracle".
+- Reference metrics and the machine-checkable checklist live in
+  `validation/libero_published_baseline.py`.
 
 ## Configuration Contract
 
@@ -138,9 +153,19 @@ Adding a new env var requires explicit SRD-level approval.
 
 ## VLA Service Contract
 
-Single policy service process (`services/smolvla_service.py`) exposes:
+One HTTP policy transport, two backends. Launch via
+`python services/run_vla_server.py` (optional `--policy pi05|smolvla`).
+Default backend is `pi05` (`config.VLA_POLICY`). Fallback is `smolvla`.
 
-- `GET /health` -> `{"status":"ok","model":"<id>"}`
+Backend modules:
+
+- `services/pi05_service.py` (default; OpenPI π0.5, `pi05_libero`)
+- `services/smolvla_service.py` (fallback; LeRobot SmolVLA)
+
+Both expose the same wire contract:
+
+- `GET /health` -> `{"status":"ok","model":"<id>"}` where `<id>` is `pi05` or
+  `smolvla`
 - `POST /predict` (multipart):
   - `image` (JPEG), `image_wrist` (JPEG), `task` (string),
     `state` (JSON array of 8 floats)
@@ -148,6 +173,9 @@ Single policy service process (`services/smolvla_service.py`) exposes:
   - `actions` length is capped by `config.VLA_ACTIONS_PER_CHUNK` on the
     **service** before the response is returned. Clients (executor, probes)
     must execute the full returned chunk and must not trim it again.
+
+Backend selection is a launcher/config concern, not a client concern:
+`src/vla_client.py` stays backend-agnostic.
 
 Contract changes must be recorded here before implementation changes.
 
