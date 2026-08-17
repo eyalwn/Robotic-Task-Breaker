@@ -103,7 +103,7 @@ python services/run_vla_server.py          # default: pi05
 
 ```bash
 source .venv/bin/activate
-python examples/long_horizon_llm_libero.py
+python examples/run_libero_task.py
 ```
 
 The client talks to `http://127.0.0.1:8765` and is backend-agnostic.
