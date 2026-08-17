@@ -61,14 +61,19 @@ export PYOPENGL_PLATFORM=egl
 
 Default backend is **π0.5** (`pi05_libero`). Linux + NVIDIA only.
 
+Clone OpenPI as a sibling of this repo. The `lerobot @ git+...` pin must
+be in the same `pip install -e ../openpi` command — pip ignores OpenPI's
+`[tool.uv.sources]`, and current PyPI `lerobot` needs `numpy>=2` while
+OpenPI pins `numpy<2`.
+
 ```bash
 python3 -m venv .vla-venv
-source .vla-venv/bin/activate
-# Install OpenPI first (clone with submodules; follow upstream README):
-#   git clone --recurse-submodules https://github.com/Physical-Intelligence/openpi
-#   cd openpi && uv sync   # or pip install -e . per upstream docs
-pip install -r deps/requirements-vla-pi05-linux.txt
-pip install -e .
+.vla-venv/bin/python -m pip install -U pip
+git clone --recurse-submodules https://github.com/Physical-Intelligence/openpi ../openpi
+.vla-venv/bin/python -m pip install -e ../openpi \
+  "lerobot @ git+https://github.com/huggingface/lerobot@0cf864870cf29f4738d3ade893e6fd13fbd7cdb5"
+.vla-venv/bin/python -m pip install -r deps/requirements-vla-pi05-linux.txt
+.vla-venv/bin/python -m pip install -e .
 ```
 
 Default OpenPI train config is `pi05_libero` with checkpoint

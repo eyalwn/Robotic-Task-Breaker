@@ -1,6 +1,7 @@
-# Linux + NVIDIA GPU only.
-# Usage: clone openpi with submodules, `pip install -e /path/to/openpi`, then install this file
-# in the same venv, then `pip install -e .` (Longor repo root).
+# Linux + NVIDIA GPU only. See README §3.
+# The lerobot git pin below must also be passed on `pip install -e <openpi>`
+# (same command). pip ignores OpenPI's [tool.uv.sources]; without the pin it
+# backtracks on PyPI lerobot (numpy>=2 vs OpenPI numpy<2).
 
 setuptools
 wheel

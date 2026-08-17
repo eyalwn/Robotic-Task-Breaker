@@ -53,6 +53,11 @@ subprocess.run([sys.executable, "-m", "pip", "install", "-r", "deps/requirements
 
 Exception: use `subprocess` when targeting a different interpreter (for example `.vla-venv`). Keep that logic minimal and helper-based.
 
+## Setup commands
+
+OpenPI / `.vla-venv` install cells must match README §3 (same command order,
+including the lerobot git pin on `pip install -e <openpi>`).
+
 ## Operational guardrails
 
 - No `google.colab` imports (notebooks must run from Cursor-connected kernels too).
