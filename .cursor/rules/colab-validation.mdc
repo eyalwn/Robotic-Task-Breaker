@@ -1,5 +1,5 @@
 ---
-description: Conventions and hard-won lessons for Longor Colab validation notebooks (colab/mN_*.ipynb)
+description: Conventions for Longor Colab launcher notebooks (colab/*.ipynb)
 globs: colab/**/*.ipynb
 alwaysApply: false
 ---
@@ -12,12 +12,12 @@ alwaysApply: false
 
 ## Notebook contract (required)
 
-- A validation notebook is a **launcher**, not an experiment harness.
+- A notebook is a **launcher**, not an experiment harness.
 - Allowed notebook responsibilities:
   1. collect secrets / env vars,
   2. clone/sync repo + install deps,
   3. start background services and poll `/health`,
-  4. run **exactly one** Python entrypoint under `validation/**`,
+  4. run **exactly one** Python entrypoint (`examples/**` or `tests/**`),
   5. show pass/fail summary from script stdout.
 - Disallowed inside notebooks:
   - policy sweeps, matrix experiments, verdict engines,
@@ -26,10 +26,10 @@ alwaysApply: false
 
 ## One notebook ↔ one script
 
-- Each notebook must declare one explicit script path (for example `RUN_SCRIPT="validation/success_rate_campaign.py"`).
+- Each notebook must declare one explicit script path (for example
+  `RUN_SCRIPT="examples/run_vlabench_task.py"`).
 - Variants use CLI args/env passed to the same script, not notebook cell branching.
-- For test/debug on Colab, use a dedicated tiny notebook that calls a dedicated script (for example `validation/run_pytest.py` or `validation/m7_debug_smoke.py`).
-- Do not use `GITHUB_BRANCH` in validation notebooks. Clone the repository default branch only.
+- Do not use `GITHUB_BRANCH` in notebooks. Clone the repository default branch only.
 
 ## Script output contract (required)
 
@@ -55,13 +55,13 @@ Exception: use `subprocess` when targeting a different interpreter (for example 
 
 ## Setup commands
 
-OpenPI / `.vla-venv` install cells must match README §3 (same command order,
-including the lerobot git pin on `pip install -e <openpi>`).
+Default stack install cells must match README §2 (VLAbench app venv) and
+README §3 (SmolVLA `.vla-venv`).
 
 ## Operational guardrails
 
 - No `google.colab` imports (notebooks must run from Cursor-connected kernels too).
 - Never write secrets/tokens into notebook cells or repo files.
 - If a notebook execution error prints credentials (for example PAT in a traceback), clear cell outputs before saving.
-- SmolVLA baseline checks must start with closed-loop `n_action_steps=1` before testing larger horizons.
-- If notebook logic grows beyond setup + one script call, move that logic into `validation/**`.
+- If notebook logic grows beyond setup + one script call, move that logic into
+  `examples/**` or `src/**`.

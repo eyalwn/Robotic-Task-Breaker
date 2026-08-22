@@ -10,7 +10,7 @@ from dotenv import find_dotenv, load_dotenv
 
 _PROJECT_LOGGER_NAMES = (
     "config",
-    "libero_env",
+    "envs",
     "vla_client",
     "plan",
     "skills",
@@ -20,7 +20,6 @@ _PROJECT_LOGGER_NAMES = (
     "utils",
     "services",
     "__main__",
-    "validation",
 )
 _DEFAULT_FORMAT = "%(levelname)s [%(name)s] %(message)s"
 
@@ -36,10 +35,10 @@ def load_env(*, usecwd: bool = False) -> None:
 
 def configure_logging(
     *,
-    level: str | int | None = None,
+    level: str = "",
     extra_logger_names: tuple[str, ...] = (),
     fmt: str = _DEFAULT_FORMAT,
-    stream: TextIO | None = None,
+    stream: TextIO = sys.stdout,
     force: bool = True,
 ) -> None:
     """Configure root logging: project namespaces verbose, 3rd-party quiet.
@@ -48,18 +47,17 @@ def configure_logging(
     logger trees are raised to ``level`` (arg or ``config.LOG_LEVEL``).
     Call from process entrypoints only — not on library import.
     """
-    if level is None:
+    if not level:
         level = config.LOG_LEVEL
-    if isinstance(level, str):
-        resolved = getattr(logging, level.upper(), None)
-        if not isinstance(resolved, int):
-            raise ValueError(f"Invalid log level: {level!r}")
-        level = resolved
+    resolved = getattr(logging, level.upper(), None)
+    if not isinstance(resolved, int):
+        raise ValueError(f"Invalid log level: {level!r}")
+    level = resolved
 
     logging.basicConfig(
         level=logging.WARNING,
         format=fmt,
-        stream=sys.stdout if stream is None else stream,
+        stream=stream,
         force=force,
     )
     for handler in logging.root.handlers:

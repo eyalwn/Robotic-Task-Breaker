@@ -44,7 +44,7 @@ def test_executor_grab_place_reaches_libero_object_task0(
     _manual_only(pytestconfig)
 
     try:
-        from libero_env import LiberoEnv
+        from envs.libero_env import LiberoEnv
     except ImportError as exc:
         pytest.skip(f"LIBERO unavailable: {exc}")
 
@@ -55,7 +55,7 @@ def test_executor_grab_place_reaches_libero_object_task0(
         pytest.skip(f"VLA server unavailable: {exc}")
     print(f"vla service       {health}")
 
-    env = LiberoEnv(SUITE, TASK_IDX, init_state_idx=INIT_STATE_IDX)
+    env = LiberoEnv("libero_object", 0, init_state_idx=INIT_STATE_IDX)
     try:
         goal = env.task_description
         goal_lower = goal.lower()

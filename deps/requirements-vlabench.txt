@@ -1,0 +1,11 @@
+# VLABench simulation deps (Linux + NVIDIA; headless EGL recommended).
+# Self-contained: includes base requirements so callers only need this one file.
+#
+# Headless rendering needs: export MUJOCO_GL=egl PYOPENGL_PLATFORM=egl
+-r requirements.txt
+git+https://github.com/OpenMOSS/VLABench@cf588fe60c0c7282174fe979f5913170cfe69017
+git+https://github.com/motion-planning/rrt-algorithms@e51d95ee489a225220d6ae2a764c4111f6ba7d85
+mujoco==3.2.2
+dm-control==1.0.22
+scipy>=1.11
+opencv-python>=4.10

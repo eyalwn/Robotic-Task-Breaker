@@ -49,15 +49,13 @@ def decode_image(raw_bytes: bytes) -> np.ndarray:
 
 def parse_state_field(state: str) -> np.ndarray:
     if not state:
-        return np.zeros(8, dtype=np.float32)
+        raise ValueError("state is required (8 floats as JSON array)")
     try:
         arr = np.array(_json.loads(state), dtype=np.float32).reshape(-1)
-    except (ValueError, TypeError, _json.JSONDecodeError):
-        log.warning("Invalid state field; using zeros")
-        return np.zeros(8, dtype=np.float32)
+    except (ValueError, TypeError, _json.JSONDecodeError) as exc:
+        raise ValueError(f"invalid state JSON: {exc}") from exc
     if arr.size != 8:
-        log.warning("State dim %d != 8; using zeros", arr.size)
-        return np.zeros(8, dtype=np.float32)
+        raise ValueError(f"state must have 8 floats, got {arr.size}")
     return arr
 
 
@@ -66,10 +64,10 @@ def build_openpi_observation(
     img_rgb: np.ndarray,
     task: str,
     state: np.ndarray,
-    wrist_img_rgb: np.ndarray | None = None,
+    wrist_img_rgb: np.ndarray,
 ) -> dict:
     """Map RGB frame(s) + task into OpenPI dataset-style keys for the given config."""
-    wrist = wrist_img_rgb if wrist_img_rgb is not None else np.zeros_like(img_rgb)
+    wrist = wrist_img_rgb
     key = config_name.lower()
     if "libero" in key:
         return {
@@ -169,49 +167,38 @@ def health():
 
 @app.post("/predict")
 async def predict(
-    image: UploadFile = File(...),
-    image_wrist: UploadFile | None = File(None),
+    images: list[UploadFile] = File(...),
     task: str = Form("pick up the cube"),
     state: str = Form(""),
 ):
     if _policy is None:
         raise HTTPException(status_code=503, detail="Model not loaded")
 
+    if len(images) != 2:
+        raise HTTPException(
+            status_code=400,
+            detail=f"expected 2 images, got {len(images)}",
+        )
+
     try:
-        raw = await image.read()
+        raw = await images[0].read()
         img_np = decode_image(raw)
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"Image decode error: {exc}") from exc
-
-    wrist_np = None
-    if image_wrist is not None:
-        try:
-            raw_wrist = await image_wrist.read()
-            if raw_wrist:
-                wrist_np = decode_image(raw_wrist)
-        except Exception as exc:
-            raise HTTPException(
-                status_code=400, detail=f"Wrist image decode error: {exc}"
-            ) from exc
-
-    state_arr = parse_state_field(state)
-    obs = build_openpi_observation(
-        OPENPI_CONFIG, img_np, task, state_arr, wrist_img_rgb=wrist_np
-    )
-
-    try:
+        raw_wrist = await images[1].read()
+        wrist_np = decode_image(raw_wrist)
+        state_arr = parse_state_field(state)
+        obs = build_openpi_observation(
+            OPENPI_CONFIG, img_np, task, state_arr, wrist_img_rgb=wrist_np
+        )
         result = await asyncio.to_thread(_policy.infer, obs)
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Inference error: {exc}") from exc
-
-    actions = result.get("actions")
-    if actions is None:
-        raise HTTPException(status_code=500, detail="Policy returned no 'actions'")
-    chunk = np.asarray(actions)
-    try:
+        actions = result.get("actions")
+        if actions is None:
+            raise ValueError("Policy returned no 'actions'")
+        chunk = np.asarray(actions)
         truncated = truncate_action_chunk(chunk, config.VLA_ACTIONS_PER_CHUNK)
         wire = actions_to_wire_format(truncated)
     except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     return {"actions": wire}

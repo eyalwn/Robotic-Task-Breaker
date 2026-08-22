@@ -36,9 +36,9 @@ def test_steps_execute_in_order() -> None:
     with patch("config.MAX_SKILL_STEPS", 1):
         run_plan(executor, plan)
     assert len(vla.calls) == 3
-    assert vla.calls[0][3] == "pick up the a"
-    assert vla.calls[1][3] == "place the a inside the basket"
-    assert vla.calls[2][3] == "close the drawer"
+    assert vla.calls[0][2] == "pick up the a"
+    assert vla.calls[1][2] == "place the a inside the basket"
+    assert vla.calls[2][2] == "close the drawer"
 
 
 def test_runs_all_steps_without_early_stop() -> None:
@@ -109,7 +109,7 @@ def test_grab_calls_vla_and_succeeds() -> None:
     result = run_plan(executor, plan)
     assert result.reason == StopReason.PLAN_DONE
     assert len(vla.calls) == 1
-    assert vla.calls[0][3] == "pick up the alphabet_soup_1"
+    assert vla.calls[0][2] == "pick up the alphabet_soup_1"
     assert len(env.step_calls) == 2
 
 
@@ -120,7 +120,7 @@ def test_skill_timeout_contract() -> None:
     executor = build_executor(env=env, vla=vla)
     step = {"skill": "grab", "object_name": "cube_1"}
     with patch("config.MAX_SKILL_STEPS", 3):
-        assert executor._run_skill(step) is False
+        assert executor._run_skill_successfuly(step) is False
     assert len(env.step_calls) == 3
 
 
@@ -129,7 +129,7 @@ def test_skill_done_when_subtask_already_satisfied() -> None:
     vla = FakeVLA()
     executor = build_executor(env=env, vla=vla)
     step = {"skill": "grab", "object_name": "cube_1"}
-    assert executor._run_skill(step) is True
+    assert executor._run_skill_successfuly(step) is True
     assert len(vla.calls) == 1
     assert len(env.step_calls) == 1
 
@@ -153,7 +153,7 @@ def test_place_subtask_success_ends_early() -> None:
         "target_name": "basket_1_contain_region",
         "position": "inside",
     }
-    assert executor._run_skill(step) is True
+    assert executor._run_skill_successfuly(step) is True
     assert len(vla.calls) == 1
     assert len(env.step_calls) == 1
 
@@ -177,9 +177,9 @@ def test_place_subtask_success_after_steps() -> None:
         "target_name": "basket_1_contain_region",
         "position": "inside",
     }
-    assert executor._run_skill(step) is True
+    assert executor._run_skill_successfuly(step) is True
     assert len(vla.calls) == 1
-    assert vla.calls[0][3] == "place the alphabet_soup_1 inside the basket_1_contain_region"
+    assert vla.calls[0][2] == "place the alphabet_soup_1 inside the basket_1_contain_region"
     assert len(env.step_calls) == 2
 
 
@@ -218,7 +218,7 @@ def test_skill_task_strings(skill: str, step: dict, expected_task: str) -> None:
     vla = FakeVLA()
     executor = build_executor(env=env, vla=vla)
     run_plan(executor, [step])
-    assert vla.calls[0][3] == expected_task
+    assert vla.calls[0][2] == expected_task
 
 def test_unknown_skill_raises() -> None:
     env = FakeEnv()
@@ -237,7 +237,7 @@ def test_executes_full_returned_chunk() -> None:
     executor = build_executor(env=env, vla=vla)
     step = {"skill": "grab", "object_name": "cube"}
     with patch("config.MAX_SKILL_STEPS", chunk_size):
-        assert executor._run_skill(step) is False
+        assert executor._run_skill_successfuly(step) is False
     assert len(vla.calls) == 1
     assert len(env.step_calls) == chunk_size
     assert env.step_calls[-1][0] == float(chunk_size - 1)

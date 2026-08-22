@@ -1,4 +1,4 @@
-"""Launch the VLA HTTP server for pi05 (default) or smolvla."""
+"""Launch the VLA HTTP server for smolvla / pi05."""
 from __future__ import annotations
 
 import argparse
@@ -16,7 +16,7 @@ _SERVICE_FILES = {
 
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Run the Longor VLA policy HTTP service (default: pi05)."
+        description="Run the Longor VLA policy HTTP service."
     )
     parser.add_argument(
         "--policy",
@@ -77,7 +77,7 @@ def main() -> None:
                 file=sys.stderr,
             )
             print(
-                "  Default checkpoint: HuggingFaceVLA/smolvla_libero "
+                "  Default checkpoint: lerobot/smolvla_vlabench "
                 "(override with SMOLVLA_CHECKPOINT).",
                 file=sys.stderr,
             )

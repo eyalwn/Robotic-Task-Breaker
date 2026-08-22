@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 
-import libero_env
+import envs.libero_env as libero_env
 
 
 def _make_obs() -> dict:
@@ -24,14 +24,8 @@ def _build_env_with_mocks(
     *,
     init_states: list[object],
     init_state_idx: int = 0,
-    goal_state: list[list[str]] | None = None,
 ) -> libero_env.LiberoEnv:
-    goal_state = goal_state or [
-        ["in", "alphabet_soup_1", "basket_1_contain_region"],
-        ["in", "tomato_sauce_1", "basket_1_contain_region"],
-    ]
     inner = MagicMock()
-    inner.parsed_problem = {"goal_state": goal_state}
     inner.object_states_dict = {
         "alphabet_soup_1": SimpleNamespace(name="alphabet_soup_1"),
         "tomato_sauce_1": SimpleNamespace(name="tomato_sauce_1"),
@@ -88,18 +82,6 @@ def _build_env_with_mocks(
         return libero_env.LiberoEnv("libero_10", 0, init_state_idx=init_state_idx)
 
 
-def test_init_state_idx_for_episode_wraps():
-    assert libero_env.LiberoEnv.init_state_idx_for_episode(0, 5) == 0
-    assert libero_env.LiberoEnv.init_state_idx_for_episode(7, 5) == 2
-
-
-def test_init_state_idx_for_episode_rejects_invalid():
-    with pytest.raises(ValueError, match="init_state_count"):
-        libero_env.LiberoEnv.init_state_idx_for_episode(0, 0)
-    with pytest.raises(ValueError, match="episode_idx"):
-        libero_env.LiberoEnv.init_state_idx_for_episode(-1, 3)
-
-
 def test_init_state_idx_out_of_range():
     with pytest.raises(ValueError, match="init_state_idx 3 out of range"):
         _build_env_with_mocks(init_states=[b"a", b"b", b"c"], init_state_idx=3)
@@ -110,43 +92,16 @@ def test_init_state_idx_selects_requested_state():
     env = _build_env_with_mocks(init_states=init_states, init_state_idx=1)
     try:
         assert env.init_state_idx == 1
-        assert env.init_state_count() == 2
         env._env.set_init_state.assert_called_once_with(b"state1")
     finally:
         env.close()
 
 
-def test_goal_conjuncts_returns_copy():
+def test_eval_predicate_unary_and_binary():
     env = _build_env_with_mocks(init_states=[b"s"])
     try:
-        conjuncts = env.goal_conjuncts()
-        assert conjuncts == [
-            ["in", "alphabet_soup_1", "basket_1_contain_region"],
-            ["in", "tomato_sauce_1", "basket_1_contain_region"],
-        ]
-        conjuncts[0][0] = "mutated"
-        assert env.goal_conjuncts()[0][0] == "in"
-    finally:
-        env.close()
-
-
-def test_eval_goal_conjunct_uses_inner_predicate():
-    env = _build_env_with_mocks(init_states=[b"s"])
-    try:
-        assert env.eval_goal_conjunct(0) is True
-        assert env.eval_goal_conjunct(1) is False
-        with pytest.raises(ValueError, match="goal conjunct index 9"):
-            env.eval_goal_conjunct(9)
-    finally:
-        env.close()
-
-
-def test_eval_predicate_builds_lowercase_tuple():
-    env = _build_env_with_mocks(init_states=[b"s"])
-    try:
+        assert env.eval_predicate("close", "microwave_1")
         assert env.eval_predicate("In", "alphabet_soup_1", "basket_1_contain_region")
-        with pytest.raises(ValueError, match="predicate needs"):
-            env.eval_predicate("on", "obj", "region", "extra")
     finally:
         env.close()
 
@@ -249,10 +204,7 @@ def test_resolve_name_accepts_exact_gt_id():
     env = _build_env_with_mocks(init_states=[b"s"])
     try:
         assert env._resolve_name("alphabet_soup_1") == "alphabet_soup_1"
-        assert (
-            env._resolve_name("basket_1_contain_region", prefer_region=True)
-            == "basket_1_contain_region"
-        )
+        assert env._resolve_name("basket_1_contain_region") == "basket_1_contain_region"
     finally:
         env.close()
 

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import io
+import json
 from unittest.mock import MagicMock
 
 import numpy as np
@@ -18,6 +19,10 @@ from pi05_service import (
 )
 
 TestClient = pytest.importorskip("starlette.testclient").TestClient
+
+
+def valid_state_json() -> str:
+    return json.dumps([0.0] * 8)
 
 
 def make_jpeg(
@@ -80,15 +85,6 @@ def test_build_openpi_observation_uses_wrist_when_provided() -> None:
     np.testing.assert_array_equal(obs["observation/state"], state)
 
 
-def test_build_openpi_observation_zeros_wrist_when_missing() -> None:
-    main = np.full((224, 224, 3), 10, dtype=np.uint8)
-    state = np.zeros(8, dtype=np.float32)
-
-    obs = build_openpi_observation("pi05_libero", main, "pick cube", state)
-
-    np.testing.assert_array_equal(obs["observation/wrist_image"], np.zeros_like(main))
-
-
 def test_health() -> None:
     client = TestClient(app, raise_server_exceptions=True)
     resp = client.get("/health")
@@ -107,8 +103,11 @@ def test_predict_with_mock_policy() -> None:
         jpeg = make_jpeg()
         resp = client.post(
             "/predict",
-            files={"image": ("frame.jpg", jpeg, "image/jpeg")},
-            data={"task": "pick up the cube"},
+            files=[
+                ("images", ("cam0.jpg", jpeg, "image/jpeg")),
+                ("images", ("cam1.jpg", jpeg, "image/jpeg")),
+            ],
+            data={"task": "pick up the cube", "state": valid_state_json()},
         )
     finally:
         svc._policy = original
@@ -135,11 +134,11 @@ def test_predict_with_wrist_image(monkeypatch: pytest.MonkeyPatch) -> None:
         wrist_jpeg = make_jpeg(color=(40, 80, 120))
         resp = client.post(
             "/predict",
-            files={
-                "image": ("frame.jpg", main_jpeg, "image/jpeg"),
-                "image_wrist": ("wrist.jpg", wrist_jpeg, "image/jpeg"),
-            },
-            data={"task": "pick up the cube"},
+            files=[
+                ("images", ("cam0.jpg", main_jpeg, "image/jpeg")),
+                ("images", ("cam1.jpg", wrist_jpeg, "image/jpeg")),
+            ],
+            data={"task": "pick up the cube", "state": valid_state_json()},
         )
     finally:
         svc._policy = original
@@ -150,3 +149,52 @@ def test_predict_with_wrist_image(monkeypatch: pytest.MonkeyPatch) -> None:
         obs["observation/wrist_image"],
         np.zeros_like(obs["observation/image"]),
     )
+
+
+def _post_predict(client: TestClient, *, images: int = 2, state: str = valid_state_json()) -> object:
+    jpeg = make_jpeg()
+    files = [("images", (f"cam{i}.jpg", jpeg, "image/jpeg")) for i in range(images)]
+    return client.post(
+        "/predict",
+        files=files,
+        data={"task": "pick up the cube", "state": state},
+    )
+
+
+def test_predict_rejects_single_image() -> None:
+    original = svc._policy
+    svc._policy = MagicMock()
+    try:
+        client = TestClient(app, raise_server_exceptions=True)
+        resp = _post_predict(client, images=1)
+    finally:
+        svc._policy = original
+
+    assert resp.status_code == 400
+    assert "expected 2 images" in resp.json()["detail"]
+
+
+def test_predict_rejects_wrong_state_length() -> None:
+    original = svc._policy
+    svc._policy = MagicMock()
+    try:
+        client = TestClient(app, raise_server_exceptions=True)
+        resp = _post_predict(client, state=json.dumps([0.0, 0.0, 0.0]))
+    finally:
+        svc._policy = original
+
+    assert resp.status_code == 400
+    assert "8 floats" in resp.json()["detail"]
+
+
+def test_predict_rejects_invalid_state_json() -> None:
+    original = svc._policy
+    svc._policy = MagicMock()
+    try:
+        client = TestClient(app, raise_server_exceptions=True)
+        resp = _post_predict(client, state="not-json")
+    finally:
+        svc._policy = original
+
+    assert resp.status_code == 400
+    assert "invalid state JSON" in resp.json()["detail"]

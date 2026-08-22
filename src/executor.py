@@ -1,12 +1,15 @@
-"""Execute linear skill step lists against LIBERO and return summaries."""
+"""Execute linear skill step lists and return summaries."""
 from __future__ import annotations
 
 import logging
+from typing import TYPE_CHECKING
 
 import config
-from libero_env import LiberoEnv
 from plan import Plan
 from vla_client import VLAClient
+
+if TYPE_CHECKING:
+    from envs.vlabench_env import VLABenchEnv
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +30,7 @@ class ExecutionSum:
         *,
         reason: str,
         steps: int = 0,
-        error: str | None = None,
+        error: str = "",
     ) -> None:
         self.reason = reason
         self.steps = steps
@@ -37,7 +40,7 @@ class ExecutionSum:
 class Executor:
     """Executes a linear step list against the environment and VLA policy."""
 
-    def __init__(self, env: LiberoEnv) -> None:
+    def __init__(self, env: VLABenchEnv) -> None:
         self._env = env
         self._vla = VLAClient()
 
@@ -87,15 +90,14 @@ class Executor:
         prompt = self._build_vla_task(step)
         skill_steps = 0
         while skill_steps < config.MAX_SKILL_STEPS:
-            image, wrist, state = self._env.observe()
-            actions_chunk = self._vla.predict(image, wrist, state, prompt)
+            images, state = self._env.observe()
+            actions_chunk = self._vla.predict(images, state, prompt)
             for action in actions_chunk:
                 if skill_steps >= config.MAX_SKILL_STEPS:
                     break
                 self._env.step(action)
                 skill_steps += 1
             is_subtask_done = self._env.check_subtask(step)
-            # for debugging
             logger.debug(
                 f"steps={skill_steps}, eef_delta={self._env.eef_goal_distance(step)},"
                 f"check_subtask={is_subtask_done}")

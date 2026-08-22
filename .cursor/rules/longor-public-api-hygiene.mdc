@@ -16,6 +16,10 @@ Apply this rule to all runtime code under `src/**`.
 - Keep public entrypoint signatures stable and compact:
   - `Runner`-style entrypoints should expose only essential domain inputs.
   - Move wiring/shape logic behind the boundary owner instead of leaking it into entrypoints.
+- Do not define `*args` or `**kwargs` in `src/**` or `services/**`. Name every
+  parameter. No `X | None` / `Optional[X]` just to skip a value — use an explicit
+  default justified in `SRD.md`. Test doubles and monkeypatch lambdas may splat.
+  Call-site unpacking (`f(*tuple)`) is fine.
 - Public method names must match return semantics:
  - If a method is named `plan`, return the plan payload directly (not a wrapper that contains it) unless explicitly approved in `SRD.md`.
 - Do not silently continue when required runtime context is missing.
@@ -23,8 +27,10 @@ Apply this rule to all runtime code under `src/**`.
 
 Examples:
 
-- Good: `Runner(task_suite, task_idx)` with no DI args or extra defaults; goal
-  comes from `LiberoEnv.task_description`.
+- Good: `Runner(task: str, task_idx: int = 0)` forwards those args to `SimEnv`;
+  goal comes from `env.task_description`. Examples: `Runner("select_fruit")`,
+  `Runner("libero_10", 0)`.
+- Bad: packing suite/index into one string (`"libero_10:0"`).
 - Bad: `Runner(..., planner=None, executor=None, env=None, max_replans=...)`.
 - Good: planner prompt/goal shaping lives in `planner.py`.
 - Bad: LLM-facing goal shaping in `runner.py`.

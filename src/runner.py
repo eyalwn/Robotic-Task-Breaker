@@ -1,14 +1,18 @@
-"""Wire and run single-pass planner-executor for one LIBERO task."""
+"""Wire and run single-pass planner-executor for one task."""
+
 from __future__ import annotations
 
 import logging
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
+from envs.sim_env import SimEnv
 from executor import Executor, StopReason
-from libero_env import LiberoEnv
 from plan import get_stop_reason, is_stop_plan
 from planner import LLMPlanner
 from skills import skill_catalog
+
+if TYPE_CHECKING:
+    from envs.vlabench_env import VLABenchEnv
 
 logger = logging.getLogger(__name__)
 
@@ -16,11 +20,11 @@ RunStatus = Literal["done", "plan_failed", "stopped", "execution_error"]
 
 
 class Runner:
-    """Orchestrates a single observe → plan → execute pass for one LIBERO task."""
+    """Orchestrates a single observe → plan → execute pass for one task."""
 
-    def __init__(self, task_suite: str, task_idx: int) -> None:
-        """Wire env, planner, and executor for one LIBERO task."""
-        self._env = LiberoEnv(task_suite, task_idx)
+    def __init__(self, task_suite: str, task_idx: int | None = None) -> None:
+        """Wire env, planner, and executor for one task."""
+        self._env: VLABenchEnv = SimEnv(task_suite, task_idx)
         self._goal = self._env.task_description
         try:
             self._planner = LLMPlanner(self._goal, skill_catalog())
@@ -29,8 +33,8 @@ class Runner:
             self._env.close()
             raise
 
-    def run(self) -> None:
-        """Run the task loop and log its outcome."""
+    def run(self) -> bool:
+        """Run the task loop and return the final success verdict."""
         status: RunStatus = "plan_failed"
         error = ""
         total_steps = 0
@@ -42,10 +46,12 @@ class Runner:
             success = self._verdict(status)
             self._log_status(status, success, error, total_steps)
             self._env.close()
+        return success
 
     def _execute_once(self) -> tuple[RunStatus, str, int]:
         """Observe once, plan once, and execute the plan."""
-        snapshot = self._env.observe()[0]
+        images, _state = self._env.observe()
+        snapshot = images[0]
         current_plan = self._planner.plan(snapshot)
         if is_stop_plan(current_plan):
             return "stopped", get_stop_reason(current_plan), 0

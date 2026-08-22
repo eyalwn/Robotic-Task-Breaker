@@ -1,15 +1,13 @@
 """HTTP client for the VLA policy service (``services/run_vla_server.py``).
 
 Wire contract: ``POST /predict`` with multipart JPEG frames plus a JSON-encoded
-state, answered with ``{"actions": [[...7 floats...], ...]}``. Backend-agnostic:
-works with π0.5 (OpenPI) or SmolVLA depending on which service is running.
+state, answered with ``{"actions": [[...7 floats...], ...]}``.
 """
 from __future__ import annotations
 
 import json
 import logging
 import math
-
 import requests
 
 import config
@@ -42,17 +40,22 @@ class VLAClient:
             raise VLAError(f"VLA service /health returned non-JSON: {exc}") from exc
 
     def predict(
-        self, image: bytes, wrist: bytes, state: list[float], task: str
+        self,
+        images: tuple[bytes, ...],
+        state: list[float],
+        task: str,
     ) -> list[list[float]]:
         """Return a chunk of 7-D actions for the current observation."""
+        if not images:
+            raise VLAError("predict requires at least one image frame")
         try:
             response = requests.post(
                 f"{self._url}/predict",
                 timeout=self._timeout,
-                files={
-                    "image": ("frame.jpg", image, "image/jpeg"),
-                    "image_wrist": ("wrist.jpg", wrist, "image/jpeg"),
-                },
+                files=[
+                    ("images", (f"cam{i}.jpg", jpeg, "image/jpeg"))
+                    for i, jpeg in enumerate(images)
+                ],
                 data={"task": task, "state": json.dumps(state)},
             )
             response.raise_for_status()

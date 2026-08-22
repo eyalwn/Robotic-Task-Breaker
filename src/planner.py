@@ -11,7 +11,7 @@ from langchain.chat_models import init_chat_model
 from langchain_core.messages import HumanMessage, SystemMessage
 
 import config
-from plan import PlannerResult, parse_planner_payload
+from plan import parse_planner_payload
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +69,7 @@ class LLMPlanner:
         self._max_plan_retries = config.MAX_PLAN_RETRIES
         self._llm = _init_planning_llm(self._model_name)
 
-    def plan(self, snapshot: bytes) -> PlannerResult:
+    def plan(self, snapshot: bytes) -> object:
         """Return executable steps or a STOP sentinel dict."""
         system_prompt = _SYSTEM_TEMPLATE.format(
             catalog=self._catalog, plan_spec=_PLAN_SPEC

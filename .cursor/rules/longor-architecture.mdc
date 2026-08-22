@@ -8,41 +8,55 @@ alwaysApply: true
 - `SRD.md` is the single source of truth for the module layout and the VLA
   service contract. If a change needs a contract change, stop and propose the
   contract update first.
-- Source is **flat top-level modules** in `src/`. Do not reintroduce package
-  directories (`core/`, `sim/`, `vla/`, `robots/`) or a `Backend` protocol:
-  there is exactly one environment (LIBERO) and one policy transport (HTTP).
+- Source is **flat top-level modules** in `src/`, plus **`src/envs/` for sim
+  backends only**. Do not add `core/`, `sim/`, `vla/`, or `robots/`. Do not add
+  an ABC, `Backend` protocol, or plugin registry: one env and one VLA per
+  process, selected by `config.py`.
+- `src/envs/sim_env.py` is a factory facade
+  (`SimEnv.__new__(task: str, task_idx: int = 0)` lazy-imports the configured
+  backend and returns that instance). It does not forward methods. It does not
+  import a backend at module level. `task_idx` is used only for LIBERO;
+  VLAbench is constructed with `task` only.
 - Dependencies point strictly downward in this order; no module may import one
-  above it: `config` -> `libero_env` / `vla_client` -> `plan` -> `skills` ->
+  above it: `config` -> `vla_client` / `envs.sim_env` -> `plan` -> `skills` ->
   `executor` -> `planner` -> `runner`.
 - **`src/config.py` is the only place defaults are defined.** Reading
   `os.environ` anywhere else is a defect. `.env` carries only
   `OPENAI_API_KEY`, `LOG_LEVEL`, `LLM_MODEL`, `SAVE_VIDEO`; adding a fifth
   requires a mapped acceptance criterion in `SRD.md`.
+  Task identity is constructor args, not config constants.
+- Files under `src/` except `src/envs/` must not mention VLA backend names
+  (`pi05`, `smolvla`, checkpoint ids). `config.VLA_POLICY` is the exception;
+  only `services/` consume it.
+- Sim class names (`VLABenchEnv`, `LiberoEnv`) may appear in `src/` only as
+  type hints (IDE jump-to-definition). Default annotation is `VLABenchEnv`.
+  Exactly one type per hint: no `X | Y`, no `Optional[X]`.
 - **The VLA-to-environment integration lives in `src/executor.py`**, in one
   visible method. Do not move it behind a skill class, a tool factory, a
   registry entry, or a callable injected from elsewhere.
-- **No hidden tuning layers between the policy output and `env.step()`**: no
-  action rescaling, axis remapping, sign flipping, adaptive scaling, proximity
-  or stall heuristics, and no rewriting a failed result into a success. The
-  action is applied as-is. The reference OpenPI LIBERO evaluation loop is the
-  behavioural contract (summarised in `SRD.md`).
+- **No hidden tuning layers in the executor between the policy output and
+  `env.step()`**: no action rescaling, axis remapping, sign flipping, adaptive
+  scaling, proximity or stall heuristics, and no rewriting a failed result into
+  a success. The action is applied as-is. Sim-native obs/action conversion
+  belongs in `src/envs/*_env.py`.
+- `observe()` returns `(images, state)` where `images` is a tuple of JPEG
+  bytes (length is backend-defined). Executor sends that tuple to the VLA
+  client; planner snapshot is `images[0]`.
 - Action selection and object naming must stay perception-first: the planner
   names objects from RGB+goal text, and policy actions are chosen from camera
   frames + proprioception only.
 - Sim ground truth is allowed only for documented subtask-termination checks in
-  `src/libero_env.py` / `src/executor.py` per `SRD.md`. This exception is
-  explicit, opt-in, and must be reported as "given a subtask-completion
-  oracle" in evaluation results.
-- LIBERO is Linux-only and imported lazily behind a clear install error, so the
-  modules stay importable on any host for unit tests.
+  `src/envs/*` / `src/executor.py` per `SRD.md`. This exception is explicit,
+  opt-in, and must be reported as "given a subtask-completion oracle" in
+  evaluation results.
+- Missing backend or unsupported env API: hard stop with
+  `'not supported for this env'`. Do not mock silently.
+- Sim backends are Linux-only and imported lazily behind a clear install
+  error, so the rest of `src/` stays importable on any host for unit tests.
 
 ## Debugging boundaries
 
-- Prefer small reversible passes. Put experiments, sweeps, and diagnostics in
-  `validation/**`, never in the runtime modules.
-- Reproduce manipulation defects with `validation/success_rate_campaign.py` first. It runs
-  the policy against the environment with no planner, executor, skills, or plan
-  AST, so a failure there rules the orchestration out.
+- Prefer small reversible passes. Do not add a `validation/` harness directory.
 - If a run claims real-perception behaviour, it must not silently fall back to
   sim ground truth. Any fallback must be explicit, opt-in, and documented in
   `SRD.md`.

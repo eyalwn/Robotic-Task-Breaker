@@ -1,8 +1,8 @@
 """Runner orchestration tests with mocked planner and executor."""
+
 from __future__ import annotations
 
 from typing import Any
-
 from unittest.mock import MagicMock
 
 import pytest
@@ -26,8 +26,8 @@ class _StubPlanner:
         self.init_catalog = catalog
         self.plan_calls = 0
         self.plan_args: list[bytes] = []
-        self._plan_fail_on_call: int | None = None
-        self._stop_on_call: int | None = None
+        self._plan_fail_on_call = -1
+        self._stop_on_call = -1
         self._stop_reason = "goal achieved"
 
     def fail_on_plan_call(self, call_number: int) -> None:
@@ -37,7 +37,7 @@ class _StubPlanner:
         self._stop_on_call = call_number
         self._stop_reason = reason
 
-    def plan(self, snapshot: bytes) -> Plan | dict[str, str]:
+    def plan(self, snapshot: bytes) -> object:
         self.plan_calls += 1
         self.plan_args.append(snapshot)
         if self._plan_fail_on_call == self.plan_calls:
@@ -63,9 +63,9 @@ class _StubEnv:
     def steps(self) -> int:
         return self._steps
 
-    def observe(self) -> tuple[bytes, bytes, list[float]]:
+    def observe(self) -> tuple[tuple[bytes, bytes, bytes], list[float]]:
         self.observe_calls += 1
-        return b"img", b"wrist", [0.0] * 8
+        return (b"img", b"second", b"wrist"), [0.0] * 7
 
     def step(self, action: list[float]) -> bool:
         self._steps += 1
@@ -84,8 +84,9 @@ def _runner_with_stub_executor(
     summaries: list[ExecutionSum],
     monkeypatch: pytest.MonkeyPatch,
     *,
-    planner: _StubPlanner | None = None,
+    planner=None,
     env_success: bool = True,
+    runner_args: tuple = ("select_fruit",),
 ) -> tuple[Runner, _StubPlanner, MagicMock]:
     planner = planner or _StubPlanner()
     env = _StubEnv(success=env_success)
@@ -102,11 +103,11 @@ def _runner_with_stub_executor(
         planner.init_catalog = catalog
         return planner
 
-    monkeypatch.setattr("runner.LiberoEnv", lambda *_args, **_kwargs: env)
+    monkeypatch.setattr("runner.SimEnv", lambda *args, **kwargs: env)
     monkeypatch.setattr("runner.LLMPlanner", _planner_factory)
     monkeypatch.setattr("runner.Executor", lambda *_args, **_kwargs: executor)
 
-    runner = Runner("libero_10", 0)
+    runner = Runner(*runner_args)
     return runner, planner, executor
 
 
@@ -117,8 +118,31 @@ def test_runner_uses_env_task_description_for_planner(
         [ExecutionSum(reason=StopReason.PLAN_DONE)],
         monkeypatch,
     )
-    assert runner.run() is None
+    assert runner.run() is True
     assert planner.init_goal == _StubEnv.task_description
+
+
+def test_runner_libero_args_reach_sim_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, object] = {}
+
+    def _capture_sim(*args, **kwargs):
+        captured["args"] = args
+        captured["kwargs"] = kwargs
+        return _StubEnv(success=True)
+
+    monkeypatch.setattr("runner.SimEnv", _capture_sim)
+    monkeypatch.setattr(
+        "runner.LLMPlanner",
+        lambda goal, catalog, **_kwargs: _StubPlanner(goal, catalog),
+    )
+    monkeypatch.setattr(
+        "runner.Executor",
+        lambda *_args, **_kwargs: MagicMock(
+            run=lambda _steps: ExecutionSum(reason=StopReason.PLAN_DONE)
+        ),
+    )
+    Runner("libero_10", 0).run()
+    assert captured["args"] == ("libero_10", 0)
 
 
 def test_runner_plan_done_success(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -142,7 +166,7 @@ def test_runner_run_calls_success_before_close(monkeypatch: pytest.MonkeyPatch) 
         monkeypatch,
         env_success=True,
     )
-    assert runner.run() is None
+    assert runner.run() is True
     env = runner._env
     assert "success" in env.events
     assert env.events.index("success") < env.events.index("close")

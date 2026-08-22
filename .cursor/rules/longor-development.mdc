@@ -20,7 +20,7 @@ alwaysApply: true
 
 - When debugging, default to **small, reversible passes**. Per pass: touch at most 2 source files under `src/**` or `services/**` and keep diffs under ~200 changed LOC. Executing an approved `SRD.md` phase is not debugging and is not subject to this budget.
 - If the expected change exceeds that budget, stop and get user approval first with: hypothesis, file list, and rollback plan.
-- Put experiments, sweeps, and diagnostics in `validation/**` first. Do not embed experiment harnesses into production modules.
+- Do not embed experiment harnesses into production modules. Do not recreate a `validation/` directory.
 - Delete temporary debug instrumentation once the root cause is confirmed. Do not leave it behind a flag.
 - Do not add environment variables: `src/config.py` is the only place defaults live. A new constant is fine; a new env var needs a mapped `SRD.md` acceptance criterion.
 - For Colab validation, notebooks are launchers only; orchestration and verdict logic live in Python scripts (see `colab-validation.mdc`).

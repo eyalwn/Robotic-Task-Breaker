@@ -5,11 +5,9 @@ from typing import TypeAlias
 
 Step: TypeAlias = dict[str, str]
 Plan: TypeAlias = list[Step]
-StopPlan: TypeAlias = dict[str, str]
-PlannerResult: TypeAlias = Plan | StopPlan
 
 
-def is_stop_plan(data: PlannerResult) -> bool:
+def is_stop_plan(data: object) -> bool:
     """Return True if data is a sentinel STOP plan."""
     if not isinstance(data, dict):
         return False
@@ -17,7 +15,7 @@ def is_stop_plan(data: PlannerResult) -> bool:
     return isinstance(stop, str) and bool(stop.strip())
 
 
-def get_stop_reason(data: StopPlan) -> str:
+def get_stop_reason(data: object) -> str:
     """Return the stop reason from a sentinel STOP plan."""
     if not is_stop_plan(data):
         raise ValueError("plan is not a STOP plan")
@@ -25,7 +23,7 @@ def get_stop_reason(data: StopPlan) -> str:
     return reason if reason else "planner stopped"
 
 
-def parse_planner_payload(data: list | dict) -> PlannerResult:
+def parse_planner_payload(data: object) -> object:
     """Parse validated planner JSON into steps or a STOP sentinel."""
     if isinstance(data, list):
         return [_parse_step(step) for step in data]

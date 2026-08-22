@@ -76,18 +76,22 @@ class LiberoEnv:
     """One LIBERO task episode: build, observe, step, check success."""
 
     def __init__(
-        self, task_suite: str, task_idx: int, init_state_idx: int = 0
+        self,
+        task_suite: str,
+        task_idx: int,
+        init_state_idx: int = 0,
     ) -> None:
         benchmark, get_libero_path, OffScreenRenderEnv, get_predicate_fn = _import_libero()
-        if task_suite not in config.MAX_EPISODE_STEPS:
-            raise ValueError(
-                f"unknown task_suite {task_suite!r}; "
-                f"expected one of {sorted(config.MAX_EPISODE_STEPS)}"
+        benchmark_dict = benchmark.get_benchmark_dict()
+        if task_suite not in benchmark_dict:
+            raise KeyError(
+                f"unknown LIBERO suite {task_suite!r}; "
+                f"known suites: {sorted(benchmark_dict)}"
             )
-        suite = benchmark.get_benchmark_dict()[task_suite]()
-        task = suite.get_task(task_idx)
+        suite = benchmark_dict[task_suite]()
+        task_obj = suite.get_task(task_idx)
         bddl_path = os.path.join(
-            get_libero_path("bddl_files"), task.problem_folder, task.bddl_file
+            get_libero_path("bddl_files"), task_obj.problem_folder, task_obj.bddl_file
         )
         init_states = suite.get_task_init_states(task_idx)
         count = len(init_states)
@@ -97,12 +101,10 @@ class LiberoEnv:
                 f"{task_suite!r} task {task_idx} (have {count} initial states)"
             )
 
-        self.task_description = str(task.language)
-        self.max_steps = config.MAX_EPISODE_STEPS[task_suite]
+        self.task_description = str(task_obj.language)
         self.done = False
         self._steps = 0
         self._writer = None
-        self._init_states = init_states
         self._init_state_idx = init_state_idx
         self._get_predicate_fn = get_predicate_fn
 
@@ -135,50 +137,22 @@ class LiberoEnv:
         """Index of the initial state used for this episode."""
         return self._init_state_idx
 
-    def init_state_count(self) -> int:
-        """Return how many canonical initial states exist for this task."""
-        return len(self._init_states)
-
-    @staticmethod
-    def init_state_idx_for_episode(episode_idx: int, init_state_count: int) -> int:
-        """Map a campaign episode index to an initial-state index."""
-        if init_state_count <= 0:
-            raise ValueError("init_state_count must be positive")
-        if episode_idx < 0:
-            raise ValueError(f"episode_idx must be >= 0, got {episode_idx}")
-        return episode_idx % init_state_count
-
     def _get_sim_gt(self):
         """Return the inner LIBERO problem env (sim ground truth lives here)."""
         return self._env.env
 
-    def goal_conjuncts(self) -> list[list[str]]:
-        """Return a copy of the parsed BDDL goal conjuncts for this task."""
-        return [list(conjunct) for conjunct in self._get_sim_gt().parsed_problem["goal_state"]]
-
-    def eval_goal_conjunct(self, index: int) -> bool:
-        """Evaluate one BDDL goal conjunct by index."""
-        conjuncts = self._get_sim_gt().parsed_problem["goal_state"]
-        if index < 0 or index >= len(conjuncts):
-            raise ValueError(
-                f"goal conjunct index {index} out of range (have {len(conjuncts)})"
-            )
-        return bool(self.eval_predicate(*conjuncts[index]))
-
-    def eval_predicate(self, predicate: str, *args: str) -> bool:
-        """Evaluate an arbitrary LIBERO predicate tuple (lowercase name)."""
+    def eval_predicate(
+        self, predicate: str, object_name: str, target_name: str = ""
+    ) -> bool:
+        """Evaluate a LIBERO predicate on one or two object-state keys."""
         predicate_name = predicate.lower()
-        if len(args) not in (1, 2):
-            raise ValueError(
-                f"predicate needs 1 or 2 object args, got {len(args)} for {predicate!r}"
-            )
         states = self._get_sim_gt().object_states_dict
         try:
             predicate_fn = self._get_predicate_fn(predicate_name)
-            object_state_1 = states[args[0]]
-            if len(args) == 1:
+            object_state_1 = states[object_name]
+            if not target_name:
                 return bool(predicate_fn(object_state_1))
-            object_state_2 = states[args[1]]
+            object_state_2 = states[target_name]
             return bool(predicate_fn(object_state_1, object_state_2))
         except KeyError as exc:
             raise ValueError(
@@ -210,9 +184,9 @@ class LiberoEnv:
         if skill == "grab":
             name = self._resolve_name(step["object_name"])
         elif skill == "place":
+            for_inside = step["position"].lower() == "inside"
             name = self._resolve_name(
-                step["target_name"],
-                prefer_region=step["position"].lower() == "inside",
+                step["target_name"], for_inside_place=for_inside
             )
         elif skill in {"close", "turn_on"}:
             name = self._resolve_name(step["target_name"])
@@ -231,64 +205,54 @@ class LiberoEnv:
         if skill == "grab":
             return self.is_grasping(self._resolve_name(step["object_name"]))
         if skill == "place":
-            return self._place_subtask_satisfied(step)
+            position = step["position"].lower()
+            obj = self._resolve_name(step["object_name"])
+            for_inside = position == "inside"
+            target = self._resolve_name(
+                step["target_name"], for_inside_place=for_inside
+            )
+            if position == "inside":
+                return self.eval_predicate("in", obj, target)
+            if position in {"on", "center", "left", "right", "top", "bottom"}:
+                return self.eval_predicate("on", obj, target)
+            raise ValueError(f"unsupported place position: {position!r}")
         if skill == "close":
             return self.eval_predicate("close", self._resolve_name(step["target_name"]))
         if skill == "turn_on":
             return self.eval_predicate("turnon", self._resolve_name(step["target_name"]))
         raise KeyError(f"unsupported skill: {skill!r}")
 
-    def _place_subtask_satisfied(self, step: dict[str, str]) -> bool:
-        """Return whether a place step's structured predicate holds."""
-        position = step["position"].lower()
-        obj = self._resolve_name(step["object_name"])
-        prefer_region = position == "inside"
-        target = self._resolve_name(step["target_name"], prefer_region=prefer_region)
-        if position == "inside":
-            return self.eval_predicate("in", obj, target)
-        if position in {"on", "center", "left", "right", "top", "bottom"}:
-            return self.eval_predicate("on", obj, target)
-        raise ValueError(f"unsupported place position: {position!r}")
-
-    def _resolve_name(self, name: str, *, prefer_region: bool = False) -> str:
+    def _resolve_name(self, name: str, *, for_inside_place: bool = False) -> str:
         """Map an NL or GT name to a unique ``object_states_dict`` key."""
         keys = list(self._get_sim_gt().object_states_dict.keys())
-        norm = _normalize_object_name(name)
+        norm = name.strip().lower().replace(" ", "_")
         if not norm:
             raise ValueError(f"empty object name: {name!r}")
         if name in keys:
             return name
         if norm in keys:
             return norm
-
-        candidates = [key for key in keys if key == norm or key.startswith(norm + "_")]
-        if prefer_region:
-            region_hits = [key for key in candidates if _is_region_key(key)]
-            if region_hits:
-                candidates = region_hits
-        else:
-            candidates = [key for key in candidates if not _is_region_key(key)]
-
-        if len(candidates) == 1:
-            return candidates[0]
-        if not candidates:
-            sample = ", ".join(repr(k) for k in keys[:8])
-            more = "" if len(keys) <= 8 else f", ... ({len(keys)} total)"
-            raise ValueError(
-                f"unknown object name {name!r} (normalized {norm!r}); "
-                f"available: {sample}{more}"
-            )
-        raise ValueError(
-            f"ambiguous object name {name!r} (normalized {norm!r}); "
-            f"candidates: {candidates}"
-        )
+        hits = [key for key in keys if key == norm or key.startswith(norm + "_")]
+        if len(hits) == 1:
+            return hits[0]
+        if not hits:
+            raise ValueError(f"unknown object name {name!r}")
+        if for_inside_place:
+            region_hits = [
+                key
+                for key in hits
+                if key.endswith("_contain_region") or key.endswith("_place_region")
+            ]
+            if len(region_hits) == 1:
+                return region_hits[0]
+        raise ValueError(f"ambiguous object name {name!r}")
 
     @property
     def steps(self) -> int:
         return self._steps
 
-    def observe(self) -> tuple[bytes, bytes, list[float]]:
-        """Return agentview JPEG, wrist JPEG, and the 8-D proprioceptive state.
+    def observe(self) -> tuple[tuple[bytes, bytes], list[float]]:
+        """Return agentview and wrist JPEG bytes plus the 8-D proprioceptive state.
 
         Both frames are rotated 180 degrees: MuJoCo renders bottom-up, and the
         policies' training preprocessing applied the same rotation.
@@ -296,7 +260,7 @@ class LiberoEnv:
         obs = self._obs
         image = np.ascontiguousarray(obs["agentview_image"][::-1, ::-1])
         wrist = np.ascontiguousarray(obs["robot0_eye_in_hand_image"][::-1, ::-1])
-        return to_jpeg(image), to_jpeg(wrist), self.state()
+        return (to_jpeg(image), to_jpeg(wrist)), self.state()
 
     def state(self) -> list[float]:
         """8-D proprioceptive state: eef xyz, eef axis-angle, gripper qpos."""
@@ -347,13 +311,3 @@ class LiberoEnv:
             self._writer = None
             logger.info("video saved: %s", config.VIDEO_PATH)
         self._env.close()
-
-
-def _normalize_object_name(name: str) -> str:
-    """Lowercase and turn spaces into underscores for GT-ID matching."""
-    return name.strip().lower().replace(" ", "_")
-
-
-def _is_region_key(key: str) -> bool:
-    """Return whether a GT key looks like a LIBERO region site."""
-    return key.endswith("_contain_region") or key.endswith("_place_region")

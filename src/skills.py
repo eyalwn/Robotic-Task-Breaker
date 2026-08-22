@@ -1,4 +1,4 @@
-"""Skill catalog for libero_10 linear plans."""
+"""Skill catalog for linear manipulation plans."""
 from __future__ import annotations
 
 _SKILL_CATALOG = """\

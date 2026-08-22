@@ -1,10 +1,10 @@
 """
 SmolVLA (LeRobot) FastAPI inference service — Linux + NVIDIA (T4-class OK).
-Fallback VLA backend; default is π0.5 via services/run_vla_server.py.
+Default VLA backend via services/run_vla_server.py.
 Install deps in .vla-venv: pip install -r deps/requirements-vla-smolvla-linux.txt
-Run: python services/run_vla_server.py --policy smolvla
+Run: python services/run_vla_server.py
 
-Env: VLA_PORT, VLA_ACTION_CLIP, SMOLVLA_CHECKPOINT (default HuggingFaceVLA/smolvla_libero).
+Env: VLA_PORT, VLA_ACTION_CLIP, SMOLVLA_CHECKPOINT (default lerobot/smolvla_vlabench).
 """
 
 from __future__ import annotations
@@ -33,12 +33,12 @@ log = logging.getLogger(__name__)
 VLA_PORT = int(os.environ.get("VLA_PORT", "8765"))
 VLA_ACTION_CLIP = float(os.environ.get("VLA_ACTION_CLIP", "2.0"))
 SMOLVLA_CHECKPOINT = os.environ.get(
-    "SMOLVLA_CHECKPOINT", "HuggingFaceVLA/smolvla_libero"
+    "SMOLVLA_CHECKPOINT", "lerobot/smolvla_vlabench"
 ).strip()
 
 IMAGE_SIZE = 256
 
-_policy_bundle: "PolicyBundle | None" = None
+_policy_bundle: PolicyBundle = False  # type: ignore[assignment]
 
 
 @dataclass
@@ -57,29 +57,28 @@ def decode_image(raw_bytes: bytes) -> np.ndarray:
 
 def parse_state_field(state: str) -> np.ndarray:
     if not state:
-        return np.zeros(8, dtype=np.float32)
+        raise ValueError("state is required (7 floats as JSON array)")
     try:
         arr = np.array(_json.loads(state), dtype=np.float32).reshape(-1)
-    except (ValueError, TypeError, _json.JSONDecodeError):
-        log.warning("Invalid state field; using zeros")
-        return np.zeros(8, dtype=np.float32)
-    if arr.size != 8:
-        log.warning("State dim %d != 8; using zeros", arr.size)
-        return np.zeros(8, dtype=np.float32)
+    except (ValueError, TypeError, _json.JSONDecodeError) as exc:
+        raise ValueError(f"invalid state JSON: {exc}") from exc
+    if arr.size != 7:
+        raise ValueError(f"state must have 7 floats, got {arr.size}")
     return arr
 
 
 def build_smolvla_observation(
-    img_rgb: np.ndarray,
+    front_rgb: np.ndarray,
+    second_rgb: np.ndarray,
+    wrist_rgb: np.ndarray,
     task: str,
     state: np.ndarray,
-    wrist_img_rgb: np.ndarray | None = None,
 ) -> dict:
-    """Map RGB frame(s) + task into LeRobot SmolVLA LIBERO keys."""
-    wrist = wrist_img_rgb if wrist_img_rgb is not None else np.zeros_like(img_rgb)
+    """Map RGB frames + task into LeRobot SmolVLA VLAbench keys."""
     return {
-        "observation.images.image": img_rgb,
-        "observation.images.image2": wrist,
+        "observation.images.camera1": front_rgb,
+        "observation.images.camera2": second_rgb,
+        "observation.images.camera3": wrist_rgb,
         "observation.state": state.astype(np.float32, copy=False),
         "task": task,
     }
@@ -95,7 +94,7 @@ def truncate_action_chunk(chunk: np.ndarray, max_actions: int) -> np.ndarray:
 
 
 def actions_to_wire_format(chunk: np.ndarray) -> list[list[float]]:
-    """SmolVLA LIBERO vectors → [dx,dy,dz,drx,dry,drz,grip] per timestep."""
+    """SmolVLA vectors → [dx,dy,dz,drx,dry,drz,grip] per timestep."""
     if chunk.ndim != 2:
         raise ValueError(f"expected 2D actions, got shape {chunk.shape}")
     _t, dim = chunk.shape
@@ -171,7 +170,7 @@ def _prepare_observation_for_inference(
     prepared = {}
     for name, value in observation.items():
         tensor = torch.from_numpy(value)
-        if "image" in name:
+        if "image" in name or "camera" in name:
             if tensor.dtype == torch.uint8:
                 tensor = tensor.type(torch.float32) / 255
             tensor = tensor.permute(2, 0, 1).contiguous()
@@ -227,7 +226,7 @@ async def lifespan(app: FastAPI):
     elapsed = time.perf_counter() - t0
     log.info("Policy loaded in %.1fs — listening on port %d", elapsed, VLA_PORT)
     yield
-    _policy_bundle = None
+    _policy_bundle = False
 
 
 app = FastAPI(title="smolvla-service", lifespan=lifespan)
@@ -240,45 +239,34 @@ def health():
 
 @app.post("/predict")
 async def predict(
-    image: UploadFile = File(...),
-    image_wrist: UploadFile | None = File(None),
+    images: list[UploadFile] = File(...),
     task: str = Form("pick up the cube"),
     state: str = Form(""),
 ):
-    if _policy_bundle is None:
+    if _policy_bundle is False:
         raise HTTPException(status_code=503, detail="Model not loaded")
 
-    try:
-        raw = await image.read()
-        img_np = decode_image(raw)
-    except Exception as exc:
-        raise HTTPException(status_code=400, detail=f"Image decode error: {exc}") from exc
-
-    wrist_np = None
-    if image_wrist is not None:
-        try:
-            raw_wrist = await image_wrist.read()
-            if raw_wrist:
-                wrist_np = decode_image(raw_wrist)
-        except Exception as exc:
-            raise HTTPException(
-                status_code=400, detail=f"Wrist image decode error: {exc}"
-            ) from exc
-
-    state_arr = parse_state_field(state)
-    obs = build_smolvla_observation(img_np, task, state_arr, wrist_img_rgb=wrist_np)
+    if len(images) != 3:
+        raise HTTPException(
+            status_code=400,
+            detail=f"expected 3 images, got {len(images)}",
+        )
 
     try:
+        decoded = []
+        for upload in images:
+            raw = await upload.read()
+            decoded.append(decode_image(raw))
+        state_arr = parse_state_field(state)
+        obs = build_smolvla_observation(
+            decoded[0], decoded[1], decoded[2], task, state_arr
+        )
         chunk_np = await asyncio.to_thread(_run_inference, _policy_bundle, obs)
-    except ValueError as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Inference error: {exc}") from exc
-
-    try:
         truncated = truncate_action_chunk(chunk_np, config.VLA_ACTIONS_PER_CHUNK)
         wire = actions_to_wire_format(truncated)
     except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     return {"actions": wire}

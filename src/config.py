@@ -23,13 +23,16 @@ LLM_MODEL = os.environ.get("LLM_MODEL", "gpt-4.1-mini").strip()
 SAVE_VIDEO = os.environ.get("SAVE_VIDEO") == "1"
 
 # --- VLA backend selection (launcher default) ------------------------------
-VLA_POLICY = "pi05"  # "pi05" | "smolvla"
+VLA_POLICY = "smolvla"  # "pi05" | "smolvla"
 VLA_POLICIES = ("pi05", "smolvla")
 
 # --- VLA HTTP service ------------------------------------------------------
 VLA_PORT = 8765
 VLA_URL = f"http://127.0.0.1:{VLA_PORT}"
 VLA_TIMEOUT = 60.0
+
+# --- sim environment -------------------------------------------------------
+SIM_ENV = "vlabench"  # "vlabench" | "libero"
 
 # --- LIBERO environment ----------------------------------------------------
 # 256 is the resolution LIBERO rendered its training demonstrations at; policies
@@ -40,14 +43,6 @@ SEED = 7
 # until they settle -- otherwise the first observation shows objects mid-air.
 SETTLE_STEPS = 10
 SETTLE_ACTION = [0.0] * 6 + [-1.0]
-# Longest training demonstration per suite, rounded up (from the OpenPI eval).
-MAX_EPISODE_STEPS = {
-    "libero_spatial": 220,
-    "libero_object": 280,
-    "libero_goal": 300,
-    "libero_10": 520,
-    "libero_90": 400,
-}
 
 # --- video ------------------------------------------------------------------
 VIDEO_PATH = "run.mp4"

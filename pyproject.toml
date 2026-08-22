@@ -11,7 +11,8 @@ requires-python = ">=3.10"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
-py-modules = ["utils", "config", "libero_env", "vla_client", "plan", "skills", "executor", "planner", "runner"]
+py-modules = ["utils", "config", "vla_client", "plan", "skills", "executor", "planner", "runner"]
+packages = ["envs"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src", "services"]
