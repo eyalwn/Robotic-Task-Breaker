@@ -54,16 +54,15 @@ def test_predict_rejects_empty_images() -> None:
         client.predict((), [], "task")
 
 
-def test_predict_clips_actions() -> None:
+def test_predict_preserves_actions() -> None:
     client = VLAClient("http://127.0.0.1:8765", timeout=5.0)
     raw = [[99.0, -99.0, 0.0, 0.0, 0.0, 0.0, 0.0]]
     with patch(
         "vla_client.requests.post",
         return_value=_ok_response({"actions": raw}),
     ):
-        clipped = client.predict((b"i", b"w"), [], "task")
-    assert clipped[0][0] == 2.0
-    assert clipped[0][1] == -2.0
+        preserved = client.predict((b"i", b"w"), [], "task")
+    assert preserved == raw
 
 
 def test_predict_rejects_empty_actions() -> None:

@@ -82,7 +82,11 @@ class VLAClient:
         if not all(math.isfinite(v) for v in values):
             raise VLAError(f"action {idx} is not finite: {action!r}")
         clip = config.ACTION_CLIP
-        clipped = [max(-clip, min(clip, v)) for v in values]
-        if clipped != values:
-            logger.warning("action %d exceeded +-%.1f: %s", idx, clip, values)
-        return clipped
+        if any(abs(v) > clip for v in values):
+            logger.warning(
+                "action %d exceeded +-%.1f (client preserves server output): %s",
+                idx,
+                clip,
+                values,
+            )
+        return values

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import io
 import json
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -32,6 +33,38 @@ def make_jpeg(
     buf = io.BytesIO()
     img.save(buf, format="JPEG")
     return buf.getvalue()
+
+
+def _mock_bundle(state_dim: int = 7) -> object:
+    return SimpleNamespace(
+        state_dim=state_dim,
+        camera_keys=(
+            "observation.images.camera1",
+            "observation.images.camera2",
+            "observation.images.camera3",
+        ),
+        image_size_hw=(256, 256),
+        policy=MagicMock(),
+        preprocessor=MagicMock(),
+        postprocessor=MagicMock(),
+        device=object(),
+    )
+
+
+def _mock_policy_contract(
+    *,
+    state_dim: int = 7,
+    camera_keys: tuple[str, ...] = (
+        "observation.images.camera1",
+        "observation.images.camera2",
+        "observation.images.camera3",
+    ),
+    camera_shape: tuple[int, int, int] = (3, 256, 256),
+) -> object:
+    input_features = {"observation.state": {"shape": (state_dim,)}}
+    for key in camera_keys:
+        input_features[key] = {"shape": camera_shape}
+    return SimpleNamespace(config=SimpleNamespace(input_features=input_features))
 
 
 def test_truncates_to_max_actions() -> None:
@@ -66,6 +99,26 @@ def test_build_smolvla_observation_uses_three_cameras() -> None:
     assert obs["task"] == "pick fruit"
 
 
+def test_extract_policy_contract_matches_expected_checkpoint_layout() -> None:
+    policy = _mock_policy_contract(state_dim=7, camera_shape=(3, 224, 320))
+    state_dim, camera_keys, image_size_hw = svc._extract_policy_contract(policy)
+    assert state_dim == 7
+    assert camera_keys == (
+        "observation.images.camera1",
+        "observation.images.camera2",
+        "observation.images.camera3",
+    )
+    assert image_size_hw == (224, 320)
+
+
+def test_extract_policy_contract_rejects_unexpected_camera_keys() -> None:
+    policy = _mock_policy_contract(
+        camera_keys=("observation.images.image", "observation.images.wrist_image")
+    )
+    with pytest.raises(ValueError, match="unsupported camera contract"):
+        svc._extract_policy_contract(policy)
+
+
 def test_health() -> None:
     client = TestClient(app, raise_server_exceptions=True)
     resp = client.get("/health")
@@ -74,8 +127,7 @@ def test_health() -> None:
 
 
 def test_predict_with_mock_policy() -> None:
-    bundle = MagicMock()
-    bundle.policy.reset.return_value = None
+    bundle = _mock_bundle()
     original = svc._policy_bundle
     svc._policy_bundle = bundle
     try:
@@ -114,7 +166,7 @@ def _post_predict(client: TestClient, *, images: int = 3, state: str = valid_sta
 
 def test_predict_rejects_two_images() -> None:
     original = svc._policy_bundle
-    svc._policy_bundle = MagicMock()
+    svc._policy_bundle = _mock_bundle()
     try:
         client = TestClient(app, raise_server_exceptions=True)
         resp = _post_predict(client, images=2)
@@ -127,7 +179,7 @@ def test_predict_rejects_two_images() -> None:
 
 def test_predict_rejects_wrong_state_length() -> None:
     original = svc._policy_bundle
-    svc._policy_bundle = MagicMock()
+    svc._policy_bundle = _mock_bundle()
     try:
         client = TestClient(app, raise_server_exceptions=True)
         resp = _post_predict(client, state=json.dumps([0.0, 0.0, 0.0]))
@@ -140,7 +192,7 @@ def test_predict_rejects_wrong_state_length() -> None:
 
 def test_predict_rejects_invalid_state_json() -> None:
     original = svc._policy_bundle
-    svc._policy_bundle = MagicMock()
+    svc._policy_bundle = _mock_bundle()
     try:
         client = TestClient(app, raise_server_exceptions=True)
         resp = _post_predict(client, state="not-json")

@@ -16,6 +16,7 @@ import logging
 import os
 import sys
 import time
+from collections.abc import Mapping
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 
@@ -36,7 +37,12 @@ SMOLVLA_CHECKPOINT = os.environ.get(
     "SMOLVLA_CHECKPOINT", "lerobot/smolvla_vlabench"
 ).strip()
 
-IMAGE_SIZE = 256
+_VLABENCH_STATE_DIM = 7
+_EXPECTED_CAMERA_KEYS = (
+    "observation.images.camera1",
+    "observation.images.camera2",
+    "observation.images.camera3",
+)
 
 _policy_bundle: PolicyBundle = False  # type: ignore[assignment]
 
@@ -47,24 +53,89 @@ class PolicyBundle:
     preprocessor: object
     postprocessor: object
     device: object
+    state_dim: int
+    camera_keys: tuple[str, ...]
+    image_size_hw: tuple[int, int]
 
 
-def decode_image(raw_bytes: bytes) -> np.ndarray:
+def decode_image(raw_bytes: bytes, image_size_hw: tuple[int, int]) -> np.ndarray:
+    """Decode one JPEG and resize to the checkpoint-required visual shape."""
+    target_h, target_w = image_size_hw
     img = Image.open(io.BytesIO(raw_bytes)).convert("RGB")
-    img = img.resize((IMAGE_SIZE, IMAGE_SIZE), Image.LANCZOS)
+    img = img.resize((target_w, target_h), Image.LANCZOS)
     return np.array(img, dtype=np.uint8)
 
 
-def parse_state_field(state: str) -> np.ndarray:
+def parse_state_field(state: str, expected_dim: int) -> np.ndarray:
+    """Parse and validate the state JSON against the checkpoint contract."""
     if not state:
-        raise ValueError("state is required (7 floats as JSON array)")
+        raise ValueError(f"state is required ({expected_dim} floats as JSON array)")
     try:
         arr = np.array(_json.loads(state), dtype=np.float32).reshape(-1)
     except (ValueError, TypeError, _json.JSONDecodeError) as exc:
         raise ValueError(f"invalid state JSON: {exc}") from exc
-    if arr.size != 7:
-        raise ValueError(f"state must have 7 floats, got {arr.size}")
+    if arr.size != expected_dim:
+        raise ValueError(f"state must have {expected_dim} floats, got {arr.size}")
     return arr
+
+
+def _feature_shape(feature: object, feature_name: str) -> tuple[int, ...]:
+    """Extract a numeric shape tuple from one policy input feature."""
+    if isinstance(feature, Mapping):
+        shape = feature.get("shape")
+    else:
+        shape = getattr(feature, "shape", None)
+    if not isinstance(shape, (tuple, list)):
+        raise ValueError(f"{feature_name} is missing a valid shape: {feature!r}")
+    try:
+        return tuple(int(v) for v in shape)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{feature_name} has non-integer shape: {shape!r}") from exc
+
+
+def _extract_policy_contract(
+    policy: object,
+) -> tuple[int, tuple[str, ...], tuple[int, int]]:
+    """Return `(state_dim, camera_keys, image_size_hw)` from checkpoint config."""
+    cfg = getattr(policy, "config", None)
+    if cfg is None:
+        raise ValueError("policy is missing config")
+    input_features = getattr(cfg, "input_features", None)
+    if not isinstance(input_features, Mapping):
+        raise ValueError("policy config is missing input_features mapping")
+
+    state_feature = input_features.get("observation.state")
+    if state_feature is None:
+        raise ValueError("checkpoint is missing observation.state input feature")
+    state_shape = _feature_shape(state_feature, "observation.state")
+    if len(state_shape) != 1:
+        raise ValueError(f"observation.state must be 1-D shape, got {state_shape}")
+    state_dim = state_shape[0]
+
+    camera_keys = tuple(
+        sorted(key for key in input_features if key.startswith("observation.images."))
+    )
+    if camera_keys != _EXPECTED_CAMERA_KEYS:
+        raise ValueError(
+            "unsupported camera contract for checkpoint. "
+            f"expected {_EXPECTED_CAMERA_KEYS}, got {camera_keys}"
+        )
+
+    ref_shape = _feature_shape(input_features[camera_keys[0]], camera_keys[0])
+    if len(ref_shape) != 3:
+        raise ValueError(
+            f"{camera_keys[0]} must have [C,H,W] shape, got {ref_shape}"
+        )
+    channels, height, width = ref_shape
+    if channels != 3:
+        raise ValueError(f"{camera_keys[0]} channels must be 3, got {channels}")
+    for key in camera_keys[1:]:
+        shape = _feature_shape(input_features[key], key)
+        if shape != ref_shape:
+            raise ValueError(
+                f"all camera shapes must match; {key}={shape}, expected {ref_shape}"
+            )
+    return state_dim, camera_keys, (height, width)
 
 
 def build_smolvla_observation(
@@ -141,6 +212,13 @@ def _load_smolvla_policy() -> PolicyBundle:
     log.info("Loading SmolVLA checkpoint=%s on %s ...", SMOLVLA_CHECKPOINT, device)
 
     policy = SmolVLAPolicy.from_pretrained(SMOLVLA_CHECKPOINT)
+    state_dim, camera_keys, image_size_hw = _extract_policy_contract(policy)
+    if state_dim != _VLABENCH_STATE_DIM:
+        raise ValueError(
+            f"checkpoint {SMOLVLA_CHECKPOINT!r} expects {state_dim}-D state, "
+            f"but Longor VLABench contract is {_VLABENCH_STATE_DIM}-D. "
+            "Add an explicit state adapter before using this checkpoint."
+        )
     policy.to(device)
     policy.eval()
 
@@ -156,6 +234,9 @@ def _load_smolvla_policy() -> PolicyBundle:
         preprocessor=preprocessor,
         postprocessor=postprocessor,
         device=device,
+        state_dim=state_dim,
+        camera_keys=camera_keys,
+        image_size_hw=image_size_hw,
     )
 
 
@@ -246,18 +327,19 @@ async def predict(
     if _policy_bundle is False:
         raise HTTPException(status_code=503, detail="Model not loaded")
 
-    if len(images) != 3:
+    expected_images = len(_policy_bundle.camera_keys)
+    if len(images) != expected_images:
         raise HTTPException(
             status_code=400,
-            detail=f"expected 3 images, got {len(images)}",
+            detail=f"expected {expected_images} images, got {len(images)}",
         )
 
     try:
         decoded = []
         for upload in images:
             raw = await upload.read()
-            decoded.append(decode_image(raw))
-        state_arr = parse_state_field(state)
+            decoded.append(decode_image(raw, _policy_bundle.image_size_hw))
+        state_arr = parse_state_field(state, _policy_bundle.state_dim)
         obs = build_smolvla_observation(
             decoded[0], decoded[1], decoded[2], task, state_arr
         )
