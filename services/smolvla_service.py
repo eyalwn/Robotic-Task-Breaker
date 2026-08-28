@@ -77,6 +77,18 @@ def parse_state_field(state: str, expected_dim: int) -> np.ndarray:
     return arr
 
 
+def adapt_state_for_policy(state: np.ndarray, policy_state_dim: int) -> np.ndarray:
+    """Adapt Longor's 7-D VLABench state to the checkpoint-required state dim."""
+    if policy_state_dim == _VLABENCH_STATE_DIM:
+        return state
+    if policy_state_dim == 6 and state.size == _VLABENCH_STATE_DIM:
+        # smolvla_vlabench currently declares 6-D state; drop gripper component.
+        return state[:6]
+    raise ValueError(
+        f"unsupported state adapter: incoming {state.size}-D, policy expects {policy_state_dim}-D"
+    )
+
+
 def _feature_shape(feature: object, feature_name: str) -> tuple[int, ...]:
     """Extract a numeric shape tuple from one policy input feature."""
     if isinstance(feature, Mapping):
@@ -211,11 +223,15 @@ def _load_smolvla_policy() -> PolicyBundle:
 
     policy = SmolVLAPolicy.from_pretrained(SMOLVLA_CHECKPOINT)
     state_dim, camera_keys, image_size_hw = _extract_policy_contract(policy)
-    if state_dim != _VLABENCH_STATE_DIM:
+    if state_dim not in {6, _VLABENCH_STATE_DIM}:
         raise ValueError(
-            f"checkpoint {SMOLVLA_CHECKPOINT!r} expects {state_dim}-D state, "
-            f"but Longor VLABench contract is {_VLABENCH_STATE_DIM}-D. "
-            "Add an explicit state adapter before using this checkpoint."
+            f"checkpoint {SMOLVLA_CHECKPOINT!r} expects unsupported {state_dim}-D state; "
+            f"Longor supports only 6-D or {_VLABENCH_STATE_DIM}-D policy state."
+        )
+    if state_dim == 6:
+        log.warning(
+            "checkpoint %s expects 6-D state; applying explicit 7->6 adapter (drop gripper)",
+            SMOLVLA_CHECKPOINT,
         )
     policy.to(device)
     policy.eval()
@@ -337,7 +353,8 @@ async def predict(
         for upload in images:
             raw = await upload.read()
             decoded.append(decode_image(raw, _policy_bundle.image_size_hw))
-        state_arr = parse_state_field(state, _policy_bundle.state_dim)
+        state_arr = parse_state_field(state, _VLABENCH_STATE_DIM)
+        state_arr = adapt_state_for_policy(state_arr, _policy_bundle.state_dim)
         obs = build_smolvla_observation(
             decoded[0], decoded[1], decoded[2], task, state_arr
         )

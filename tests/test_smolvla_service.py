@@ -13,6 +13,7 @@ from PIL import Image
 import config
 import smolvla_service as svc
 from smolvla_service import (
+    adapt_state_for_policy,
     actions_to_wire_format,
     app,
     build_smolvla_observation,
@@ -97,6 +98,24 @@ def test_build_smolvla_observation_uses_three_cameras() -> None:
     np.testing.assert_array_equal(obs["observation.images.camera3"], wrist)
     np.testing.assert_array_equal(obs["observation.state"], state)
     assert obs["task"] == "pick fruit"
+
+
+def test_adapt_state_for_policy_keeps_7d() -> None:
+    incoming = np.arange(7, dtype=np.float32)
+    adapted = adapt_state_for_policy(incoming, 7)
+    np.testing.assert_array_equal(adapted, incoming)
+
+
+def test_adapt_state_for_policy_drops_gripper_for_6d() -> None:
+    incoming = np.arange(7, dtype=np.float32)
+    adapted = adapt_state_for_policy(incoming, 6)
+    np.testing.assert_array_equal(adapted, incoming[:6])
+
+
+def test_adapt_state_for_policy_rejects_unsupported_dim() -> None:
+    incoming = np.arange(7, dtype=np.float32)
+    with pytest.raises(ValueError, match="unsupported state adapter"):
+        adapt_state_for_policy(incoming, 5)
 
 
 def test_extract_policy_contract_matches_expected_checkpoint_layout() -> None:
