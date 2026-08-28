@@ -127,6 +127,12 @@ checkpoint** needs (HTTP 400 on mismatch). No silent padding/dropping:
   `observation.images.camera1|camera2|camera3` (front, second, wrist).
 - `pi05` / `pi05_libero`: 2 images, 8-D state.
 
+> **Verified 2026-08-28:** `lerobot/smolvla_vlabench` checkpoint metadata
+> declares a 6-D state, but its loaded normalizer has 7-D state statistics and
+> fails on a 6-D input. This is upstream metadata inconsistency, not an
+> environment/service dimension mismatch. Preserve the documented 7-D VLABench
+> state; never drop its gripper component based on that metadata.
+
 Backend selection is a launcher/config concern, not a client concern:
 `src/vla_client.py` stays backend-agnostic.
 

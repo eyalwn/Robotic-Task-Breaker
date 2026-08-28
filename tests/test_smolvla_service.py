@@ -13,7 +13,6 @@ from PIL import Image
 import config
 import smolvla_service as svc
 from smolvla_service import (
-    adapt_state_for_policy,
     actions_to_wire_format,
     app,
     build_smolvla_observation,
@@ -36,9 +35,8 @@ def make_jpeg(
     return buf.getvalue()
 
 
-def _mock_bundle(state_dim: int = 7) -> object:
+def _mock_bundle() -> object:
     return SimpleNamespace(
-        state_dim=state_dim,
         camera_keys=(
             "observation.images.camera1",
             "observation.images.camera2",
@@ -100,28 +98,9 @@ def test_build_smolvla_observation_uses_three_cameras() -> None:
     assert obs["task"] == "pick fruit"
 
 
-def test_adapt_state_for_policy_keeps_7d() -> None:
-    incoming = np.arange(7, dtype=np.float32)
-    adapted = adapt_state_for_policy(incoming, 7)
-    np.testing.assert_array_equal(adapted, incoming)
-
-
-def test_adapt_state_for_policy_drops_gripper_for_6d() -> None:
-    incoming = np.arange(7, dtype=np.float32)
-    adapted = adapt_state_for_policy(incoming, 6)
-    np.testing.assert_array_equal(adapted, incoming[:6])
-
-
-def test_adapt_state_for_policy_rejects_unsupported_dim() -> None:
-    incoming = np.arange(7, dtype=np.float32)
-    with pytest.raises(ValueError, match="unsupported state adapter"):
-        adapt_state_for_policy(incoming, 5)
-
-
-def test_extract_policy_contract_matches_expected_checkpoint_layout() -> None:
-    policy = _mock_policy_contract(state_dim=7, camera_shape=(3, 224, 320))
-    state_dim, camera_keys, image_size_hw = svc._extract_policy_contract(policy)
-    assert state_dim == 7
+def test_extract_policy_contract_uses_visual_checkpoint_layout() -> None:
+    policy = _mock_policy_contract(state_dim=6, camera_shape=(3, 224, 320))
+    camera_keys, image_size_hw = svc._extract_policy_contract(policy)
     assert camera_keys == (
         "observation.images.camera1",
         "observation.images.camera2",

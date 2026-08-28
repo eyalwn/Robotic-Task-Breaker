@@ -51,7 +51,6 @@ class PolicyBundle:
     preprocessor: object
     postprocessor: object
     device: object
-    state_dim: int
     camera_keys: tuple[str, ...]
     image_size_hw: tuple[int, int]
 
@@ -77,18 +76,6 @@ def parse_state_field(state: str, expected_dim: int) -> np.ndarray:
     return arr
 
 
-def adapt_state_for_policy(state: np.ndarray, policy_state_dim: int) -> np.ndarray:
-    """Adapt Longor's 7-D VLABench state to the checkpoint-required state dim."""
-    if policy_state_dim == _VLABENCH_STATE_DIM:
-        return state
-    if policy_state_dim == 6 and state.size == _VLABENCH_STATE_DIM:
-        # smolvla_vlabench currently declares 6-D state; drop gripper component.
-        return state[:6]
-    raise ValueError(
-        f"unsupported state adapter: incoming {state.size}-D, policy expects {policy_state_dim}-D"
-    )
-
-
 def _feature_shape(feature: object, feature_name: str) -> tuple[int, ...]:
     """Extract a numeric shape tuple from one policy input feature."""
     if isinstance(feature, Mapping):
@@ -105,8 +92,8 @@ def _feature_shape(feature: object, feature_name: str) -> tuple[int, ...]:
 
 def _extract_policy_contract(
     policy: object,
-) -> tuple[int, tuple[str, ...], tuple[int, int]]:
-    """Return `(state_dim, camera_keys, image_size_hw)` from checkpoint config."""
+) -> tuple[tuple[str, ...], tuple[int, int]]:
+    """Return camera keys and image size from the checkpoint config."""
     cfg = getattr(policy, "config", None)
     if cfg is None:
         raise ValueError("policy is missing config")
@@ -120,7 +107,6 @@ def _extract_policy_contract(
     state_shape = _feature_shape(state_feature, "observation.state")
     if len(state_shape) != 1:
         raise ValueError(f"observation.state must be 1-D shape, got {state_shape}")
-    state_dim = state_shape[0]
 
     camera_keys = tuple(
         sorted(key for key in input_features if key.startswith("observation.images."))
@@ -145,7 +131,7 @@ def _extract_policy_contract(
             raise ValueError(
                 f"all camera shapes must match; {key}={shape}, expected {ref_shape}"
             )
-    return state_dim, camera_keys, (height, width)
+    return camera_keys, (height, width)
 
 
 def build_smolvla_observation(
@@ -222,17 +208,7 @@ def _load_smolvla_policy() -> PolicyBundle:
     log.info("Loading SmolVLA checkpoint=%s on %s ...", SMOLVLA_CHECKPOINT, device)
 
     policy = SmolVLAPolicy.from_pretrained(SMOLVLA_CHECKPOINT)
-    state_dim, camera_keys, image_size_hw = _extract_policy_contract(policy)
-    if state_dim not in {6, _VLABENCH_STATE_DIM}:
-        raise ValueError(
-            f"checkpoint {SMOLVLA_CHECKPOINT!r} expects unsupported {state_dim}-D state; "
-            f"Longor supports only 6-D or {_VLABENCH_STATE_DIM}-D policy state."
-        )
-    if state_dim == 6:
-        log.warning(
-            "checkpoint %s expects 6-D state; applying explicit 7->6 adapter (drop gripper)",
-            SMOLVLA_CHECKPOINT,
-        )
+    camera_keys, image_size_hw = _extract_policy_contract(policy)
     policy.to(device)
     policy.eval()
 
@@ -248,7 +224,6 @@ def _load_smolvla_policy() -> PolicyBundle:
         preprocessor=preprocessor,
         postprocessor=postprocessor,
         device=device,
-        state_dim=state_dim,
         camera_keys=camera_keys,
         image_size_hw=image_size_hw,
     )
@@ -354,7 +329,6 @@ async def predict(
             raw = await upload.read()
             decoded.append(decode_image(raw, _policy_bundle.image_size_hw))
         state_arr = parse_state_field(state, _VLABENCH_STATE_DIM)
-        state_arr = adapt_state_for_policy(state_arr, _policy_bundle.state_dim)
         obs = build_smolvla_observation(
             decoded[0], decoded[1], decoded[2], task, state_arr
         )
