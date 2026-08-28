@@ -67,6 +67,10 @@ class LLMPlanner:
         self._catalog = catalog
         self._model_name = config.LLM_MODEL
         self._max_plan_retries = config.MAX_PLAN_RETRIES
+        if self._max_plan_retries < 1:
+            raise ValueError(
+                f"MAX_PLAN_RETRIES must be >= 1, got {self._max_plan_retries}"
+            )
         self._llm = _init_planning_llm(self._model_name)
 
     def plan(self, snapshot: bytes) -> object:
@@ -123,9 +127,6 @@ class LLMPlanner:
                         content=_retry_prompt(raw=raw, error_msg=error_msg)
                     )
                 )
-
-        raise RuntimeError("LLMPlanner: unreachable")
-
 
 def _retry_prompt(raw: str, error_msg: str) -> str:
     """Build a repair prompt after JSON or schema validation failure."""

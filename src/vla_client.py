@@ -60,7 +60,7 @@ class VLAClient:
             )
             response.raise_for_status()
             payload: dict[str, list[list[float]]] = response.json()
-            logger.debug(f"payload = {payload}")
+            logger.debug("payload = %s", payload)
         except requests.RequestException as exc:
             raise VLAError(f"VLA service POST /predict failed: {exc}") from exc
         except ValueError as exc:
@@ -68,8 +68,7 @@ class VLAClient:
         actions = payload.get("actions")
         if not isinstance(actions, list) or not actions:
             raise VLAError(f"expected a non-empty 'actions' list, got {payload!r}")
-        validated = [self._validate(action, idx) for idx, action in enumerate(actions)]
-        return validated
+        return [self._validate(action, idx) for idx, action in enumerate(actions)]
 
     @staticmethod
     def _validate(action: object, idx: int) -> list[float]:
@@ -81,12 +80,11 @@ class VLAClient:
             raise VLAError(f"action {idx} is not numeric: {action!r}") from exc
         if not all(math.isfinite(v) for v in values):
             raise VLAError(f"action {idx} is not finite: {action!r}")
-        clip = config.ACTION_CLIP
-        if any(abs(v) > clip for v in values):
+        if any(abs(v) > config.ACTION_CLIP for v in values):
             logger.warning(
                 "action %d exceeded +-%.1f (client preserves server output): %s",
                 idx,
-                clip,
+                config.ACTION_CLIP,
                 values,
             )
         return values

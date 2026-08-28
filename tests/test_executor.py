@@ -120,7 +120,7 @@ def test_skill_timeout_contract() -> None:
     executor = build_executor(env=env, vla=vla)
     step = {"skill": "grab", "object_name": "cube_1"}
     with patch("config.MAX_SKILL_STEPS", 3):
-        assert executor._run_skill_successfuly(step) is False
+        assert executor._run_step_successfuly(step) is False
     assert len(env.step_calls) == 3
 
 
@@ -129,7 +129,7 @@ def test_skill_done_when_subtask_already_satisfied() -> None:
     vla = FakeVLA()
     executor = build_executor(env=env, vla=vla)
     step = {"skill": "grab", "object_name": "cube_1"}
-    assert executor._run_skill_successfuly(step) is True
+    assert executor._run_step_successfuly(step) is True
     assert len(vla.calls) == 1
     assert len(env.step_calls) == 1
 
@@ -153,7 +153,7 @@ def test_place_subtask_success_ends_early() -> None:
         "target_name": "basket_1_contain_region",
         "position": "inside",
     }
-    assert executor._run_skill_successfuly(step) is True
+    assert executor._run_step_successfuly(step) is True
     assert len(vla.calls) == 1
     assert len(env.step_calls) == 1
 
@@ -177,7 +177,7 @@ def test_place_subtask_success_after_steps() -> None:
         "target_name": "basket_1_contain_region",
         "position": "inside",
     }
-    assert executor._run_skill_successfuly(step) is True
+    assert executor._run_step_successfuly(step) is True
     assert len(vla.calls) == 1
     assert vla.calls[0][2] == "place the alphabet_soup_1 inside the basket_1_contain_region"
     assert len(env.step_calls) == 2
@@ -237,7 +237,7 @@ def test_executes_full_returned_chunk() -> None:
     executor = build_executor(env=env, vla=vla)
     step = {"skill": "grab", "object_name": "cube"}
     with patch("config.MAX_SKILL_STEPS", chunk_size):
-        assert executor._run_skill_successfuly(step) is False
+        assert executor._run_step_successfuly(step) is False
     assert len(vla.calls) == 1
     assert len(env.step_calls) == chunk_size
     assert env.step_calls[-1][0] == float(chunk_size - 1)

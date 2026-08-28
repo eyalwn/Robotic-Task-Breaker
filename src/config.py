@@ -58,4 +58,3 @@ ACTION_CLIP = 2.0
 
 # --- planner / executor -----------------------------------------------------
 MAX_PLAN_RETRIES = 3
-PROGRESS_HISTORY_WINDOW = 3

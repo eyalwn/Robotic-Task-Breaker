@@ -49,8 +49,8 @@ class Executor:
         steps_at_start = self._env.steps
         try:
             for step in steps:
-                logger.info("executing skill: %s", step["skill"])
-                if self._run_skill_successfuly(step):
+                logger.info("executing step: %s", step["skill"])
+                if self._run_step_successfuly(step):
                     logger.info("skill done successfuly: %s", step["skill"])
                 else:
                     return ExecutionSum(
@@ -85,9 +85,10 @@ class Executor:
             return f"turn on the {step['target_name']}"
         return skill
 
-    def _run_skill_successfuly(self, step: dict[str, str]) -> bool:
+    def _run_step_successfuly(self, step: dict[str, str]) -> bool:
         """Run one skill until subtask success or per-skill cap. Returns subtask ok."""
         prompt = self._build_vla_task(step)
+        logger.debug("full skill prompt: %s", prompt)
         skill_steps = 0
         while skill_steps < config.MAX_SKILL_STEPS:
             images, state = self._env.observe()
@@ -98,9 +99,9 @@ class Executor:
                 self._env.step(action)
                 skill_steps += 1
             is_subtask_done = self._env.check_subtask(step)
-            logger.debug(
-                f"steps={skill_steps}, eef_delta={self._env.eef_goal_distance(step)},"
-                f"check_subtask={is_subtask_done}")
+            if logger.isEnabledFor(logging.DEBUG):
+                logger.debug("steps=%d, eef_delta=%s, check_subtask=%s",
+                    skill_steps, self._env.eef_goal_distance(step), is_subtask_done)
             if is_subtask_done:
                 return True
         return self._env.check_subtask(step)

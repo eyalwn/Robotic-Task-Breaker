@@ -6,7 +6,6 @@ import sys
 from typing import TextIO
 
 import config
-from dotenv import find_dotenv, load_dotenv
 
 _PROJECT_LOGGER_NAMES = (
     "config",
@@ -25,15 +24,6 @@ _QUIET_LOGGER_NAMES = (
     "absl",  # dm_control IK "Failed to converge" during VLABench stepping
 )
 _DEFAULT_FORMAT = "%(levelname)s [%(name)s] %(message)s"
-
-
-def load_env(*, usecwd: bool = False) -> None:
-    """Load repo ``.env`` into ``os.environ`` (does not override existing keys).
-
-    Call from process entrypoints only — not on library import. Prefer calling
-    before ``configure_logging`` so ``LOG_LEVEL`` from ``.env`` is visible.
-    """
-    load_dotenv(find_dotenv(usecwd=usecwd))
 
 
 def configure_logging(

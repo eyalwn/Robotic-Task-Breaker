@@ -25,9 +25,7 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from PIL import Image
 
 import config
-from utils import configure_logging, load_env
-
-load_env()
+from utils import configure_logging
 configure_logging(fmt="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)
 
