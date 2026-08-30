@@ -54,7 +54,8 @@ def test_wire_format_truncated_to_config_limit() -> None:
     wire = actions_to_wire_format(truncated)
     assert len(wire) == config.VLA_ACTIONS_PER_CHUNK
     assert all(len(action) == 7 for action in wire)
-    assert wire[0][0] == config.ACTION_CLIP
+    clip = float(svc.VLA_ACTION_CLIP)
+    assert wire[0][0] == clip
 
 
 def test_actions_to_wire_format_returns_all_seven_dims() -> None:

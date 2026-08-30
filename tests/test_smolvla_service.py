@@ -74,13 +74,28 @@ def test_truncates_to_max_actions() -> None:
     assert truncated[2, 0] == 6.0
 
 
+def test_wire_format_preserves_raw_vectors_including_pi_roll() -> None:
+    """VLABench roll targets near π must pass through unchanged (no ±2 clipping)."""
+    chunk = np.array(
+        [
+            [0.1, 0.2, 0.3, 3.14159265, -1.5, 0.0, 1.0],
+            [2.5, -1.0, 0.0, 0.1, 0.2, 0.3, -1.0],
+        ],
+        dtype=np.float32,
+    )
+    wire = actions_to_wire_format(chunk)
+    assert len(wire) == 2
+    assert wire[0] == pytest.approx([0.1, 0.2, 0.3, 3.14159265, -1.5, 0.0, 1.0])
+    assert wire[1] == pytest.approx([2.5, -1.0, 0.0, 0.1, 0.2, 0.3, -1.0])
+
+
 def test_wire_format_truncated_to_config_limit() -> None:
     chunk = np.full((10, 7), 3.0, dtype=np.float32)
     truncated = truncate_action_chunk(chunk, config.VLA_ACTIONS_PER_CHUNK)
     wire = actions_to_wire_format(truncated)
     assert len(wire) == config.VLA_ACTIONS_PER_CHUNK
     assert all(len(action) == 7 for action in wire)
-    assert wire[0][0] == config.ACTION_CLIP
+    assert wire[0][0] == 3.0
 
 
 def test_build_smolvla_observation_uses_three_cameras() -> None:

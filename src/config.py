@@ -53,8 +53,6 @@ VIDEO_FPS = 10
 VLA_ACTIONS_PER_CHUNK = 5
 # Per-skill step cap (guard against a failing subtask; success path ends earlier).
 MAX_SKILL_STEPS = 120
-# Guards against a policy returning garbage; the services clip to this too.
-ACTION_CLIP = 2.0
 
 # --- planner / executor -----------------------------------------------------
 MAX_PLAN_RETRIES = 3

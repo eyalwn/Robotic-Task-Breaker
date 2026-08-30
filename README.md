@@ -107,7 +107,13 @@ The client talks to `http://127.0.0.1:8765` and is backend-agnostic.
 
 Set `SAVE_VIDEO=1` in `.env` to write `run.mp4`.
 
-Colab launcher: `colab/run_vlabench_task.ipynb` (runs `examples/run_vlabench_task.py`).
+Colab launchers:
+
+- `colab/run_vlabench_task.ipynb` — Longor path (`examples/run_vlabench_task.py`).
+- `colab/run_lerobot_baseline.ipynb` — locked upstream `lerobot-eval` baseline for
+  the M4 parity gate (`artifacts/m4_parity/`).
+
+See `SRD.md` (M4 parity gate) for stop conditions and artifact layout.
 
 ## Tests
 

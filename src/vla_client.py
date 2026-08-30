@@ -80,11 +80,4 @@ class VLAClient:
             raise VLAError(f"action {idx} is not numeric: {action!r}") from exc
         if not all(math.isfinite(v) for v in values):
             raise VLAError(f"action {idx} is not finite: {action!r}")
-        if any(abs(v) > config.ACTION_CLIP for v in values):
-            logger.warning(
-                "action %d exceeded +-%.1f (client preserves server output): %s",
-                idx,
-                config.ACTION_CLIP,
-                values,
-            )
         return values

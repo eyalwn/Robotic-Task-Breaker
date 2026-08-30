@@ -28,8 +28,26 @@ This is intentionally not an AST system.
 ### Current
 
 - **M4.** SmolVLA solves `VLAbench - select_fruit` via `colab/run_vlabench_task.ipynb`.
+  Before claiming milestone success, run the **M4 parity gate** (see below).
 
 Further VLAbench tasks are planned after M4.
+
+### M4 parity gate (evaluation protocol)
+
+Compare upstream checkpoint quality against the Longor subtask path before prompt
+or cadence experiments:
+
+1. **Official baseline** — `colab/run_lerobot_baseline.ipynb`: locked
+   `lerobot-eval` on `select_fruit`, 10 episodes, VLABench SHA
+   `cf588fe60c0c7282174fe979f5913170cfe69017`, policy
+   `lerobot/smolvla_vlabench`, native task instruction.
+2. **Longor subtask path** — `colab/run_vlabench_task.ipynb`: one rollout with
+   planner → `pick up <fruit>` (unchanged).
+3. **Verdict** — `python validation/m4_parity_capture.py verdict` on artifacts in
+   `artifacts/m4_parity/`. Stop conditions:
+   - baseline fails → pivot to a different low-level policy;
+   - baseline OK + Longor OK → report success rate, do not mark M4 done from one run;
+   - baseline OK + Longor fails → native-prompt follow-up before cadence changes.
 
 ## Architecture
 
@@ -116,6 +134,10 @@ Backend modules expose the same wire contract:
   - `task` (string)
   - `state` (JSON array of floats; length is the env's)
   - response: `{"actions": [[7 floats], ...]}`
+  - **Raw action guarantee:** services and `vla_client` validate shape and
+    finiteness only. They must never clip, rescale, or otherwise modify a valid
+    7-D vector. SmolVLA outputs (including roll targets near π radians) pass
+    through unchanged to `env.step()`.
   - `actions` length is capped by `config.VLA_ACTIONS_PER_CHUNK` on the
     **service** before the response is returned. Clients must execute the full
     returned chunk and must not trim it again.

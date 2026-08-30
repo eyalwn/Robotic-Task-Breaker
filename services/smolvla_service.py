@@ -4,7 +4,7 @@ Default VLA backend via services/run_vla_server.py.
 Install deps in .vla-venv: pip install -r deps/requirements-vla-smolvla-linux.txt
 Run: python services/run_vla_server.py
 
-Env: VLA_PORT, VLA_ACTION_CLIP, SMOLVLA_CHECKPOINT (default lerobot/smolvla_vlabench).
+Env: VLA_PORT, SMOLVLA_CHECKPOINT (default lerobot/smolvla_vlabench).
 """
 
 from __future__ import annotations
@@ -30,7 +30,6 @@ configure_logging(fmt="%(asctime)s %(levelname)s %(message)s")
 log = logging.getLogger(__name__)
 
 VLA_PORT = int(os.environ.get("VLA_PORT", "8765"))
-VLA_ACTION_CLIP = float(os.environ.get("VLA_ACTION_CLIP", "2.0"))
 SMOLVLA_CHECKPOINT = os.environ.get(
     "SMOLVLA_CHECKPOINT", "lerobot/smolvla_vlabench"
 ).strip()
@@ -167,9 +166,7 @@ def actions_to_wire_format(chunk: np.ndarray) -> list[list[float]]:
     _t, dim = chunk.shape
     if dim < 7:
         raise ValueError(f"need action dim >= 7 for gripper index 6, got {dim}")
-    merged = chunk[:, :7].astype(np.float32, copy=False)
-    clipped = np.clip(merged, -VLA_ACTION_CLIP, VLA_ACTION_CLIP)
-    return clipped.tolist()
+    return chunk[:, :7].astype(np.float32, copy=False).tolist()
 
 
 def _import_smolvla():

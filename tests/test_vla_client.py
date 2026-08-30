@@ -65,6 +65,18 @@ def test_predict_preserves_actions() -> None:
     assert preserved == raw
 
 
+def test_predict_preserves_pi_range_orientation() -> None:
+    """Roll near π is valid for VLABench EEF actions and must not be modified."""
+    client = VLAClient("http://127.0.0.1:8765", timeout=5.0)
+    raw = [[0.0, 0.0, 0.0, 3.14159265, 0.0, 0.0, -1.0]]
+    with patch(
+        "vla_client.requests.post",
+        return_value=_ok_response({"actions": raw}),
+    ):
+        preserved = client.predict((b"i", b"w"), [], "task")
+    assert preserved == raw
+
+
 def test_predict_rejects_empty_actions() -> None:
     client = VLAClient("http://127.0.0.1:8765", timeout=5.0)
     with patch(

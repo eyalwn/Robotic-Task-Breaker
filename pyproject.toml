@@ -15,7 +15,7 @@ py-modules = ["utils", "config", "vla_client", "plan", "skills", "executor", "pl
 packages = ["envs"]
 
 [tool.pytest.ini_options]
-pythonpath = ["src", "services"]
+pythonpath = ["src", "services", "validation"]
 markers = [
     "integration: live-server and live planner LLM tests (run with pytest -m integration)",
 ]
