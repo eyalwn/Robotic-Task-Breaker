@@ -1,7 +1,5 @@
 """Wire and run single-pass planner-executor for one task."""
 
-from __future__ import annotations
-
 import logging
 from typing import TYPE_CHECKING, Literal
 
@@ -39,7 +37,26 @@ class Runner:
         error = ""
         total_steps = 0
         try:
-            status, error, total_steps = self._execute_once()
+            images, _state = self._env.observe()
+            snapshot = images[0]
+            current_plan = self._planner.plan(snapshot)
+            if is_stop_plan(current_plan):
+                status = "stopped"
+                error = get_stop_reason(current_plan)
+            else:
+                execution_sum = self._executor.run(current_plan)
+                total_steps = execution_sum.steps
+                if execution_sum.reason == StopReason.PLAN_DONE:
+                    status = "done"
+                elif execution_sum.reason == StopReason.SUBTASK_TIMEOUT:
+                    status = "execution_error"
+                    error = "subtask step cap exceeded"
+                elif execution_sum.reason == StopReason.EXECUTION_ERROR:
+                    status = "execution_error"
+                    error = execution_sum.error or ""
+                else:
+                    status = "execution_error"
+                    error = f"unexpected stop reason: {execution_sum.reason}"
         except RuntimeError as exc:
             error = str(exc)
         finally:
@@ -47,29 +64,6 @@ class Runner:
             self._log_status(status, success, error, total_steps)
             self._env.close()
         return success
-
-    def _execute_once(self) -> tuple[RunStatus, str, int]:
-        """Observe once, plan once, and execute the plan."""
-        images, _state = self._env.observe()
-        snapshot = images[0]
-        current_plan = self._planner.plan(snapshot)
-        if is_stop_plan(current_plan):
-            return "stopped", get_stop_reason(current_plan), 0
-
-        execution_sum = self._executor.run(current_plan)
-        total_steps = execution_sum.steps
-
-        if execution_sum.reason == StopReason.PLAN_DONE:
-            return "done", "", total_steps
-
-        if execution_sum.reason == StopReason.SUBTASK_TIMEOUT:
-            return "execution_error", "subtask step cap exceeded", total_steps
-
-        if execution_sum.reason == StopReason.EXECUTION_ERROR:
-            return "execution_error", execution_sum.error or "", total_steps
-
-        msg = f"unexpected stop reason: {execution_sum.reason}"
-        return "execution_error", msg, total_steps
 
     def _verdict(self, status: RunStatus) -> bool:
         """Compute final success verdict from status and env goal check."""

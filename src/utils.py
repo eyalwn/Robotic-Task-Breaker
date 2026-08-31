@@ -21,6 +21,9 @@ _PROJECT_LOGGER_NAMES = (
     "services",
     "__main__",
 )
+_QUIET_LOGGER_NAMES = (
+    "absl",  # dm_control IK "Failed to converge" during VLABench stepping
+)
 _DEFAULT_FORMAT = "%(levelname)s [%(name)s] %(message)s"
 
 
@@ -68,3 +71,5 @@ def configure_logging(
 
     for name in _PROJECT_LOGGER_NAMES + extra_logger_names:
         logging.getLogger(name).setLevel(level)
+    for name in _QUIET_LOGGER_NAMES:
+        logging.getLogger(name).setLevel(logging.ERROR)

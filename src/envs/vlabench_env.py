@@ -27,8 +27,7 @@ def _import_vlabench():
         from VLABench.envs import load_env
     except ImportError as exc:
         raise ImportError(
-            "VLABench is not installed. Install with: "
-            "pip install -r deps/requirements-vlabench.txt"
+            "VLABench is not installed. Follow README §2 (App venv / VLAbench)."
         ) from exc
     return load_env
 
@@ -50,7 +49,10 @@ class VLABenchEnv:
         load_env = _import_vlabench()
         h, w = _RENDER_RESOLUTION
         self._env = load_env(task=task, render_resolution=(h, w))
-        self.task_description = str(self._env.task.task_description)
+        instruction = self._env.task.get_instruction()
+        if not instruction:
+            raise RuntimeError("VLABench task has no language instruction")
+        self.task_description = str(instruction)
         self._robot_base_xyz = np.asarray(
             self._env.get_robot_frame_position(), dtype=np.float64
         ).reshape(3)

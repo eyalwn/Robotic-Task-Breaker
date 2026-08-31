@@ -47,7 +47,7 @@ def _build_env_with_mocks(
         ),
     }
     task = SimpleNamespace(
-        task_description="pick the apple",
+        get_instruction=lambda: "pick the apple",
         entities=entities,
         robot=SimpleNamespace(
             n_dof=7,
@@ -109,6 +109,20 @@ def test_init_calls_load_env_once():
         env.close()
 
 
+def test_init_raises_if_instruction_missing():
+    load_env = MagicMock()
+    with patch.object(
+        vlabench_env,
+        "_import_vlabench",
+        return_value=load_env,
+    ):
+        load_env.return_value = MagicMock(
+            task=SimpleNamespace(get_instruction=lambda: None),
+        )
+        with pytest.raises(RuntimeError, match="no language instruction"):
+            vlabench_env.VLABenchEnv("select_fruit")
+
+
 def test_init_raises_if_robot_frame_getter_fails():
     load_env = MagicMock()
     with patch.object(
@@ -117,7 +131,7 @@ def test_init_raises_if_robot_frame_getter_fails():
         return_value=load_env,
     ):
         load_env.return_value = MagicMock(
-            task=SimpleNamespace(task_description="task"),
+            task=SimpleNamespace(get_instruction=lambda: "task"),
             get_robot_frame_position=MagicMock(side_effect=RuntimeError("no frame")),
         )
         with pytest.raises(RuntimeError, match="no frame"):

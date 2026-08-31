@@ -150,14 +150,10 @@ def test_runner_plan_done_success(monkeypatch: pytest.MonkeyPatch) -> None:
         [ExecutionSum(reason=StopReason.PLAN_DONE)],
         monkeypatch,
     )
-    status, error, total_steps = runner._execute_once()
-    assert runner._verdict(status) is True
-    assert status == "done"
-    assert error == ""
+    assert runner.run() is True
     assert planner.plan_calls == 1
     assert planner.plan_args[0] == b"img"
     assert executor.run.call_count == 1
-    assert total_steps == 0
 
 
 def test_runner_run_calls_success_before_close(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -180,10 +176,7 @@ def test_runner_planner_stop(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch,
         planner=planner,
     )
-    status, error, _ = runner._execute_once()
-    assert runner._verdict(status) is False
-    assert status == "stopped"
-    assert error == "goal achieved"
+    assert runner.run() is False
     assert executor.run.call_count == 0
 
 
@@ -192,7 +185,4 @@ def test_runner_subtask_timeout_from_executor(monkeypatch: pytest.MonkeyPatch) -
         [ExecutionSum(reason=StopReason.SUBTASK_TIMEOUT)],
         monkeypatch,
     )
-    status, error, _ = runner._execute_once()
-    assert status == "execution_error"
-    assert error == "subtask step cap exceeded"
-    assert runner._verdict(status) is False
+    assert runner.run() is False

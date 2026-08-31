@@ -59,7 +59,8 @@ class VLAClient:
                 data={"task": task, "state": json.dumps(state)},
             )
             response.raise_for_status()
-            payload = response.json()
+            payload: dict[str, list[list[float]]] = response.json()
+            logger.debug(f"payload = {payload}")
         except requests.RequestException as exc:
             raise VLAError(f"VLA service POST /predict failed: {exc}") from exc
         except ValueError as exc:
