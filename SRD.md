@@ -23,31 +23,17 @@ This is intentionally not an AST system.
 - **Finding.** `pi05_libero` mostly ignores subtask language in that scene
   (same-scene object swap: tomato sauce vs alphabet soup). It still goes for
   alphabet soup when asked to grab tomato sauce first.
-- **Old M4/M5 (beat published OpenPI on LIBERO-10) — CANCELLED.** migrated to VLAbench + SmolVLA (`lerobot/smolvla_vlabench`).
+- **Old M4/M5 (beat published OpenPI on LIBERO-10) — CANCELLED.**
+- **M4 (SmolVLA / `select_fruit`) — FAILED (policy).** Official
+  `lerobot-eval` of `lerobot/smolvla_vlabench` on VLABench `select_fruit`
+  (native instruction, SHA `cf588fe60c0c7282174fe979f5913170cfe69017`):
+  **0/8** full-horizon episodes (run OOM-killed at 8/10). Checkpoint cannot
+  solve the task; Longor path is not diagnostic. Pivot to a different
+  low-level policy.
 
 ### Current
 
-- **M4.** SmolVLA solves `VLAbench - select_fruit` via `colab/run_vlabench_task.ipynb`.
-  Before claiming milestone success, run the **M4 parity gate** (see below).
-
-Further VLAbench tasks are planned after M4.
-
-### M4 parity gate (evaluation protocol)
-
-Compare upstream checkpoint quality against the Longor subtask path before prompt
-or cadence experiments:
-
-1. **Official baseline** — `colab/run_lerobot_baseline.ipynb`: locked
-   `lerobot-eval` on `select_fruit`, 10 episodes, VLABench SHA
-   `cf588fe60c0c7282174fe979f5913170cfe69017`, policy
-   `lerobot/smolvla_vlabench`, native task instruction.
-2. **Longor subtask path** — `colab/run_vlabench_task.ipynb`: one rollout with
-   planner → `pick up <fruit>` (unchanged).
-3. **Verdict** — `python validation/m4_parity_capture.py verdict` on artifacts in
-   `artifacts/m4_parity/`. Stop conditions:
-   - baseline fails → pivot to a different low-level policy;
-   - baseline OK + Longor OK → report success rate, do not mark M4 done from one run;
-   - baseline OK + Longor fails → native-prompt follow-up before cadence changes.
+Next low-level policy TBD.
 
 ## Architecture
 
