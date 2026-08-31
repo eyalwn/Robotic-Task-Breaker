@@ -20,6 +20,11 @@ import config
 
 logger = logging.getLogger(__name__)
 
+_LIBERO_RESOLUTION = 256
+_LIBERO_SEED = 7
+_LIBERO_SETTLE_STEPS = 10
+_LIBERO_SETTLE_ACTION = [0.0] * 6 + [-1.0]
+
 
 @contextmanager
 def _auto_decline_dependency_prompt():
@@ -111,17 +116,17 @@ class LiberoEnv:
         with _auto_decline_dependency_prompt():
             self._env = OffScreenRenderEnv(
                 bddl_file_name=bddl_path,
-                camera_heights=config.RESOLUTION,
-                camera_widths=config.RESOLUTION,
+                camera_heights=_LIBERO_RESOLUTION,
+                camera_widths=_LIBERO_RESOLUTION,
             )
         # Seeding matters even with a fixed initial state: it perturbs object poses.
-        self._env.seed(config.SEED)
+        self._env.seed(_LIBERO_SEED)
         self._env.reset()
         # The benchmark's canonical initial states are part of the eval protocol;
         # a bare reset() leaves the scene off the distribution policies trained on.
         self._obs = self._env.set_init_state(init_states[init_state_idx])
-        for _ in range(config.SETTLE_STEPS):
-            self.step(config.SETTLE_ACTION)
+        for _ in range(_LIBERO_SETTLE_STEPS):
+            self.step(_LIBERO_SETTLE_ACTION)
 
         logger.info(
             "LIBERO ready: %s task %d init %d/%d - %r",

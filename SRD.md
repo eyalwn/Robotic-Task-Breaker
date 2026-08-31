@@ -47,7 +47,8 @@ Dependencies flow downward only:
 
 Module responsibilities:
 
-- `config.py`: runtime defaults and `.env` switches. No task identity here.
+- `config.py`: user-selectable runtime composition and cross-module defaults,
+  plus `.env` switches. No task identity here.
 - `.env`: where user-defined configurations + secrets live. It is intentionally minimal: `OPENAI_API_KEY`, `LOG_LEVEL`, `LLM_MODEL`, `SAVE_VIDEO`. `.env` must match `.env.example`. Adding a new env var requires explicit SRD-level approval.
 - `envs/sim_env.py`: `SimEnv` factory. `__new__(task: str, task_idx: int = 0)`
   lazy-imports one backend from `config.SIM_ENV` and returns that instance (no
@@ -66,7 +67,9 @@ Non-negotiable boundaries:
 - VLA-to-environment integration lives in `executor.py` in one visible path.
 - No hidden retuning layer between policy output and `env.step()` (no remap,
   rescale, sign flips, success rewriting).
-- `config.py` is the only place runtime defaults are defined.
+- User-selectable runtime composition and cross-module defaults live in
+  `config.py`. Backend-specific implementation constants stay in their owning
+  modules.
 - Runtime signatures in `src/**` and `services/**` name every parameter; no
   `*args` / `**kwargs`.
 - `Executor` does **not** decide global task success and does **not** evaluate

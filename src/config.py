@@ -24,7 +24,6 @@ SAVE_VIDEO = os.environ.get("SAVE_VIDEO") == "1"
 
 # --- VLA backend selection (launcher default) ------------------------------
 VLA_POLICY = "pi0fast"  # "pi0fast" | "pi05" | "smolvla"
-VLA_POLICIES = ("pi0fast", "pi05", "smolvla")
 
 # --- VLA HTTP service ------------------------------------------------------
 VLA_PORT = 8765
@@ -33,16 +32,6 @@ VLA_TIMEOUT = 60.0
 
 # --- sim environment -------------------------------------------------------
 SIM_ENV = "vlabench"  # "vlabench" | "libero"
-
-# --- LIBERO environment ----------------------------------------------------
-# 256 is the resolution LIBERO rendered its training demonstrations at; policies
-# are sensitive to this, so it is not a free parameter.
-RESOLUTION = 256
-SEED = 7
-# The simulator drops objects onto the table on reset. Hold still, gripper open,
-# until they settle -- otherwise the first observation shows objects mid-air.
-SETTLE_STEPS = 10
-SETTLE_ACTION = [0.0] * 6 + [-1.0]
 
 # --- video ------------------------------------------------------------------
 VIDEO_PATH = "run.mp4"

@@ -12,12 +12,13 @@ _SERVICE_FILES = {
     "pi05": "pi05_service.py",
     "smolvla": "smolvla_service.py",
 }
+_SUPPORTED_POLICIES = tuple(_SERVICE_FILES)
 
 
 def main() -> None:
     policy = config.VLA_POLICY
-    if policy not in config.VLA_POLICIES:
-        supported = ", ".join(config.VLA_POLICIES)
+    if policy not in _SUPPORTED_POLICIES:
+        supported = ", ".join(_SUPPORTED_POLICIES)
         print(
             f"error: unknown policy {policy!r}. Supported: {supported}.",
             file=sys.stderr,
