@@ -1,557 +1,243 @@
-"""Executor control-flow tests with fake env and VLA."""
+"""Executor tests with fake env and VLA."""
 from __future__ import annotations
 
 from unittest.mock import patch
 
 import pytest
 
-from conftest import (
-    FakeEnv,
-    FakeVLA,
-    MockSkill,
-    build_executor,
-    make_plan,
-    run_plan,
-)
+from conftest import FakeEnv, FakeVLA, build_executor, make_plan, run_plan
 from executor import StopReason
 
 
-def test_seq_executes_in_order() -> None:
-    skill = MockSkill("ok")
-    executor = build_executor(skill)
-    plan = make_plan(
-        {
-            "kind": "seq",
-            "steps": [
-                {"kind": "call", "skill": "mock.skill", "args": {"x": {"kind": "literal", "value": 1}}},
-                {"kind": "call", "skill": "mock.skill", "args": {"x": {"kind": "literal", "value": 2}}},
-                {"kind": "call", "skill": "mock.skill", "args": {"x": {"kind": "literal", "value": 3}}},
-            ],
+def _step_key(skill: str, **fields: str) -> tuple[str, frozenset]:
+    step = {"skill": skill, **fields}
+    return skill, frozenset(step.items())
+
+
+def test_steps_execute_in_order() -> None:
+    grab = {"skill": "grab", "object_name": "a"}
+    place = {
+        "skill": "place",
+        "object_name": "a",
+        "target_name": "basket",
+        "position": "inside",
+    }
+    close = {"skill": "close", "target_name": "drawer"}
+    env = FakeEnv(
+        subtask_after={
+            ("grab", frozenset(grab.items())): 1,
+            ("place", frozenset(place.items())): 2,
+            ("close", frozenset(close.items())): 3,
         }
     )
-    run_plan(executor, plan)
-    assert [call["x"] for call in skill.calls] == [1, 2, 3]
-
-
-def test_if_then() -> None:
-    skill = MockSkill("ok")
-    executor = build_executor(skill)
-    plan = make_plan(
-        {
-            "kind": "if",
-            "condition": {"kind": "literal", "value": True},
-            "then_branch": {"kind": "call", "skill": "mock.skill"},
-            "else_branch": {"kind": "feedback", "description": "skip"},
-        }
-    )
-    run_plan(executor, plan)
-    assert len(skill.calls) == 1
-
-
-def test_if_else() -> None:
-    skill = MockSkill("ok")
-    executor = build_executor(skill)
-    plan = make_plan(
-        {
-            "kind": "if",
-            "condition": {"kind": "literal", "value": False},
-            "then_branch": {"kind": "call", "skill": "mock.skill"},
-            "else_branch": {"kind": "feedback", "description": "else path"},
-        }
-    )
-    result = run_plan(executor, plan)
-    assert result.reason == StopReason.FEEDBACK_POINT
-    assert len(skill.calls) == 0
-
-
-def test_while_max_iterations() -> None:
-    skill = MockSkill("ok")
-    executor = build_executor(skill)
-    plan = make_plan(
-        {
-            "kind": "while",
-            "condition": {"kind": "literal", "value": True},
-            "max_iterations": 3,
-            "body": {"kind": "call", "skill": "mock.skill"},
-        }
-    )
-    result = run_plan(executor, plan)
-    assert result.reason == StopReason.EXECUTION_ERROR
-    assert "while loop exceeded max_iterations=3" in (result.error or "")
-    assert len(skill.calls) == 3
-
-
-def test_call_assigns_return() -> None:
-    skill = MockSkill("result")
-    executor = build_executor(skill)
-    plan = make_plan(
-        {
-            "kind": "seq",
-            "steps": [
-                {"kind": "call", "skill": "mock.skill", "assign_to": "x"},
-                {"kind": "return", "value": {"kind": "var", "name": "x"}},
-            ],
-        }
-    )
-    result = run_plan(executor, plan)
-    assert result.reason == StopReason.PLAN_DONE
-    assert result.return_value == "result"
-
-
-def test_feedback_returns_summary() -> None:
-    skill = MockSkill("ok")
-    executor = build_executor(skill)
-    plan = make_plan({"kind": "feedback", "description": "all good"})
-    result = run_plan(executor, plan)
-    assert result.reason == StopReason.FEEDBACK_POINT
-    assert result.feedback_description == "all good"
-    assert result.feedback_prompt == "all good"
-
-
-def test_feedback_discards_remaining_plan() -> None:
-    skill = MockSkill("ok")
-    executor = build_executor(skill)
-    plan = make_plan(
-        {
-            "kind": "seq",
-            "steps": [
-                {"kind": "call", "skill": "mock.skill"},
-                {"kind": "feedback", "description": "checkpoint"},
-                {"kind": "call", "skill": "mock.skill"},
-            ],
-        }
-    )
-    result = run_plan(executor, plan)
-    assert result.reason == StopReason.FEEDBACK_POINT
-    assert len(skill.calls) == 1
-
-
-def test_rerun_plan_restarts_from_scratch() -> None:
-    skill = MockSkill("ok")
-    executor = build_executor(skill)
-    plan = make_plan(
-        {
-            "kind": "seq",
-            "steps": [
-                {"kind": "call", "skill": "mock.skill"},
-                {"kind": "feedback", "description": "checkpoint"},
-            ],
-        }
-    )
-    first = run_plan(executor, plan)
-    assert first.reason == StopReason.FEEDBACK_POINT
-    assert len(skill.calls) == 1
-
-    second = executor.run(plan)
-    assert second.reason == StopReason.FEEDBACK_POINT
-    assert len(skill.calls) == 2
-
-
-def test_return_node() -> None:
-    skill = MockSkill("ok")
-    executor = build_executor(skill)
-    plan = make_plan({"kind": "return", "value": {"kind": "literal", "value": 42}})
-    result = run_plan(executor, plan)
-    assert result.reason == StopReason.PLAN_DONE
-    assert result.return_value == 42
-
-
-def test_step_budget_from_env_steps() -> None:
-    """Episode budget exhaustion stops execution when env steps are consumed."""
-    env = FakeEnv(succeed_after=None, max_steps=2)
     vla = FakeVLA(actions=[[0.0] * 7])
-    skill = MockSkill("unused")
-    executor = build_executor(skill, env=env, vla=vla)
-    plan = make_plan(
-        {
-            "kind": "seq",
-            "steps": [
-                {
-                    "kind": "call",
-                    "skill": "arm.grab",
-                    "args": {"object_name": {"kind": "literal", "value": "cube_1"}},
-                },
-                {"kind": "call", "skill": "mock.skill"},
-            ],
+    executor = build_executor(env=env, vla=vla)
+    plan = make_plan([grab, place, close])
+    with patch("config.MAX_SKILL_STEPS", 1):
+        run_plan(executor, plan)
+    assert len(vla.calls) == 3
+    assert vla.calls[0][3] == "pick up the a"
+    assert vla.calls[1][3] == "place the a inside the basket"
+    assert vla.calls[2][3] == "close the drawer"
+
+
+def test_runs_all_steps_without_early_stop() -> None:
+    env = FakeEnv(
+        subtask_satisfied={
+            _step_key("grab", object_name="a"): True,
+            _step_key(
+                "place",
+                object_name="a",
+                target_name="basket",
+                position="inside",
+            ): True,
         }
     )
-    result = run_plan(executor, plan)
-    assert result.reason == StopReason.STEP_BUDGET
-    assert len(env.step_calls) == 2
-    assert len(skill.calls) == 0
-
-
-def test_feedback_appends_prior_skill_result() -> None:
-    skill = MockSkill({"status": "stopped", "grasp_confirmed": False})
-    executor = build_executor(skill)
+    vla = FakeVLA(actions=[[0.0] * 7])
+    executor = build_executor(env=env, vla=vla)
     plan = make_plan(
-        {
-            "kind": "seq",
-            "steps": [
-                {"kind": "call", "skill": "mock.skill", "args": {}},
-                {"kind": "feedback", "description": "Is the object grasped?"},
-            ],
-        }
-    )
-    result = run_plan(executor, plan)
-    assert result.reason == StopReason.FEEDBACK_POINT
-    assert result.feedback_prompt is not None
-    assert "Prior skill result:" in result.feedback_prompt
-    assert "grasp_confirmed" in result.feedback_prompt
-
-
-def test_arm_grab_success_immediate() -> None:
-    env = FakeEnv(succeed_after=0)
-    vla = FakeVLA()
-    skill = MockSkill("unused")
-    executor = build_executor(skill, env=env, vla=vla)
-    plan = make_plan(
-        {
-            "kind": "call",
-            "skill": "arm.grab",
-            "args": {"object_name": {"kind": "literal", "value": "alphabet_soup_1"}},
-            "assign_to": "outcome",
-        }
+        [
+            {"skill": "grab", "object_name": "a"},
+            {
+                "skill": "place",
+                "object_name": "a",
+                "target_name": "basket",
+                "position": "inside",
+            },
+        ]
     )
     result = run_plan(executor, plan)
     assert result.reason == StopReason.PLAN_DONE
-    assert vla.calls == []
-    assert env.step_calls == []
+    assert len(vla.calls) == 2
+    assert len(env.step_calls) == 2
 
 
-def test_arm_grab_calls_vla_and_succeeds() -> None:
-    env = FakeEnv(succeed_after=2)
-    vla = FakeVLA(actions=[[0.0] * 7, [0.1] * 7])
-    skill = MockSkill("unused")
-    executor = build_executor(skill, env=env, vla=vla)
+def test_subtask_timeout_returns_summary() -> None:
+    env = FakeEnv()
+    vla = FakeVLA(actions=[[0.0] * 7])
+    executor = build_executor(env=env, vla=vla)
     plan = make_plan(
-        {
-            "kind": "call",
-            "skill": "arm.grab",
-            "args": {"object_name": {"kind": "literal", "value": "alphabet_soup_1"}},
-        }
+        [
+            {"skill": "grab", "object_name": "cube"},
+            {"skill": "close", "target_name": "drawer"},
+        ]
     )
+    with patch("config.MAX_SKILL_STEPS", 2):
+        result = run_plan(executor, plan)
+    assert result.reason == StopReason.SUBTASK_TIMEOUT
+    assert len(env.step_calls) == 2
+
+
+def test_grab_subtask_success_immediate() -> None:
+    env = FakeEnv(subtask_satisfied={_step_key("grab", object_name="alphabet_soup_1"): True})
+    vla = FakeVLA()
+    executor = build_executor(env=env, vla=vla)
+    plan = make_plan([{"skill": "grab", "object_name": "alphabet_soup_1"}])
     result = run_plan(executor, plan)
     assert result.reason == StopReason.PLAN_DONE
     assert len(vla.calls) == 1
-    assert vla.calls[0][3] == "pick up the alphabet soup"
+    assert len(env.step_calls) == 1
+
+
+def test_grab_calls_vla_and_succeeds() -> None:
+    env = FakeEnv(
+        subtask_after={_step_key("grab", object_name="alphabet_soup_1"): 2}
+    )
+    vla = FakeVLA(actions=[[0.0] * 7, [0.1] * 7])
+    executor = build_executor(env=env, vla=vla)
+    plan = make_plan([{"skill": "grab", "object_name": "alphabet_soup_1"}])
+    result = run_plan(executor, plan)
+    assert result.reason == StopReason.PLAN_DONE
+    assert len(vla.calls) == 1
+    assert vla.calls[0][3] == "pick up the alphabet_soup_1"
     assert len(env.step_calls) == 2
 
 
-def test_arm_place_task_string() -> None:
-    env = FakeEnv(succeed_after=1)
-    vla = FakeVLA()
-    skill = MockSkill("unused")
-    executor = build_executor(skill, env=env, vla=vla)
-    plan = make_plan(
-        {
-            "kind": "call",
-            "skill": "arm.place",
-            "args": {
-                "object_name": {"kind": "literal", "value": "cream_cheese_1"},
-                "location": {"kind": "literal", "value": "basket"},
-            },
-        }
-    )
-    run_plan(executor, plan)
-    assert vla.calls[0][3] == "put the cream cheese in the basket"
-
-
-def test_arm_skill_timeout_contract() -> None:
-    """Arm skills without a subtask signal time out at the per-skill cap."""
-    env = FakeEnv(succeed_after=None)
+def test_skill_timeout_contract() -> None:
+    """Skills without subtask success time out at the per-skill cap."""
+    env = FakeEnv()
     vla = FakeVLA(actions=[[0.0] * 7])
-    skill = MockSkill("unused")
-    executor = build_executor(skill, env=env, vla=vla)
+    executor = build_executor(env=env, vla=vla)
+    step = {"skill": "grab", "object_name": "cube_1"}
     with patch("config.MAX_SKILL_STEPS", 3):
-        outcome = executor._run_arm_skill(
-            "arm.grab", {"object_name": "cube_1"}
-        )
-    assert outcome == {
-        "status": "timeout",
-        "env_steps": 3,
-        "subtask_success": False,
-        "task_success": False,
-    }
+        assert executor._run_skill(step) is False
     assert len(env.step_calls) == 3
 
 
-def test_arm_skill_done_when_task_already_solved() -> None:
-    env = FakeEnv(succeed_after=0)
+def test_skill_done_when_subtask_already_satisfied() -> None:
+    env = FakeEnv(subtask_satisfied={_step_key("grab", object_name="cube_1"): True})
     vla = FakeVLA()
-    skill = MockSkill("unused")
-    executor = build_executor(skill, env=env, vla=vla)
-    outcome = executor._run_arm_skill("arm.grab", {"object_name": "cube_1"})
-    assert outcome == {
-        "status": "done",
-        "env_steps": 0,
-        "subtask_success": True,
-        "task_success": True,
-    }
-    assert vla.calls == []
-
-
-def test_arm_place_subtask_success_ends_early() -> None:
-    env = FakeEnv(
-        succeed_after=None,
-        goal_conjuncts=[["in", "cream_cheese_1", "basket_1_contain_region"]],
-        conjunct_satisfied={0: True},
-    )
-    vla = FakeVLA(actions=[[0.0] * 7])
-    skill = MockSkill("unused")
-    executor = build_executor(skill, env=env, vla=vla)
-    outcome = executor._run_arm_skill(
-        "arm.place",
-        {"object_name": "cream_cheese_1", "location": "basket"},
-    )
-    assert outcome["status"] == "done"
-    assert outcome["subtask_success"] is True
-    assert outcome["task_success"] is False
-    assert outcome["env_steps"] == 0
-    assert vla.calls == []
-
-
-def test_arm_place_unresolved_conjunct_times_out(caplog: pytest.LogCaptureFixture) -> None:
-    env = FakeEnv(succeed_after=None, goal_conjuncts=[])
-    vla = FakeVLA(actions=[[0.0] * 7])
-    skill = MockSkill("unused")
-    executor = build_executor(skill, env=env, vla=vla)
-    with patch("config.MAX_SKILL_STEPS", 2):
-        outcome = executor._run_arm_skill(
-            "arm.place",
-            {"object_name": "cream_cheese_1", "location": "basket"},
-        )
-    assert outcome == {
-        "status": "timeout",
-        "env_steps": 2,
-        "subtask_success": False,
-        "task_success": False,
-    }
-    assert "no goal conjunct matched" in caplog.text
-
-
-def test_arm_place_ambiguous_conjunct_times_out(caplog: pytest.LogCaptureFixture) -> None:
-    env = FakeEnv(
-        succeed_after=None,
-        goal_conjuncts=[
-            ["in", "cream_cheese_1", "basket_1_contain_region"],
-            ["on", "cream_cheese_1", "plate_1"],
-        ],
-    )
-    vla = FakeVLA(actions=[[0.0] * 7])
-    skill = MockSkill("unused")
-    executor = build_executor(skill, env=env, vla=vla)
-    with patch("config.MAX_SKILL_STEPS", 2):
-        outcome = executor._run_arm_skill(
-            "arm.place",
-            {"object_name": "cream_cheese_1", "location": "basket"},
-        )
-    assert outcome["status"] == "timeout"
-    assert outcome["subtask_success"] is False
-    assert "ambiguous goal conjuncts" in caplog.text
-
-
-def test_arm_grab_human_readable_name_resolves_via_conjunct() -> None:
-    env = FakeEnv(
-        succeed_after=None,
-        goal_conjuncts=[["in", "alphabet_soup_1", "basket_1_contain_region"]],
-        grasp_after={"alphabet_soup_1": 1},
-    )
-    vla = FakeVLA(actions=[[0.0] * 7, [0.1] * 7])
-    skill = MockSkill("unused")
-    executor = build_executor(skill, env=env, vla=vla)
-    outcome = executor._run_arm_skill(
-        "arm.grab", {"object_name": "alphabet soup"}
-    )
-    assert outcome == {
-        "status": "done",
-        "env_steps": 1,
-        "subtask_success": True,
-        "task_success": False,
-    }
-    assert len(vla.calls) == 1
-    assert vla.calls[0][3] == "pick up the alphabet soup"
-    assert len(env.step_calls) == 1
-
-
-def test_arm_grab_extra_token_name_resolves_via_containment() -> None:
-    env = FakeEnv(
-        succeed_after=None,
-        goal_conjuncts=[["in", "alphabet_soup_1", "basket_1_contain_region"]],
-        grasp_after={"alphabet_soup_1": 1},
-    )
-    vla = FakeVLA(actions=[[0.0] * 7, [0.1] * 7])
-    skill = MockSkill("unused")
-    executor = build_executor(skill, env=env, vla=vla)
-    outcome = executor._run_arm_skill(
-        "arm.grab", {"object_name": "alphabet soup can"}
-    )
-    assert outcome == {
-        "status": "done",
-        "env_steps": 1,
-        "subtask_success": True,
-        "task_success": False,
-    }
-    assert len(vla.calls) == 1
-    assert vla.calls[0][3] == "pick up the alphabet soup can"
-    assert len(env.step_calls) == 1
-
-
-def test_arm_place_extra_token_name_resolves_via_containment() -> None:
-    env = FakeEnv(
-        succeed_after=None,
-        goal_conjuncts=[["in", "alphabet_soup_1", "basket_1_contain_region"]],
-        conjunct_satisfied={0: True},
-    )
-    vla = FakeVLA(actions=[[0.0] * 7])
-    skill = MockSkill("unused")
-    executor = build_executor(skill, env=env, vla=vla)
-    outcome = executor._run_arm_skill(
-        "arm.place",
-        {"object_name": "alphabet soup can", "location": "basket"},
-    )
-    assert outcome["status"] == "done"
-    assert outcome["subtask_success"] is True
-    assert outcome["task_success"] is False
-    assert outcome["env_steps"] == 0
-    assert vla.calls == []
-
-
-def test_arm_grab_ambiguous_containment_times_out(caplog: pytest.LogCaptureFixture) -> None:
-    env = FakeEnv(
-        succeed_after=None,
-        goal_conjuncts=[
-            ["in", "alphabet_soup_can_1", "basket_1_contain_region"],
-            ["in", "tomato_sauce_can_1", "basket_1_contain_region"],
-        ],
-        grasp_after={"alphabet_soup_can_1": 0, "tomato_sauce_can_1": 0},
-    )
-    vla = FakeVLA(actions=[[0.0] * 7])
-    skill = MockSkill("unused")
-    executor = build_executor(skill, env=env, vla=vla)
-    with patch("config.MAX_SKILL_STEPS", 2):
-        outcome = executor._run_arm_skill(
-            "arm.grab", {"object_name": "can"}
-        )
-    assert outcome == {
-        "status": "timeout",
-        "env_steps": 2,
-        "subtask_success": False,
-        "task_success": False,
-    }
-    assert "ambiguous goal conjuncts" in caplog.text
-
-
-def test_arm_grab_ambiguous_conjunct_times_out(caplog: pytest.LogCaptureFixture) -> None:
-    env = FakeEnv(
-        succeed_after=None,
-        goal_conjuncts=[
-            ["in", "cream_cheese_1", "basket_1_contain_region"],
-            ["on", "cream_cheese_2", "plate_1"],
-        ],
-        grasp_after={"cream_cheese_1": 0, "cream_cheese_2": 0},
-    )
-    vla = FakeVLA(actions=[[0.0] * 7])
-    skill = MockSkill("unused")
-    executor = build_executor(skill, env=env, vla=vla)
-    with patch("config.MAX_SKILL_STEPS", 2):
-        outcome = executor._run_arm_skill(
-            "arm.grab", {"object_name": "cream cheese"}
-        )
-    assert outcome == {
-        "status": "timeout",
-        "env_steps": 2,
-        "subtask_success": False,
-        "task_success": False,
-    }
-    assert "ambiguous goal conjuncts" in caplog.text
-
-
-def test_arm_grab_uses_grasp_check_when_resolvable() -> None:
-    env = FakeEnv(
-        succeed_after=None,
-        grasp_after={"alphabet_soup_1": 1},
-    )
-    vla = FakeVLA(actions=[[0.0] * 7, [0.1] * 7])
-    skill = MockSkill("unused")
-    executor = build_executor(skill, env=env, vla=vla)
-    outcome = executor._run_arm_skill(
-        "arm.grab", {"object_name": "alphabet_soup_1"}
-    )
-    assert outcome == {
-        "status": "done",
-        "env_steps": 1,
-        "subtask_success": True,
-        "task_success": False,
-    }
+    executor = build_executor(env=env, vla=vla)
+    step = {"skill": "grab", "object_name": "cube_1"}
+    assert executor._run_skill(step) is True
     assert len(vla.calls) == 1
     assert len(env.step_calls) == 1
 
 
-@pytest.mark.parametrize(
-    ("skill", "args", "expected_task"),
-    [
-        (
-            "arm.transfer",
-            {"object_name": "bowl_1", "location": "plate"},
-            "move the bowl to the plate",
-        ),
-        (
-            "arm.open",
-            {"target_name": "top_drawer_1"},
-            "open the top drawer",
-        ),
-        (
-            "arm.close",
-            {"target_name": "microwave_1"},
-            "close the microwave",
-        ),
-        (
-            "arm.push",
-            {"target_name": "mug_1", "destination_or_direction": "left"},
-            "push the mug to the left",
-        ),
-        (
-            "arm.pull",
-            {"target_name": "mug_1", "destination_or_direction": "left"},
-            "pull the mug to the left",
-        ),
-    ],
-)
-def test_arm_skill_task_strings(skill: str, args: dict, expected_task: str) -> None:
-    env = FakeEnv(succeed_after=1)
-    vla = FakeVLA()
-    skill_obj = MockSkill("unused")
-    executor = build_executor(skill_obj, env=env, vla=vla)
-    plan = make_plan(
-        {
-            "kind": "call",
-            "skill": skill,
-            "args": {
-                key: {"kind": "literal", "value": value} for key, value in args.items()
-            },
+def test_place_subtask_success_ends_early() -> None:
+    env = FakeEnv(
+        subtask_satisfied={
+            _step_key(
+                "place",
+                object_name="cream_cheese_1",
+                target_name="basket_1_contain_region",
+                position="inside",
+            ): True,
         }
     )
-    run_plan(executor, plan)
-    assert vla.calls[0][3] == expected_task
+    vla = FakeVLA(actions=[[0.0] * 7])
+    executor = build_executor(env=env, vla=vla)
+    step = {
+        "skill": "place",
+        "object_name": "cream_cheese_1",
+        "target_name": "basket_1_contain_region",
+        "position": "inside",
+    }
+    assert executor._run_skill(step) is True
+    assert len(vla.calls) == 1
+    assert len(env.step_calls) == 1
+
+
+def test_place_subtask_success_after_steps() -> None:
+    env = FakeEnv(
+        subtask_after={
+            _step_key(
+                "place",
+                object_name="alphabet_soup_1",
+                target_name="basket_1_contain_region",
+                position="inside",
+            ): 1,
+        }
+    )
+    vla = FakeVLA(actions=[[0.0] * 7, [0.1] * 7])
+    executor = build_executor(env=env, vla=vla)
+    step = {
+        "skill": "place",
+        "object_name": "alphabet_soup_1",
+        "target_name": "basket_1_contain_region",
+        "position": "inside",
+    }
+    assert executor._run_skill(step) is True
+    assert len(vla.calls) == 1
+    assert vla.calls[0][3] == "place the alphabet_soup_1 inside the basket_1_contain_region"
+    assert len(env.step_calls) == 2
 
 
 @pytest.mark.parametrize(
-    ("skill", "args", "missing"),
+    ("skill", "step", "expected_task"),
     [
-        ("arm.grab", {}, "object_name"),
-        ("arm.place", {"object_name": "cube"}, "location"),
-        ("arm.transfer", {"object_name": "bowl"}, "location"),
-        ("arm.open", {}, "target_name"),
-        ("arm.close", {}, "target_name"),
-        ("arm.push", {"target_name": "mug"}, "destination_or_direction"),
-        ("arm.pull", {"target_name": "mug"}, "destination_or_direction"),
+        (
+            "grab",
+            {"skill": "grab", "object_name": "bowl_1"},
+            "pick up the bowl_1",
+        ),
+        (
+            "place",
+            {
+                "skill": "place",
+                "object_name": "bowl_1",
+                "target_name": "plate",
+                "position": "on",
+            },
+            "place the bowl_1 on the plate",
+        ),
+        (
+            "close",
+            {"skill": "close", "target_name": "microwave_1"},
+            "close the microwave_1",
+        ),
+        (
+            "turn_on",
+            {"skill": "turn_on", "target_name": "stove_1"},
+            "turn on the stove_1",
+        ),
     ],
 )
-def test_arm_skill_requires_args(skill: str, args: dict, missing: str) -> None:
+def test_skill_task_strings(skill: str, step: dict, expected_task: str) -> None:
+    env = FakeEnv(subtask_after={(skill, frozenset(step.items())): 1})
+    vla = FakeVLA()
+    executor = build_executor(env=env, vla=vla)
+    run_plan(executor, [step])
+    assert vla.calls[0][3] == expected_task
+
+def test_unknown_skill_raises() -> None:
     env = FakeEnv()
     vla = FakeVLA()
-    skill_obj = MockSkill("unused")
-    executor = build_executor(skill_obj, env=env, vla=vla)
-    with pytest.raises(ValueError, match=f"{skill} requires {missing!r}"):
-        executor._run_arm_skill(skill, args)
+    executor = build_executor(env=env, vla=vla)
+    result = run_plan(executor, [{"skill": "transfer", "object_name": "a"}])
+    assert result.reason == StopReason.EXECUTION_ERROR
+
+
+def test_executes_full_returned_chunk() -> None:
+    """Executor must not trim actions; it runs every action from the service."""
+    chunk_size = 7
+    actions = [[float(i)] * 7 for i in range(chunk_size)]
+    env = FakeEnv()
+    vla = FakeVLA(actions=actions)
+    executor = build_executor(env=env, vla=vla)
+    step = {"skill": "grab", "object_name": "cube"}
+    with patch("config.MAX_SKILL_STEPS", chunk_size):
+        assert executor._run_skill(step) is False
+    assert len(vla.calls) == 1
+    assert len(env.step_calls) == chunk_size
+    assert env.step_calls[-1][0] == float(chunk_size - 1)

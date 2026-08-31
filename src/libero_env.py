@@ -183,6 +183,30 @@ class LiberoEnv:
             )
         )
 
+    def check_subtask(self, step: dict[str, str]) -> bool:
+        """Evaluate structured subtask completion for one executor step."""
+        skill = step["skill"]
+        if skill == "grab":
+            return self.is_grasping(step["object_name"])
+        if skill == "place":
+            return self._place_subtask_satisfied(step)
+        if skill == "close":
+            return self.eval_predicate("close", step["target_name"])
+        if skill == "turn_on":
+            return self.eval_predicate("turnon", step["target_name"])
+        raise KeyError(f"unsupported skill: {skill!r}")
+
+    def _place_subtask_satisfied(self, step: dict[str, str]) -> bool:
+        """Return whether a place step's structured predicate holds."""
+        position = step["position"].lower()
+        obj = step["object_name"]
+        target = step["target_name"]
+        if position == "inside":
+            return self.eval_predicate("in", obj, target)
+        if position in {"on", "center", "left", "right", "top", "bottom"}:
+            return self.eval_predicate("on", obj, target)
+        raise ValueError(f"unsupported place position: {position!r}")
+
     @property
     def steps(self) -> int:
         return self._steps

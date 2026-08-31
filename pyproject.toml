@@ -14,7 +14,7 @@ package-dir = {"" = "src"}
 py-modules = ["utils", "config", "libero_env", "vla_client", "plan", "skills", "executor", "planner", "runner"]
 
 [tool.pytest.ini_options]
-pythonpath = ["src"]
+pythonpath = ["src", "services"]
 markers = [
     "integration: live-server and live planner LLM tests (run with pytest -m integration)",
 ]

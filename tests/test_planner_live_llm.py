@@ -7,17 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from plan import (
-    CallNode,
-    IfNode,
-    Plan,
-    SeqNode,
-    StmtNode,
-    WhileNode,
-    is_a_stop_plan,
-)
+from plan import Plan, is_stop_plan
 from planner import LLMPlanner
-from skills import arm_skill_catalog
+from skills import skill_catalog
 
 SNAPSHOT_PATH = (
     Path(__file__).parent / "fixtures" / "libero_object_task0_start.jpg"
@@ -25,48 +17,23 @@ SNAPSHOT_PATH = (
 NUM_RUNS = 3
 GOAL = "Pick the alphabet soup and place it in the basket"
 
-ALLOWED_SKILLS = {
-    "arm.grab",
-    "arm.place",
-    "arm.transfer",
-    "arm.open",
-    "arm.close",
-    "arm.push",
-    "arm.pull",
-}
+ALLOWED_SKILLS = {"grab", "place", "close", "turn_on"}
 
-CATALOG = arm_skill_catalog()
-
-
-def _iter_calls(stmt: StmtNode):
-    if isinstance(stmt, CallNode):
-        yield stmt
-        return
-    if isinstance(stmt, SeqNode):
-        for step in stmt.steps:
-            yield from _iter_calls(step)
-    elif isinstance(stmt, IfNode):
-        yield from _iter_calls(stmt.then_branch)
-        if stmt.else_branch is not None:
-            yield from _iter_calls(stmt.else_branch)
-    elif isinstance(stmt, WhileNode):
-        yield from _iter_calls(stmt.body)
+CATALOG = skill_catalog()
 
 
 def _plan_json(plan: Plan) -> str:
-    return json.dumps(plan.model_dump(), indent=2)
+    return json.dumps(plan, indent=2)
 
 
 def _assert_plan_semantics(plan: Plan) -> None:
     plan_json = _plan_json(plan)
-    assert not is_a_stop_plan(plan), plan_json
-
-    calls = list(_iter_calls(plan.body))
-    assert calls, plan_json
-
-    skills = [call.skill for call in calls]
-    for skill in skills:
-        assert skill in ALLOWED_SKILLS, f"unknown skill {skill!r} in plan:\n{plan_json}"
+    assert not is_stop_plan(plan), plan_json
+    assert plan, plan_json
+    for step in plan:
+        assert step["skill"] in ALLOWED_SKILLS, (
+            f"unknown skill {step['skill']!r} in plan:\n{plan_json}"
+        )
 
 
 @pytest.mark.integration

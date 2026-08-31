@@ -5,51 +5,22 @@ import json
 
 import pytest
 
-from executor import ExecutionSum, StopReason
-from planner import LLMPlanner, _extract_json_object, _strip_code_fences
-from plan import get_stop_reason
+from planner import LLMPlanner, _extract_json, _strip_code_fences
+from plan import get_stop_reason, is_stop_plan, parse_planner_payload
 
-VALID_PLAN = {
-    "goal": "pick the cube",
-    "body": {
-        "kind": "call",
-        "skill": "arm.grab",
-        "args": {"object_name": {"kind": "literal", "value": "cube"}},
+VALID_PLAN = [
+    {"skill": "grab", "object_name": "cube"},
+    {
+        "skill": "place",
+        "object_name": "cube",
+        "target_name": "basket",
+        "position": "inside",
     },
-}
+]
 
-STOP_PLAN = {
-    "goal": "goal",
-    "body": {
-        "kind": "return",
-        "value": {"kind": "literal", "value": "STOP: goal achieved"},
-    },
-}
+STOP_PLAN = {"stop": "goal achieved"}
 
 SNAPSHOT = b"img"
-
-
-def _feedback_sum(
-    description: str = "check grasp",
-    prompt: str | None = None,
-    steps: int = 0,
-) -> ExecutionSum:
-    return ExecutionSum(
-        reason=StopReason.FEEDBACK_POINT,
-        steps=steps,
-        feedback_description=description,
-        feedback_prompt=prompt if prompt is not None else description,
-    )
-
-
-def _human_text(content: object) -> str:
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list):
-        for part in content:
-            if isinstance(part, dict) and part.get("type") == "text":
-                return str(part["text"])
-    raise AssertionError(f"unexpected human content: {content!r}")
 
 
 class _Response:
@@ -84,44 +55,40 @@ class _SpyLLM(_LLM):
         return super().invoke(messages)
 
 
-def _mock_llm(plan_dict: dict) -> _LLM:
-    return _LLM([_Response(json.dumps(plan_dict))])
+def _mock_llm(plan_payload: list | dict) -> _LLM:
+    return _LLM([_Response(json.dumps(plan_payload))])
 
 
 def test_strip_code_fences() -> None:
     raw = f"```json\n{json.dumps(VALID_PLAN)}\n```"
     stripped = _strip_code_fences(raw)
-    assert stripped.startswith("{")
-    assert stripped.endswith("}")
+    assert stripped.startswith("[")
+    assert stripped.endswith("]")
 
 
-def test_extract_json_object_from_fenced_output() -> None:
+def test_extract_json_from_fenced_output() -> None:
     raw = f"```json\n{json.dumps(VALID_PLAN)}\n```"
-    parsed = json.loads(_extract_json_object(raw))
-    assert parsed["goal"] == "pick the cube"
+    parsed = json.loads(_extract_json(raw))
+    assert parsed[0]["skill"] == "grab"
 
 
-def test_extract_json_object_with_trailing_prose() -> None:
-    raw = f"{json.dumps(VALID_PLAN)}\n\nNote: use feedback after grabs."
-    parsed = json.loads(_extract_json_object(raw))
-    assert parsed["goal"] == "pick the cube"
+def test_extract_json_with_trailing_prose() -> None:
+    raw = f"{json.dumps(VALID_PLAN)}\n\nNote: use grab then place."
+    parsed = json.loads(_extract_json(raw))
+    assert parsed[0]["object_name"] == "cube"
 
 
-def test_extract_json_object_brace_balanced_with_string_braces() -> None:
-    raw = (
-        'prefix {"goal": "g", "body": {"kind": "literal", "value": "has } brace"}} '
-        "suffix"
-    )
-    parsed = json.loads(_extract_json_object(raw))
-    assert parsed["goal"] == "g"
-    assert parsed["body"]["value"] == "has } brace"
+def test_extract_json_brace_balanced_with_string_braces() -> None:
+    raw = 'prefix {"stop": "has } brace"} suffix'
+    parsed = json.loads(_extract_json(raw))
+    assert parsed["stop"] == "has } brace"
 
 
 def test_planner_success(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("planner.init_chat_model", lambda _model: _mock_llm(VALID_PLAN))
     planner = LLMPlanner("pick cube", "catalog")
     result = planner.plan(SNAPSHOT)
-    assert result.goal == "pick the cube"
+    assert result == parse_planner_payload(VALID_PLAN)
 
 
 def test_planner_retry_on_invalid(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -133,14 +100,11 @@ def test_planner_retry_on_invalid(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("planner.config.MAX_PLAN_RETRIES", 2)
     planner = LLMPlanner("pick cube", "catalog")
     result = planner.plan(SNAPSHOT)
-    assert result.goal == "pick the cube"
+    assert result == parse_planner_payload(VALID_PLAN)
 
 
 def test_planner_retry_prompt_content(monkeypatch: pytest.MonkeyPatch) -> None:
-    invalid = {
-        "goal": "pick the cube",
-        "body": {"kind": "seq", "steps": ["else_branch"]},
-    }
+    invalid = [{"object_name": "cube"}]
     spy = _SpyLLM(
         [
             _Response(json.dumps(invalid)),
@@ -151,10 +115,10 @@ def test_planner_retry_prompt_content(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("planner.config.MAX_PLAN_RETRIES", 2)
     planner = LLMPlanner("pick cube", "catalog")
     result = planner.plan(SNAPSHOT)
-    assert result.goal == "pick the cube"
+    assert result == parse_planner_payload(VALID_PLAN)
     assert len(spy.calls) == 2
     retry_msg = spy.calls[1][-1].content
-    assert "never a bare string like 'else_branch'" in retry_msg
+    assert "Fix the JSON" in retry_msg
 
 
 def test_planner_exhausts_retries(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -174,7 +138,7 @@ def test_planner_strips_markdown_fences(monkeypatch: pytest.MonkeyPatch) -> None
     )
     planner = LLMPlanner("pick cube", "catalog")
     result = planner.plan(SNAPSHOT)
-    assert result.goal == "pick the cube"
+    assert result == parse_planner_payload(VALID_PLAN)
 
 
 def test_planner_goal_used_as_is(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -187,49 +151,26 @@ def test_planner_goal_used_as_is(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "Available scene objects" not in human_text
 
 
-def test_planner_system_prompt_is_ultra_minimal(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_planner_system_prompt_is_minimal(monkeypatch: pytest.MonkeyPatch) -> None:
     spy = _SpyLLM([_Response(json.dumps(VALID_PLAN))])
     monkeypatch.setattr("planner.init_chat_model", lambda _model: spy)
-    catalog = "arm.grab(object_name)\narm.place(object_name, location)"
+    catalog = "grab(object_name)\nplace(object_name, target_name, position)"
     planner = LLMPlanner("pick cube", catalog)
     planner.plan(SNAPSHOT)
     system_content = spy.calls[0][0].content
     assert "You are a robot task planner" in system_content
     assert catalog in system_content
-    assert "Respond with ONLY the plan JSON object" in system_content
-    for shape in ('"kind":"seq"', '"kind":"call"', '"kind":"return"'):
-        assert shape in system_content
-    assert '"kind":"feedback"' not in system_content
-    assert '"kind":"literal"' in system_content
-    assert '"kind":"var"' in system_content
-    assert "Optional advanced: if/while are allowed." in system_content
-    assert system_content.count("Example:") == 1
+    assert "Respond with ONLY the plan JSON" in system_content
+    assert '"stop"' in system_content
     assert "Only call skills from the catalog." in system_content
     assert "Name objects from the scene snapshot" in system_content
-    assert "Insert feedback" not in system_content
     assert "Emit valid JSON." in system_content
     assert "Use the scene snapshot as the initial world state" in system_content
-    assert "replanning" not in system_content.lower()
-    assert "feedback checkpoint" not in system_content.lower()
-    assert '"STOP: <reason>"' in system_content
-    assert "Otherwise emit a plan that achieves the goal." in system_content
-    assert "then_branch" not in system_content
-    assert "max_iterations" not in system_content
-    assert '"kind":"binop"' not in system_content
-    assert '"kind":"not"' not in system_content
-    assert "DO NOT compare arm.grab" not in system_content
-    assert "Multi-object goals" not in system_content
-    assert "WRONG:" not in system_content
-    assert "state.list_objects" not in system_content
-
-
-def test_planner_replanning_not_supported(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("planner.init_chat_model", lambda _model: _mock_llm(VALID_PLAN))
-    planner = LLMPlanner("goal", "catalog")
-    with pytest.raises(ValueError, match="replanning is not supported"):
-        planner.plan(SNAPSHOT, _feedback_sum("checkpoint"))
+    assert "Otherwise emit a step array that achieves the goal." in system_content
+    assert "grab then place" in system_content
+    assert "transfer(object_name" not in system_content
+    assert '"kind"' not in system_content
+    assert '"goal"' not in system_content
 
 
 def test_planner_init_llm_once(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -254,4 +195,15 @@ def test_planner_stop_sentinel_on_initial_call(monkeypatch: pytest.MonkeyPatch) 
     )
     planner = LLMPlanner("goal", "catalog")
     result = planner.plan(SNAPSHOT)
+    assert is_stop_plan(result)
     assert get_stop_reason(result) == "goal achieved"
+
+
+def _human_text(content: object) -> str:
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        for part in content:
+            if isinstance(part, dict) and part.get("type") == "text":
+                return str(part["text"])
+    raise AssertionError(f"unexpected human content: {content!r}")

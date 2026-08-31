@@ -31,7 +31,10 @@ def parse_args() -> argparse.Namespace:
         "--vla-actions-per-chunk",
         type=int,
         default=config.VLA_ACTIONS_PER_CHUNK,
-        help="actions executed per policy query",
+        help=(
+            "expected service chunk size (from config.VLA_ACTIONS_PER_CHUNK); "
+            "changing it requires restarting the VLA service"
+        ),
     )
     parser.add_argument(
         "--max-steps",
@@ -47,7 +50,6 @@ def run_episode(
     vla: VLAClient,
     task: str,
     max_steps: int,
-    vla_actions_per_chunk: int,
 ) -> dict[str, object]:
     """Run one closed-loop episode until success or step budget."""
     success = False
@@ -55,7 +57,7 @@ def run_episode(
     while env.steps < max_steps and not success:
         image, wrist, state = env.observe()
         chunk = vla.predict(image, wrist, state, task)
-        for action in chunk[:vla_actions_per_chunk]:
+        for action in chunk:
             success = env.step(action)
             if success or env.steps >= max_steps:
                 break
@@ -72,10 +74,6 @@ def main() -> int:
     if args.episodes <= 0:
         print("episodes must be positive", file=sys.stderr)
         return 2
-    if args.vla_actions_per_chunk <= 0:
-        print("vla-actions-per-chunk must be positive", file=sys.stderr)
-        return 2
-
     configure_logging()
 
     vla = VLAClient()
@@ -98,7 +96,13 @@ def main() -> int:
     print(f"episodes          {args.episodes}")
     print(f"init_states       {init_count}")
     print(f"max_steps         {max_steps}")
-    print(f"vla_actions_chunk {args.vla_actions_per_chunk}")
+    print(f"vla_actions_chunk {config.VLA_ACTIONS_PER_CHUNK} (service-owned)")
+    if args.vla_actions_per_chunk != config.VLA_ACTIONS_PER_CHUNK:
+        print(
+            f"note: --vla-actions-per-chunk={args.vla_actions_per_chunk} ignored; "
+            f"service uses config.VLA_ACTIONS_PER_CHUNK={config.VLA_ACTIONS_PER_CHUNK}",
+            file=sys.stderr,
+        )
     print()
 
     successes = 0
@@ -106,9 +110,7 @@ def main() -> int:
         init_idx = LiberoEnv.init_state_idx_for_episode(episode, init_count)
         env = LiberoEnv(args.suite, args.task, init_state_idx=init_idx)
         try:
-            result = run_episode(
-                env, vla, task, max_steps, args.vla_actions_per_chunk
-            )
+            result = run_episode(env, vla, task, max_steps)
         finally:
             env.close()
         if result["success"]:

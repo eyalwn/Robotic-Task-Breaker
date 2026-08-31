@@ -1,4 +1,4 @@
-"""LLM-backed planner for snapshot-grounded plan generation."""
+"""LLM-backed planner for snapshot-grounded linear plan generation."""
 from __future__ import annotations
 
 import base64
@@ -9,36 +9,33 @@ from typing import Any
 
 from langchain.chat_models import init_chat_model
 from langchain_core.messages import HumanMessage, SystemMessage
-from pydantic import ValidationError
 
 import config
-from executor import ExecutionSum
-from plan import Plan, validate_plan
+from plan import PlannerResult, parse_planner_payload
 
 logger = logging.getLogger(__name__)
 
-_AST_SPEC = """\
-PLAN AST (JSON):
-  {"goal": <str>, "body": <stmt>}
+_PLAN_SPEC = """\
+PLAN FORMAT (JSON):
+  [<step>, ...]   OR   {"stop":"<reason>"}
 
-Statements:
-  seq:      {"kind":"seq", "steps":[<stmt>,...]}
-  call:     {"kind":"call", "skill":"<name>", "args":{...}}
-  return:   {"kind":"return", "value":<expr>?}
-
-Args/values use {"kind":"literal","value":...} or {"kind":"var","name":"..."}.
-Optional advanced: if/while are allowed.
+Each step is a flat object with a required "skill" field plus skill args:
+  {"skill":"grab","object_name":"..."}
+  {"skill":"place","object_name":"...","target_name":"...","position":"inside|on|center|left|right|top|bottom"}
+  {"skill":"close","target_name":"..."}
+  {"skill":"turn_on","target_name":"..."}
 
 Rules:
 - Only call skills from the catalog.
+- Decompose moves as grab then place (not transfer).
 - Name objects from the scene snapshot and natural-language goal, not sim ground-truth IDs.
 - Emit valid JSON.
 
 Example:
-{"goal":"grab cube","body":{"kind":"seq","steps":[
-  {"kind":"call","skill":"arm.grab","args":{"object_name":{"kind":"literal","value":"cube"}}},
-  {"kind":"call","skill":"arm.place","args":{"object_name":{"kind":"literal","value":"cube"},"location":{"kind":"literal","value":"basket"}}}
-]}}\
+[
+  {"skill":"grab","object_name":"alphabet soup"},
+  {"skill":"place","object_name":"alphabet soup","target_name":"basket","position":"inside"}
+]\
 """
 
 _SYSTEM_TEMPLATE = """\
@@ -48,22 +45,22 @@ emit a structured plan as JSON.
 SKILL CATALOG:
 {catalog}
 
-{ast_spec}
+{plan_spec}
 
 Use the scene snapshot as the initial world state when choosing objects and
 ordering actions.
 
 If the goal is achieved, irrecoverable, or cannot be attempted, respond with a
 sentinel STOP plan instead of an executable plan:
-{{"goal":"<same goal>","body":{{"kind":"return","value":{{"kind":"literal","value":"STOP: <reason>"}}}}}}
-Otherwise emit a plan that achieves the goal.
+{{"stop":"<reason>"}}
+Otherwise emit a step array that achieves the goal.
 
-Respond with ONLY the plan JSON object — no markdown, no code fences, no explanation.\
+Respond with ONLY the plan JSON — no markdown, no code fences, no explanation.\
 """
 
 
 class LLMPlanner:
-    """Generate validated plan ASTs from a goal and RGB snapshot."""
+    """Generate linear step lists from a goal and RGB snapshot."""
 
     def __init__(self, goal: str, catalog: str) -> None:
         self._goal = goal
@@ -72,16 +69,10 @@ class LLMPlanner:
         self._max_plan_retries = config.MAX_PLAN_RETRIES
         self._llm = _init_planning_llm(self._model_name)
 
-    def plan(
-        self,
-        snapshot: bytes,
-        execution_sum: ExecutionSum | None = None,
-    ) -> Plan:
-        """Return a validated ``Plan`` AST."""
-        if execution_sum is not None:
-            raise ValueError("replanning is not supported; pass execution_sum=None")
+    def plan(self, snapshot: bytes) -> PlannerResult:
+        """Return executable steps or a STOP sentinel dict."""
         system_prompt = _SYSTEM_TEMPLATE.format(
-            catalog=self._catalog, ast_spec=_AST_SPEC
+            catalog=self._catalog, plan_spec=_PLAN_SPEC
         )
         task_text = f"Goal: {self._goal}\n\n"
 
@@ -105,15 +96,15 @@ class LLMPlanner:
                 logger.debug("LLMPlanner usage: %s", response.usage_metadata)
 
             raw = response.content.strip()
-            raw = _extract_json_object(raw)
+            raw = _extract_json(raw)
             logger.debug("raw plan_json from LLM: %s", raw)
 
             try:
                 data = json.loads(raw)
-                validated_plan = validate_plan(data)
+                validated_plan = parse_planner_payload(data)
                 logger.info("LLMPlanner: valid plan on attempt %d", attempt + 1)
                 return validated_plan
-            except (json.JSONDecodeError, ValidationError) as exc:
+            except (json.JSONDecodeError, ValueError) as exc:
                 error_msg = str(exc)
                 logger.warning(
                     "LLMPlanner: plan invalid on attempt %d: %s",
@@ -142,9 +133,7 @@ def _retry_prompt(raw: str, error_msg: str) -> str:
         "The plan you emitted is invalid.\n"
         f"Invalid plan JSON:\n{raw}\n\n"
         f"Validation error:\n{error_msg}\n\n"
-        "Fix the JSON and respond with ONLY the corrected plan object.\n"
-        "Important: every item in any 'steps' array must be a statement object "
-        "with a 'kind' field (never a bare string like 'else_branch')."
+        "Fix the JSON and respond with ONLY the corrected plan JSON."
     )
 
 
@@ -156,8 +145,8 @@ def _strip_code_fences(raw: str) -> str:
     return raw
 
 
-def _extract_json_object(raw: str) -> str:
-    """Extract the first balanced JSON object from mixed model output."""
+def _extract_json(raw: str) -> str:
+    """Extract the first balanced JSON value from mixed model output."""
     text = _strip_code_fences(raw.strip())
     if not text:
         return text
@@ -168,52 +157,37 @@ def _extract_json_object(raw: str) -> str:
     except json.JSONDecodeError:
         pass
 
-    start = text.find("{")
-    if start == -1:
-        return text
-
-    depth = 0
-    in_string = False
-    escape = False
-    for i in range(start, len(text)):
-        ch = text[i]
-        if in_string:
-            if escape:
-                escape = False
-            elif ch == "\\":
-                escape = True
-            elif ch == '"':
-                in_string = False
+    for opener, closer in (("[", "]"), ("{", "}")):
+        start = text.find(opener)
+        if start == -1:
             continue
-        if ch == '"':
-            in_string = True
-        elif ch == "{":
-            depth += 1
-        elif ch == "}":
-            depth -= 1
-            if depth == 0:
-                return text[start : i + 1]
+        depth = 0
+        in_string = False
+        escape = False
+        for i in range(start, len(text)):
+            ch = text[i]
+            if in_string:
+                if escape:
+                    escape = False
+                elif ch == "\\":
+                    escape = True
+                elif ch == '"':
+                    in_string = False
+                continue
+            if ch == '"':
+                in_string = True
+            elif ch == opener:
+                depth += 1
+            elif ch == closer:
+                depth -= 1
+                if depth == 0:
+                    return text[start : i + 1]
 
-    return text[start:]
-
-
-def _model_supports_json_object(model: str) -> bool:
-    """Return whether the model likely supports json_object response mode."""
-    name = model.split(":", 1)[-1].lower()
-    return name.startswith(("gpt-", "chatgpt-", "o1", "o3"))
-
-
+    return text
 def _init_planning_llm(model: str):
-    """Initialize chat model and bind json_object mode when supported."""
+    """Initialize the chat model for planning."""
     logger.info("initiating chat with model: %s", model)
-    llm = init_chat_model(model)
-    if not _model_supports_json_object(model):
-        return llm
-    try:
-        return llm.bind(response_format={"type": "json_object"})
-    except (TypeError, ValueError, NotImplementedError) as exc:
-        logger.debug("LLMPlanner: json_object mode unavailable for %r: %s", model, exc)
-        return llm
+    return init_chat_model(model)
 
 
 __all__ = [

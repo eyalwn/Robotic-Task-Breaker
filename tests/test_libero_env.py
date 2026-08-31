@@ -142,3 +142,65 @@ def test_is_grasping_uses_robosuite_check():
         )
     finally:
         env.close()
+
+
+def test_check_subtask_grab_uses_is_grasping():
+    env = _build_env_with_mocks(init_states=[b"s"])
+    try:
+        step = {"skill": "grab", "object_name": "alphabet_soup_1"}
+        assert env.check_subtask(step) is True
+        env._inner().get_object.assert_called_with("alphabet_soup_1")
+    finally:
+        env.close()
+
+
+def test_check_subtask_place_inside_uses_in_predicate():
+    env = _build_env_with_mocks(init_states=[b"s"])
+    try:
+        step = {
+            "skill": "place",
+            "object_name": "alphabet_soup_1",
+            "target_name": "basket_1_contain_region",
+            "position": "inside",
+        }
+        assert env.check_subtask(step) is True
+        env._inner()._eval_predicate.assert_called_with(
+            ["in", "alphabet_soup_1", "basket_1_contain_region"]
+        )
+    finally:
+        env.close()
+
+
+def test_check_subtask_place_on_uses_on_predicate():
+    env = _build_env_with_mocks(init_states=[b"s"])
+    env._inner()._eval_predicate.side_effect = (
+        lambda state: state[0] == "on" and state[1].startswith("plate")
+    )
+    try:
+        step = {
+            "skill": "place",
+            "object_name": "plate_1",
+            "target_name": "table_1",
+            "position": "on",
+        }
+        assert env.check_subtask(step) is True
+        env._inner()._eval_predicate.assert_called_with(
+            ["on", "plate_1", "table_1"]
+        )
+    finally:
+        env.close()
+
+
+def test_check_subtask_close_and_turn_on():
+    env = _build_env_with_mocks(init_states=[b"s"])
+    env._inner()._eval_predicate.side_effect = lambda state: state[0] in {
+        "close",
+        "turnon",
+    }
+    try:
+        assert env.check_subtask({"skill": "close", "target_name": "microwave_1"})
+        assert env.check_subtask({"skill": "turn_on", "target_name": "stove_1"})
+        env._inner()._eval_predicate.assert_any_call(["close", "microwave_1"])
+        env._inner()._eval_predicate.assert_any_call(["turnon", "stove_1"])
+    finally:
+        env.close()

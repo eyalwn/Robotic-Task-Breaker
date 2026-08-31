@@ -1,18 +1,11 @@
 """Skill catalog tests."""
 from __future__ import annotations
 
-from skills import arm_skill_catalog
+from skills import skill_catalog
 
 
-def test_arm_skill_catalog_lists_core_arm_skills() -> None:
-    catalog = arm_skill_catalog()
-    for skill in (
-        "arm.grab",
-        "arm.place",
-        "arm.transfer",
-        "arm.open",
-        "arm.close",
-        "arm.push",
-        "arm.pull",
-    ):
+def test_skill_catalog_lists_core_skills() -> None:
+    catalog = skill_catalog()
+    for skill in ("grab", "place", "close", "turn_on"):
         assert skill in catalog
+    assert "transfer" not in catalog

@@ -1,39 +1,42 @@
 # Longor
 
-Long-horizon robot tasks: an **LLM** emits a structured plan, a stateless
-**executor** walks one plan at a time, a **VLA** policy does the arm
-manipulation, and **RGB** snapshots feed the planner once per episode.
+Longor is a modular long-horizon robot agent for LIBERO that combines free-language planning with vision-language-action (VLA) control.
 
-Platform: **LIBERO on Linux + NVIDIA** (Colab T4 is sufficient). Architecture and
-contracts: `SRD.md`.
+It is designed to be practical for research and demos:
 
-Ownership split (runtime):
-- `Runner`: composition root — owns `LiberoEnv` and `SkillRegistry`; plans from `env.task_description`; single pass is `observe -> plan(snapshot) -> executor.run(plan)`; checks sentinel STOP before execute.
-- `LLMPlanner`: `plan(snapshot) -> Plan`; single-pass planning from goal and snapshot; STOP is a sentinel return literal `"STOP: <reason>"`; model/retries from `config`.
-- `Executor`: stateless `run(plan) -> ExecutionSum`; owns VLA/env execution and no cross-run memory.
+- clear planner -> executor -> policy boundaries,
+- simple JSON-plan interface from the LLM,
+- runtime for Linux + NVIDIA/CUDA, with cross-platform development/testing workflows.
+
+The goal is straightforward: turn high-level intent into grounded multi-step
+robot behavior with minimal glue code and predictable execution.
+
+It does three things:
+
+- asks an **LLM** for a step-by-step plan in JSON,
+- calls a **VLA server** to produce robot actions,
+- executes the plan until done (or STOP).
+
+
 
 ## Setup
 
-Setup/runbook details live in this README. Notebook launchers under `colab/`
-are the executable setup path for Colab flows.
+Two envs are required in repo root:
 
-Two virtualenvs in the repo root: `.venv` for the app and simulation, `.vla-venv`
-for the policy server. They must be separate — the policy stack and the sim stack
-pin incompatible dependencies.
+- `.venv` for app + simulation
+- `.vla-venv` for the policy server
 
-### 1 — Environment file
+
+
+### 1 - Environment file
 
 ```bash
 cp .env.example .env
 ```
 
-Fill in `OPENAI_API_KEY`. The other three variables have working defaults. These
-four are the only environment variables the code reads; everything else is a
-constant in `src/config.py`.
+Set `OPENAI_API_KEY` in `.env` (do not commit this file).
 
-**Never commit `.env`** (gitignored).
-
-### 2 — App venv
+### 2 - App venv
 
 ```bash
 python3 -m venv .venv
@@ -43,18 +46,18 @@ python3 -m venv .venv
 ```
 
 `deps/requirements-libero.txt` is self-contained (it includes
-`deps/requirements.txt`). The final `pip install -e .` is required — without it
-the `src/` modules are not importable.
+`deps/requirements.txt`).
 
-Headless rendering needs these exported in every shell that runs the sim (add to
-`.bashrc`):
+For headless sim shells:
 
 ```bash
 export MUJOCO_GL=egl
 export PYOPENGL_PLATFORM=egl
 ```
 
-### 3 — Policy venv
+
+
+### 3 - Policy venv
 
 ```bash
 python3 -m venv .vla-venv
@@ -68,7 +71,7 @@ Default checkpoint is `HuggingFaceVLA/smolvla_libero`; override with
 
 ## Usage
 
-**Terminal A — policy service.** Wait for it to report that it is listening
+**Terminal A - policy service.** Wait for it to report that it is listening
 (startup includes a checkpoint download on first run).
 
 ```bash
@@ -76,7 +79,7 @@ source .vla-venv/bin/activate
 python services/smolvla_service.py
 ```
 
-**Terminal B — the run.**
+**Terminal B - the run.**
 
 ```bash
 source .venv/bin/activate
@@ -85,7 +88,7 @@ python examples/long_horizon_llm_libero.py
 
 The client talks to `http://127.0.0.1:8765`.
 
-Set `SAVE_VIDEO=1` in `.env` to get `run.mp4` showing exactly what the policy saw.
+Set `SAVE_VIDEO=1` in `.env` to write `run.mp4`.
 
 ## Tests
 
@@ -95,8 +98,8 @@ With `.venv` active:
 pytest
 ```
 
-Unit tests are hermetic: no live sim, no network. They cover the plan AST,
-executor (control flow + expression eval), VLA client wire contract, and
+Unit tests are hermetic: no live sim, no network. They cover executor step
+flow, runner stop/verdict flow, plan parsing, VLA client wire contract, and
 planner JSON extraction/retry.
 
 Opt-in live planner check (non-hermetic, billed OpenAI calls; Windows-ok; no
@@ -108,7 +111,3 @@ pytest -m integration tests/test_planner_live_llm.py -q
 
 Before running, download a real LIBERO task-start snapshot and place it at:
 `tests/fixtures/libero_object_task0_start.jpg`.
-
-The test forces `MAX_PLAN_RETRIES=1` across a few independent `plan()` calls.
-It skips unless you run with `-m integration`, set the API key, and provide the
-snapshot file.

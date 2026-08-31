@@ -22,6 +22,7 @@ import numpy as np
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from PIL import Image
 
+import config
 from utils import configure_logging, load_env
 
 load_env()
@@ -81,6 +82,15 @@ def build_smolvla_observation(
         "observation.state": state.astype(np.float32, copy=False),
         "task": task,
     }
+
+
+def truncate_action_chunk(chunk: np.ndarray, max_actions: int) -> np.ndarray:
+    """Return at most ``max_actions`` timesteps from a 2D action chunk."""
+    if max_actions <= 0:
+        raise ValueError(f"max_actions must be positive, got {max_actions}")
+    if chunk.ndim != 2:
+        raise ValueError(f"expected 2D actions, got shape {chunk.shape}")
+    return chunk[:max_actions]
 
 
 def actions_to_wire_format(chunk: np.ndarray) -> list[list[float]]:
@@ -264,7 +274,8 @@ async def predict(
         raise HTTPException(status_code=500, detail=f"Inference error: {exc}") from exc
 
     try:
-        wire = actions_to_wire_format(chunk_np)
+        truncated = truncate_action_chunk(chunk_np, config.VLA_ACTIONS_PER_CHUNK)
+        wire = actions_to_wire_format(truncated)
     except ValueError as exc:
         raise HTTPException(status_code=500, detail=str(exc)) from exc
 

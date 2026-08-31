@@ -50,8 +50,7 @@ VIDEO_PATH = "run.mp4"
 VIDEO_FPS = 10
 
 # --- VLA manipulation loop --------------------------------------------------
-# Actions consumed from each predicted chunk before re-querying the policy.
-# Closing the loop this often is what makes the policy reactive.
+# Max actions returned per /predict response (enforced by the VLA service).
 VLA_ACTIONS_PER_CHUNK = 5
 # Per-skill step cap (guard against a failing subtask; success path ends earlier).
 MAX_SKILL_STEPS = 120

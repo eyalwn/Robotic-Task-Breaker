@@ -44,6 +44,13 @@ class VLAClient:
         self, image: bytes, wrist: bytes, state: list[float], task: str
     ) -> list[list[float]]:
         """Return a chunk of 7-D actions for the current observation."""
+        logger.debug(
+            "vla predict task=%r image_bytes=%d wrist_bytes=%d state_dim=%d",
+            task,
+            len(image),
+            len(wrist),
+            len(state),
+        )
         try:
             response = requests.post(
                 f"{self._url}/predict",
@@ -63,7 +70,9 @@ class VLAClient:
         actions = payload.get("actions")
         if not isinstance(actions, list) or not actions:
             raise VLAError(f"expected a non-empty 'actions' list, got {payload!r}")
-        return [self._validate(action, idx) for idx, action in enumerate(actions)]
+        validated = [self._validate(action, idx) for idx, action in enumerate(actions)]
+        logger.debug("vla predict response actions=%d", len(validated))
+        return validated
 
     @staticmethod
     def _validate(action: object, idx: int) -> list[float]:
