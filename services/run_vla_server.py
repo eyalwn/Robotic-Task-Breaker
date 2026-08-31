@@ -1,7 +1,6 @@
-"""Launch the VLA HTTP server for smolvla / pi05."""
+"""Launch the VLA HTTP server for pi0fast / smolvla / pi05."""
 from __future__ import annotations
 
-import argparse
 import runpy
 import sys
 from pathlib import Path
@@ -9,27 +8,14 @@ from pathlib import Path
 import config
 
 _SERVICE_FILES = {
+    "pi0fast": "pi0fast_service.py",
     "pi05": "pi05_service.py",
     "smolvla": "smolvla_service.py",
 }
 
 
-def _parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Run the Longor VLA policy HTTP service."
-    )
-    parser.add_argument(
-        "--policy",
-        choices=config.VLA_POLICIES,
-        default=None,
-        help=f"policy backend (default: config.VLA_POLICY={config.VLA_POLICY!r})",
-    )
-    return parser.parse_args()
-
-
 def main() -> None:
-    args = _parse_args()
-    policy = args.policy or config.VLA_POLICY
+    policy = config.VLA_POLICY
     if policy not in config.VLA_POLICIES:
         supported = ", ".join(config.VLA_POLICIES)
         print(
@@ -48,7 +34,25 @@ def main() -> None:
     try:
         runpy.run_path(str(target), run_name="__main__")
     except ImportError as exc:
-        if policy == "pi05":
+        if policy == "pi0fast":
+            print(
+                "error: Pi0-FAST (OpenPI Shiduo-zh fork) or HTTP deps not importable.",
+                file=sys.stderr,
+            )
+            print(
+                "  Linux + NVIDIA: clone https://github.com/Shiduo-zh/openpi, then:",
+                file=sys.stderr,
+            )
+            print(
+                "    pip install -e ../openpi "
+                '"lerobot @ git+https://github.com/huggingface/lerobot@0cf864870cf29f4738d3ade893e6fd13fbd7cdb5"',
+                file=sys.stderr,
+            )
+            print(
+                "    pip install -r deps/requirements-vla-pi0fast-linux.txt && pip install -e .",
+                file=sys.stderr,
+            )
+        elif policy == "pi05":
             print(
                 "error: OpenPI (Pi0.5) or HTTP deps not importable in this venv.",
                 file=sys.stderr,

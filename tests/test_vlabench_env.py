@@ -13,13 +13,17 @@ import pytest
 import envs.vlabench_env as vlabench_env
 
 
-def _make_rgb() -> np.ndarray:
-    return np.zeros((3, 8, 8, 3), dtype=np.uint8)
+def _make_rgb(*, markers: tuple[int, int, int] | None = None) -> np.ndarray:
+    markers = markers or (0, 0, 0)
+    frames = []
+    for value in markers:
+        frames.append(np.full((8, 8, 3), value, dtype=np.uint8))
+    return np.stack(frames, axis=0)
 
 
-def _make_obs() -> dict:
+def _make_obs(*, rgb_markers: tuple[int, int, int] = (10, 20, 30)) -> dict:
     return {
-        "rgb": _make_rgb(),
+        "rgb": _make_rgb(markers=rgb_markers),
         "ee_state": np.array(
             [0.1, 0.2, 0.3, 1.0, 0.0, 0.0, 0.0, 0.5],
             dtype=np.float64,
@@ -98,6 +102,43 @@ def _patch_dm_control_ik(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
 
     monkeypatch.setattr(builtins, "__import__", fake_import)
     return ik_mock
+
+
+def test_observe_returns_front_second_wrist_order_and_7d_state():
+    """rgb[0,1,2] -> front/second/wrist JPEGs; ee_state -> robot-frame 7-D state."""
+    robot_base = np.array([0.0, -0.4, 0.78], dtype=np.float64)
+    obs = {
+        "rgb": _make_rgb(markers=(11, 22, 33)),
+        "ee_state": np.array(
+            [0.1, 0.2, 0.3, 1.0, 0.0, 0.0, 0.0, 0.5],
+            dtype=np.float64,
+        ),
+    }
+    load_env = MagicMock()
+    load_env.return_value = MagicMock(
+        task=SimpleNamespace(get_instruction=lambda: "pick fruit"),
+        get_robot_frame_position=MagicMock(return_value=robot_base),
+        get_observation=MagicMock(return_value=obs),
+        close=MagicMock(),
+    )
+    with patch.object(vlabench_env, "_import_vlabench", return_value=load_env), patch.object(
+        vlabench_env,
+        "to_jpeg",
+        side_effect=lambda rgb: bytes([int(rgb[0, 0, 0])]),
+    ):
+        env = vlabench_env.VLABenchEnv("select_fruit")
+        try:
+            images, state = env.observe()
+        finally:
+            env.close()
+
+    assert images == (bytes([11]), bytes([22]), bytes([33]))
+    assert len(state) == 7
+    assert state[0] == pytest.approx(0.1)
+    assert state[1] == pytest.approx(0.6)
+    assert state[2] == pytest.approx(-0.48)
+    assert state[3:6] == pytest.approx([0.0, 0.0, 0.0])
+    assert state[6] == pytest.approx(0.5)
 
 
 def test_init_calls_load_env_once():

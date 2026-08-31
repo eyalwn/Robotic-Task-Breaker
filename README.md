@@ -6,7 +6,8 @@ task into short steps a VLA can execute.
 It is platform-generic: switch LLM, VLA, or simulator with a venv plus
 constants in `src/config.py`. One of each per process. Contracts: `SRD.md`.
 
-Default stack: **VLAbench** + **SmolVLA** (`lerobot/smolvla_vlabench`),
+Default stack: **VLAbench** + **π0-fast**
+(`VLABench/pi0-fast-primitive-10task-deltachunk`),
 Linux + NVIDIA/CUDA.
 
 ## Setup
@@ -55,32 +56,15 @@ export PYOPENGL_PLATFORM=egl
 LIBERO remains a non-default backend (`SIM_ENV="libero"` plus
 `deps/requirements-libero.txt`).
 
-### 3 - Policy venv (default: SmolVLA / VLAbench)
+### 3 - Policy venv (default: π0-fast / VLAbench)
 
 ```bash
 python3 -m venv .vla-venv
 .vla-venv/bin/python -m pip install -U pip
-.vla-venv/bin/python -m pip install -r deps/requirements-vla-smolvla-linux.txt
-.vla-venv/bin/python -m pip install -e .
-```
-
-Default checkpoint is `lerobot/smolvla_vlabench`. Override with
-`SMOLVLA_CHECKPOINT` when needed.
-
-#### Optional: π0.5 / OpenPI
-
-Linux + NVIDIA. Clone OpenPI as a sibling of this repo. The `lerobot @ git+...`
-pin must be in the same `pip install -e ../openpi` command — pip ignores
-OpenPI's `[tool.uv.sources]`, and current PyPI `lerobot` needs `numpy>=2`
-while OpenPI pins `numpy<2`. Prefer a fresh `.vla-venv` if switching backends.
-
-```bash
-python3 -m venv .vla-venv
-.vla-venv/bin/python -m pip install -U pip
-git clone --recurse-submodules https://github.com/Physical-Intelligence/openpi ../openpi
+git clone --recurse-submodules https://github.com/Shiduo-zh/openpi ../openpi
 .vla-venv/bin/python -m pip install -e ../openpi \
   "lerobot @ git+https://github.com/huggingface/lerobot@0cf864870cf29f4738d3ade893e6fd13fbd7cdb5"
-.vla-venv/bin/python -m pip install -r deps/requirements-vla-pi05-linux.txt
+.vla-venv/bin/python -m pip install -r deps/requirements-vla-pi0fast-linux.txt
 .vla-venv/bin/python -m pip install -e .
 ```
 
@@ -91,8 +75,7 @@ git clone --recurse-submodules https://github.com/Physical-Intelligence/openpi .
 
 ```bash
 source .vla-venv/bin/activate
-python services/run_vla_server.py          # default: smolvla
-# python services/run_vla_server.py --policy pi05
+python services/run_vla_server.py          # config.VLA_POLICY selects pi0fast
 ```
 
 **Terminal B - the run.**
@@ -110,10 +93,6 @@ Set `SAVE_VIDEO=1` in `.env` to write `run.mp4`.
 Colab launchers:
 
 - `colab/run_vlabench_task.ipynb` — Longor path (`examples/run_vlabench_task.py`).
-- `colab/run_lerobot_baseline.ipynb` — locked upstream `lerobot-eval` baseline for
-  the M4 parity gate (`artifacts/m4_parity/`).
-
-See `SRD.md` (M4 parity gate) for stop conditions and artifact layout.
 
 ## Tests
 

@@ -23,8 +23,8 @@ LLM_MODEL = os.environ.get("LLM_MODEL", "gpt-4.1-mini").strip()
 SAVE_VIDEO = os.environ.get("SAVE_VIDEO") == "1"
 
 # --- VLA backend selection (launcher default) ------------------------------
-VLA_POLICY = "smolvla"  # "pi05" | "smolvla"
-VLA_POLICIES = ("pi05", "smolvla")
+VLA_POLICY = "pi0fast"  # "pi0fast" | "pi05" | "smolvla"
+VLA_POLICIES = ("pi0fast", "pi05", "smolvla")
 
 # --- VLA HTTP service ------------------------------------------------------
 VLA_PORT = 8765

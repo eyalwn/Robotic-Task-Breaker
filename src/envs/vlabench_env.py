@@ -1,8 +1,8 @@
 """VLABench simulation backend (default sim).
 
-Observation and action layout match ``lerobot/smolvla_vlabench``: 3 cameras,
-7-D state ``[pos_robot(3), euler_xyz(3), gripper]``, 7-D EEF actions converted
-to joint ctrl inside this adapter (not in the executor).
+Observation and action layout match VLABench primitive policies: 3 cameras,
+7-D state ``[pos_robot(3), euler_xyz(3), gripper]``, 7-D absolute EEF actions
+converted to joint ctrl inside this adapter (not in the executor).
 """
 from __future__ import annotations
 

@@ -187,7 +187,8 @@ def _import_smolvla():
             raise ImportError(
                 "LeRobot SmolVLA is not installed. On Linux: "
                 "pip install -r deps/requirements-vla-smolvla-linux.txt "
-                "in .vla-venv, then run: python services/run_vla_server.py --policy smolvla "
+                "in .vla-venv, then set config.VLA_POLICY='smolvla' and run: "
+                "python services/run_vla_server.py "
                 "(or python services/smolvla_service.py directly)."
             ) from exc
 

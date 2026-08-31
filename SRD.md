@@ -28,12 +28,15 @@ This is intentionally not an AST system.
   `lerobot-eval` of `lerobot/smolvla_vlabench` on VLABench `select_fruit`
   (native instruction, SHA `cf588fe60c0c7282174fe979f5913170cfe69017`):
   **0/8** full-horizon episodes (run OOM-killed at 8/10). Checkpoint cannot
-  solve the task; Longor path is not diagnostic. Pivot to a different
-  low-level policy.
+  solve the task; Longor path is not diagnostic.
+- **M5 — ACTIVE.** Establish a VLABench `select_fruit` baseline and Longor
+  subtask run with the official `pi0-fast-primitive-10task-deltachunk`
+  checkpoint. The service must use the checkpoint's documented VLABench
+  observation and action representation without client or executor retuning.
 
 ### Current
 
-Next low-level policy TBD.
+`pi0fast` / VLABench is the active low-level policy pair.
 
 ## Architecture
 
@@ -107,13 +110,14 @@ Do not add skills until a task (or the user) requires it.
 
 ## VLA Service Contract
 
-One HTTP policy transport, two backends. Launch via
-`python services/run_vla_server.py` (optional `--policy pi05|smolvla`).
+One HTTP policy transport, with each service module specific to one simulator
+and checkpoint. Launch via `python services/run_vla_server.py`. The launcher
+selects the module exclusively from `config.VLA_POLICY`; it has no policy CLI
+argument.
 
 Backend modules expose the same wire contract:
 
-- `GET /health` -> `{"status":"ok","model":"<id>"}` where `<id>` is `pi05` or
-  `smolvla`
+- `GET /health` -> `{"status":"ok","model":"<id>"}`
 - `POST /predict` (multipart):
   - `images`: one or more JPEG parts, field name `images`, order matches
     `observe()` cameras
@@ -128,12 +132,18 @@ Backend modules expose the same wire contract:
     **service** before the response is returned. Clients must execute the full
     returned chunk and must not trim it again.
 
-Each service asserts the camera count and state length its **default
-checkpoint** needs (HTTP 400 on mismatch). No silent padding/dropping:
+Each service asserts the camera count and state length its checkpoint needs
+(HTTP 400 on mismatch). No silent padding/dropping:
 
 - `smolvla` / `lerobot/smolvla_vlabench`: 3 images, 7-D state. Observation keys
   `observation.images.camera1|camera2|camera3` (front, second, wrist).
 - `pi05` / `pi05_libero`: 2 images, 8-D state.
+- `pi0fast` / `VLABench/pi0-fast-primitive-10task-deltachunk`: VLABench-only.
+  Its service must assert the upstream checkpoint's documented camera/state
+  schema. OpenPI's native inference output transform converts its generated
+  delta chunk to absolute EEF actions before `infer()` returns. Longor sends
+  those resulting actions unchanged; neither the service, `executor.py`, nor
+  `src/envs/vlabench_env.py` may alter valid actions.
 
 > **Verified 2026-08-28:** `lerobot/smolvla_vlabench` checkpoint metadata
 > declares a 6-D state, but its loaded normalizer has 7-D state statistics and
@@ -141,7 +151,7 @@ checkpoint** needs (HTTP 400 on mismatch). No silent padding/dropping:
 > environment/service dimension mismatch. Preserve the documented 7-D VLABench
 > state; never drop its gripper component based on that metadata.
 
-Backend selection is a launcher/config concern, not a client concern:
+Backend selection is a `config.py` concern, not a client concern:
 `src/vla_client.py` stays backend-agnostic.
 
 Contract changes must be recorded here before implementation changes.
