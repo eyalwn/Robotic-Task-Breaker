@@ -59,7 +59,7 @@ LIBERO remains a non-default backend (`SIM_ENV="libero"` plus
 ### 3 - Policy venv (default: π0-fast / VLAbench)
 
 ```bash
-python3 -m venv .vla-venv
+python3.11 -m venv .vla-venv
 .vla-venv/bin/python -m pip install -U pip
 git clone --recurse-submodules https://github.com/Shiduo-zh/openpi ../openpi
 .vla-venv/bin/python -m pip install -e ../openpi \

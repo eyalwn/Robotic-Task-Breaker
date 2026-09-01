@@ -42,6 +42,11 @@ _HF_CHECKPOINT_ALIASES = {
         "VLABench/pi0-fast-ft-primitive-10task-deltachunk"
     ),
 }
+_INFERENCE_ALLOW_PATTERNS = (
+    "_CHECKPOINT_METADATA",
+    "assets/**",
+    "params/**",
+)
 
 _policy = None
 
@@ -119,7 +124,11 @@ def actions_to_wire_format(chunk: np.ndarray) -> list[list[float]]:
 def _download_checkpoint(repo_id: str) -> str:
     from huggingface_hub import snapshot_download
 
-    return snapshot_download(repo_id)
+    return snapshot_download(
+        repo_id,
+        allow_patterns=list(_INFERENCE_ALLOW_PATTERNS),
+        ignore_patterns=["train_state/**"],
+    )
 
 
 def _load_openpi_policy():

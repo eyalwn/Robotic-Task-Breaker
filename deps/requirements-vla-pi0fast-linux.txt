@@ -1,6 +1,6 @@
 # Linux + NVIDIA GPU (L4-class Colab OK).
 # Usage:
-#   python3 -m venv .vla-venv
+#   python3.11 -m venv .vla-venv
 #   git clone https://github.com/Shiduo-zh/openpi ../openpi
 #   .vla-venv/bin/pip install -e ../openpi \
 #     "lerobot @ git+https://github.com/huggingface/lerobot@0cf864870cf29f4738d3ade893e6fd13fbd7cdb5"
@@ -11,7 +11,6 @@
 setuptools
 wheel
 jax[cuda12]
-git+https://github.com/huggingface/lerobot@0cf864870cf29f4738d3ade893e6fd13fbd7cdb5
 huggingface_hub>=0.20
 transformers
 fastapi>=0.100

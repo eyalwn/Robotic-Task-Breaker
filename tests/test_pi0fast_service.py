@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import io
 import json
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import numpy as np
 import pytest
@@ -12,6 +12,7 @@ from PIL import Image
 import config
 import pi0fast_service as svc
 from pi0fast_service import (
+    _download_checkpoint,
     actions_to_wire_format,
     app,
     build_pi0fast_observation,
@@ -38,6 +39,25 @@ def make_jpeg(
 def test_resolve_checkpoint_repo_maps_srd_name() -> None:
     resolved = resolve_checkpoint_repo("VLABench/pi0-fast-primitive-10task-deltachunk")
     assert resolved == "VLABench/pi0-fast-ft-primitive-10task-deltachunk"
+
+
+def test_download_checkpoint_uses_inference_only_patterns() -> None:
+    pytest.importorskip("huggingface_hub")
+    calls = {}
+
+    def _fake_snapshot_download(repo_id, allow_patterns, ignore_patterns):
+        calls["repo_id"] = repo_id
+        calls["allow_patterns"] = allow_patterns
+        calls["ignore_patterns"] = ignore_patterns
+        return "/tmp/ckpt"
+
+    with patch("huggingface_hub.snapshot_download", _fake_snapshot_download):
+        out = _download_checkpoint("foo/bar")
+    assert out == "/tmp/ckpt"
+    assert calls["repo_id"] == "foo/bar"
+    assert "params/**" in calls["allow_patterns"]
+    assert "assets/**" in calls["allow_patterns"]
+    assert calls["ignore_patterns"] == ["train_state/**"]
 
 
 def test_truncates_to_max_actions() -> None:
