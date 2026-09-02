@@ -33,6 +33,13 @@ This is intentionally not an AST system.
   subtask run with the official `pi0-fast-primitive-10task-deltachunk`
   checkpoint. The service must use the checkpoint's documented VLABench
   observation and action representation without client or executor retuning.
+  **Baseline protocol (fixed):** task `select_fruit`; native
+  `env.task_description` on every `/predict`; raw `VLAClient` loop (no
+  `Runner`, planner, or executor); apply every action in each returned chunk
+  unchanged; `BASELINE_EPISODES` (= 10) independent episodes; stop each episode
+  on `env.success()` or `MAX_EPISODE_STEPS`; report aggregate successes/10 and
+  success rate. Entrypoint: `examples/run_vlabench_raw_policy.py`; Colab
+  launcher: `colab/run_vlabench_raw_policy.ipynb`.
 
 ### Current
 

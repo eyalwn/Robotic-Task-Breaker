@@ -23,7 +23,7 @@ alwaysApply: true
 - Do not embed experiment harnesses into production modules. Do not recreate a `validation/` directory.
 - Delete temporary debug instrumentation once the root cause is confirmed. Do not leave it behind a flag.
 - Do not add environment variables: `src/config.py` is the only place defaults live. A new constant is fine; a new env var needs a mapped `SRD.md` acceptance criterion.
-- For Colab validation, notebooks are launchers only; orchestration and verdict logic live in Python scripts (see `colab-validation.mdc`).
+- For Colab validation, notebooks are launchers only; orchestration and verdict logic live in Python scripts.
 
 ## Structural defaults (apply globally)
 
