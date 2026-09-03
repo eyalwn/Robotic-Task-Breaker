@@ -18,6 +18,7 @@ logger = logging.getLogger(__name__)
 
 _RENDER_RESOLUTION = (480, 480)
 _FRANKA_FINGER_OPEN = 0.04
+_GRIPPER_OPEN = 0.1  # policy gripper: >= this is open, else closed
 _POLICY_CAMERA_SOURCE_COUNT = 4
 
 
@@ -170,7 +171,7 @@ class VLABenchEnv:
         n_dof = robot.n_dof
         ctrl = np.zeros(ctrl_dim, dtype=np.float64)
         ctrl[:n_dof] = ik_result.qpos[:n_dof]
-        finger_open = _FRANKA_FINGER_OPEN if gripper >= 0.1 else 0.0
+        finger_open = _FRANKA_FINGER_OPEN if gripper >= _GRIPPER_OPEN else 0.0
         ctrl[n_dof:] = finger_open
 
         self._env.step(ctrl)
@@ -193,8 +194,11 @@ class VLABenchEnv:
         raise ValueError(f"unknown object name {name!r}")
 
     def is_grasping(self, object_name: str) -> bool:
+        """True when VLABench reports contact and the gripper is closed."""
         entity = self._resolve_entity(object_name)
-        return bool(entity.is_grasped(self._env.physics, self._env.task.robot))
+        if not entity.is_grasped(self._env.physics, self._env.task.robot):
+            return False
+        return self.state()[-1] < _GRIPPER_OPEN
 
     def check_subtask(self, step: dict[str, str]) -> bool:
         """Evaluate structured subtask completion for one executor step."""

@@ -262,7 +262,13 @@ def test_resolve_entity_exact_and_normalized():
 def test_check_subtask_grab_and_place():
     env = _build_env_with_mocks()
     try:
-        assert env.check_subtask({"skill": "grab", "object_name": "apple"}) is True
+        grab = {"skill": "grab", "object_name": "apple"}
+        assert env.check_subtask(grab) is False  # contact, but mock gripper 0.5 is open
+        closed = _make_obs()
+        closed["ee_state"] = closed["ee_state"].copy()
+        closed["ee_state"][7] = 0.0
+        env._mock_env.get_observation.return_value = closed
+        assert env.check_subtask(grab) is True
         place_step = {
             "skill": "place",
             "object_name": "apple",
