@@ -94,6 +94,23 @@ def test_load_track_episode_configs_reads_first_n(tmp_path: Path, monkeypatch: p
     assert configs == payload["select_fruit"][:2]
 
 
+def test_load_track_episode_configs_uses_vendored_root_when_env_missing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    mod = _load_script()
+    vendored_root = tmp_path / ".vendor" / "VLABench" / "VLABench"
+    track_dir = vendored_root / "configs" / "evaluation" / "tracks"
+    track_dir.mkdir(parents=True)
+    track_file = track_dir / "track_1_in_distribution.json"
+    payload = {"select_fruit": [{"instructions": ["episode-1"]}]}
+    track_file.write_text(json.dumps(payload), encoding="utf-8")
+    monkeypatch.delenv("VLABENCH_ROOT", raising=False)
+    with patch.object(mod, "__file__", str(tmp_path / "examples" / "run_vlabench_raw_policy.py")):
+        configs = mod.load_track_episode_configs("select_fruit", 1)
+    assert configs == payload["select_fruit"]
+
+
 def test_main_pass_exits_zero(capsys: pytest.CaptureFixture[str]) -> None:
     mod = _load_script()
     with patch.object(mod, "run_baseline", return_value=(3, 10)), patch.object(

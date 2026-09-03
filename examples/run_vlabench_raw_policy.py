@@ -22,6 +22,21 @@ _TRACK_NAME = "track_1_in_distribution"
 _TRACK_RELATIVE_PATH = Path("configs") / "evaluation" / "tracks"
 
 
+def resolve_vlabench_root() -> Path:
+    """Resolve VLABench root from env, or fallback to vendored checkout."""
+    env_root = os.environ.get("VLABENCH_ROOT", "").strip()
+    if env_root:
+        return Path(env_root)
+    repo_root = Path(__file__).resolve().parent.parent
+    vendored_root = repo_root / ".vendor" / "VLABench" / "VLABench"
+    if vendored_root.is_dir():
+        return vendored_root
+    raise RuntimeError(
+        "VLABENCH_ROOT is required for Track-1 baseline episodes "
+        "(or install VLABench at .vendor/VLABench/VLABench)"
+    )
+
+
 def run_episode(env, vla: VLAClient) -> bool:
     """Run one full-horizon episode. Return True when the task succeeds."""
     while env.steps < config.MAX_EPISODE_STEPS:
@@ -40,10 +55,7 @@ def run_episode(env, vla: VLAClient) -> bool:
 
 def load_track_episode_configs(task: str, episodes: int) -> list[dict[str, object]]:
     """Load deterministic Track-1 held-out episode configs for one task."""
-    vlabench_root = os.environ.get("VLABENCH_ROOT", "").strip()
-    if not vlabench_root:
-        raise RuntimeError("VLABENCH_ROOT is required for Track-1 baseline episodes")
-    track_path = Path(vlabench_root) / _TRACK_RELATIVE_PATH / f"{_TRACK_NAME}.json"
+    track_path = resolve_vlabench_root() / _TRACK_RELATIVE_PATH / f"{_TRACK_NAME}.json"
     if not track_path.is_file():
         raise RuntimeError(f"Track file not found: {track_path}")
     with track_path.open("r", encoding="utf-8") as handle:
