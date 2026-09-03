@@ -1,8 +1,9 @@
 """VLABench simulation backend (default sim).
 
-Observation and action layout match VLABench primitive policies: 3 cameras,
-7-D state ``[pos_robot(3), euler_xyz(3), gripper]``, 7-D absolute EEF actions
-converted to joint ctrl inside this adapter (not in the executor).
+Observation and action layout match VLABench primitive policies: 7-D state
+``[pos_robot(3), euler_xyz(3), gripper]``, plus policy views derived from the
+simulator camera stack. 7-D absolute EEF actions are converted to native joint
+controls in this adapter (not in the executor).
 """
 from __future__ import annotations
 
@@ -17,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 _RENDER_RESOLUTION = (480, 480)
 _FRANKA_FINGER_OPEN = 0.04
-_CAMERA_COUNT = 3
+_POLICY_CAMERA_SOURCE_COUNT = 4
 
 
 def _import_vlabench():
@@ -46,9 +47,36 @@ class VLABenchEnv:
     """One VLABench task episode: build, observe, step, check success."""
 
     def __init__(self, task: str) -> None:
+        self._init_env(task, episode_config={})
+
+    @classmethod
+    def from_track_episode(
+        cls,
+        task: str,
+        episode_config: dict[str, object],
+    ) -> "VLABenchEnv":
+        """Build one deterministic evaluation episode from a track config entry."""
+        env = cls.__new__(cls)
+        env._init_env(task, episode_config=episode_config)
+        return env
+
+    def _init_env(
+        self,
+        task: str,
+        episode_config: dict[str, object],
+    ) -> None:
+        """Initialize the wrapped VLABench environment."""
         load_env = _import_vlabench()
         h, w = _RENDER_RESOLUTION
-        self._env = load_env(task=task, render_resolution=(h, w))
+        kwargs: dict[str, object] = {
+            "task": task,
+            "render_resolution": (h, w),
+        }
+        if episode_config:
+            kwargs["episode_config"] = episode_config
+            kwargs["random_init"] = False
+            kwargs["run_mode"] = "eval"
+        self._env = load_env(**kwargs)
         instruction = self._env.task.get_instruction()
         if not instruction:
             raise RuntimeError("VLABench task has no language instruction")
@@ -91,7 +119,7 @@ class VLABenchEnv:
         return self._state_from_obs(obs)
 
     def observe(self) -> tuple[tuple[bytes, bytes, bytes], list[float]]:
-        """Return front, second, wrist JPEG bytes plus 7-D proprioceptive state."""
+        """Return policy-ordered JPEG views plus 7-D proprioceptive state."""
         obs = self._env.get_observation(require_pcd=False)
         rgb = obs.get("rgb")
         if rgb is None:
@@ -99,13 +127,14 @@ class VLABenchEnv:
         arr = np.asarray(rgb)
         if arr.ndim != 4:
             raise RuntimeError(f"unexpected rgb shape: {arr.shape}")
-        if arr.shape[0] < _CAMERA_COUNT:
+        if arr.shape[0] < _POLICY_CAMERA_SOURCE_COUNT:
             raise RuntimeError(
-                f"expected {_CAMERA_COUNT} cameras, got {arr.shape[0]}"
+                f"expected {_POLICY_CAMERA_SOURCE_COUNT} cameras, got {arr.shape[0]}"
             )
-        front = np.ascontiguousarray(arr[0])
-        second = np.ascontiguousarray(arr[1])
-        wrist = np.ascontiguousarray(arr[2])
+        # OpenPI's VLABench evaluator maps second/front/wrist from rgb[0]/[2]/[3].
+        front = np.ascontiguousarray(arr[2])
+        second = np.ascontiguousarray(arr[0])
+        wrist = np.ascontiguousarray(arr[3])
         return (
             (to_jpeg(front), to_jpeg(second), to_jpeg(wrist)),
             self._state_from_obs(obs),
@@ -141,7 +170,8 @@ class VLABenchEnv:
         n_dof = robot.n_dof
         ctrl = np.zeros(ctrl_dim, dtype=np.float64)
         ctrl[:n_dof] = ik_result.qpos[:n_dof]
-        ctrl[n_dof:] = gripper * _FRANKA_FINGER_OPEN
+        finger_open = _FRANKA_FINGER_OPEN if gripper >= 0.1 else 0.0
+        ctrl[n_dof:] = finger_open
 
         self._env.step(ctrl)
         self._steps += 1

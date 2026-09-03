@@ -6,15 +6,20 @@ Loops ``BASELINE_EPISODES`` full-horizon episodes with native
 from __future__ import annotations
 
 import argparse
+import json
 import logging
+import os
 import sys
+from pathlib import Path
 
 import config
-from envs.sim_env import SimEnv
+from envs.vlabench_env import VLABenchEnv
 from utils import configure_logging
 from vla_client import VLAClient
 
 logger = logging.getLogger(__name__)
+_TRACK_NAME = "track_1_in_distribution"
+_TRACK_RELATIVE_PATH = Path("configs") / "evaluation" / "tracks"
 
 
 def run_episode(env, vla: VLAClient) -> bool:
@@ -33,12 +38,33 @@ def run_episode(env, vla: VLAClient) -> bool:
     return env.success()
 
 
+def load_track_episode_configs(task: str, episodes: int) -> list[dict[str, object]]:
+    """Load deterministic Track-1 held-out episode configs for one task."""
+    vlabench_root = os.environ.get("VLABENCH_ROOT", "").strip()
+    if not vlabench_root:
+        raise RuntimeError("VLABENCH_ROOT is required for Track-1 baseline episodes")
+    track_path = Path(vlabench_root) / _TRACK_RELATIVE_PATH / f"{_TRACK_NAME}.json"
+    if not track_path.is_file():
+        raise RuntimeError(f"Track file not found: {track_path}")
+    with track_path.open("r", encoding="utf-8") as handle:
+        payload = json.load(handle)
+    configs = payload.get(task)
+    if not isinstance(configs, list) or not configs:
+        raise RuntimeError(f"Track file has no episodes for task {task!r}")
+    if episodes > len(configs):
+        raise RuntimeError(
+            f"requested {episodes} episodes, but track has {len(configs)} for {task!r}"
+        )
+    return configs[:episodes]
+
+
 def run_baseline(task: str, episodes: int) -> tuple[int, int]:
     """Run ``episodes`` independent raw-policy episodes. Return (successes, total)."""
     vla = VLAClient()
     successes = 0
-    for episode_idx in range(episodes):
-        env = SimEnv(task, None)
+    episode_configs = load_track_episode_configs(task, episodes)
+    for episode_idx, episode_config in enumerate(episode_configs):
+        env = VLABenchEnv.from_track_episode(task, episode_config)
         try:
             logger.info(
                 "baseline episode %s/%s task=%r instruction=%r",
@@ -54,7 +80,7 @@ def run_baseline(task: str, episodes: int) -> tuple[int, int]:
                 logger.info("episode %s failed (step cap or goal not met)", episode_idx + 1)
         finally:
             env.close()
-    return successes, episodes
+    return successes, len(episode_configs)
 
 
 def main() -> int:

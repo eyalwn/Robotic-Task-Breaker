@@ -33,13 +33,18 @@ This is intentionally not an AST system.
   subtask run with the official `pi0-fast-primitive-10task-deltachunk`
   checkpoint. The service must use the checkpoint's documented VLABench
   observation and action representation without client or executor retuning.
-  **Baseline protocol (fixed):** task `select_fruit`; native
-  `env.task_description` on every `/predict`; raw `VLAClient` loop (no
-  `Runner`, planner, or executor); apply every action in each returned chunk
-  unchanged; `BASELINE_EPISODES` (= 10) independent episodes; stop each episode
-  on `env.success()` or `MAX_EPISODE_STEPS`; report aggregate successes/10 and
-  success rate. Entrypoint: `examples/run_vlabench_raw_policy.py`; Colab
-  launcher: `colab/run_vlabench_raw_policy.ipynb`.
+  **Baseline protocol (fixed):** task `select_fruit`; episodes come from
+  `VLABENCH_ROOT/configs/evaluation/tracks/track_1_in_distribution.json` using
+  deterministic `episode_config` entries (`random_init=False`, `run_mode=eval`);
+  evaluate the first `BASELINE_EPISODES` (= 10) held-out configs (cost-bounded
+  subset of the upstream 50-episode protocol); native `env.task_description` on
+  every `/predict`; raw `VLAClient` loop (no `Runner`, planner, or executor);
+  execute full returned chunks with `VLA_ACTIONS_PER_CHUNK = 5`; stop each
+  episode on `env.success()` or `MAX_EPISODE_STEPS`; report aggregate
+  successes/10 and success rate. Working verdict for this cost-bounded baseline
+  is `success_rate > 0.30` (at least 4/10). Entrypoint:
+  `examples/run_vlabench_raw_policy.py`; Colab launcher:
+  `colab/run_vlabench_raw_policy.ipynb`.
 
 ### Current
 
@@ -152,8 +157,10 @@ Each service asserts the camera count and state length its checkpoint needs
   Its service must assert the upstream checkpoint's documented camera/state
   schema. OpenPI's native inference output transform converts its generated
   delta chunk to absolute EEF actions before `infer()` returns. Longor sends
-  those resulting actions unchanged; neither the service, `executor.py`, nor
-  `src/envs/vlabench_env.py` may alter valid actions.
+  those 7-D actions unchanged through the service/client/executor path.
+  `src/envs/vlabench_env.py` applies only simulator-native conversion when
+  stepping the env: camera remap to the policy's documented 3-view order and
+  gripper thresholding (`>= 0.1` open, else closed) to Franka finger controls.
 
 > **Verified 2026-08-28:** `lerobot/smolvla_vlabench` checkpoint metadata
 > declares a 6-D state, but its loaded normalizer has 7-D state statistics and

@@ -13,15 +13,15 @@ import pytest
 import envs.vlabench_env as vlabench_env
 
 
-def _make_rgb(*, markers: tuple[int, int, int] | None = None) -> np.ndarray:
-    markers = markers or (0, 0, 0)
+def _make_rgb(*, markers: tuple[int, int, int, int] | None = None) -> np.ndarray:
+    markers = markers or (0, 0, 0, 0)
     frames = []
     for value in markers:
         frames.append(np.full((8, 8, 3), value, dtype=np.uint8))
     return np.stack(frames, axis=0)
 
 
-def _make_obs(*, rgb_markers: tuple[int, int, int] = (10, 20, 30)) -> dict:
+def _make_obs(*, rgb_markers: tuple[int, int, int, int] = (10, 20, 30, 40)) -> dict:
     return {
         "rgb": _make_rgb(markers=rgb_markers),
         "ee_state": np.array(
@@ -105,10 +105,10 @@ def _patch_dm_control_ik(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
 
 
 def test_observe_returns_front_second_wrist_order_and_7d_state():
-    """rgb[0,1,2] -> front/second/wrist JPEGs; ee_state -> robot-frame 7-D state."""
+    """rgb[2,0,3] -> front/second/wrist JPEGs; ee_state -> robot-frame 7-D state."""
     robot_base = np.array([0.0, -0.4, 0.78], dtype=np.float64)
     obs = {
-        "rgb": _make_rgb(markers=(11, 22, 33)),
+        "rgb": _make_rgb(markers=(11, 22, 33, 44)),
         "ee_state": np.array(
             [0.1, 0.2, 0.3, 1.0, 0.0, 0.0, 0.0, 0.5],
             dtype=np.float64,
@@ -132,7 +132,7 @@ def test_observe_returns_front_second_wrist_order_and_7d_state():
         finally:
             env.close()
 
-    assert images == (bytes([11]), bytes([22]), bytes([33]))
+    assert images == (bytes([33]), bytes([11]), bytes([44]))
     assert len(state) == 7
     assert state[0] == pytest.approx(0.1)
     assert state[1] == pytest.approx(0.6)
@@ -145,7 +145,33 @@ def test_init_calls_load_env_once():
     env = _build_env_with_mocks()
     try:
         assert env._mock_load_env.call_count == 1
+        env._mock_load_env.assert_called_once_with(
+            task="select_fruit",
+            render_resolution=(480, 480),
+        )
         assert env.task_description == "pick the apple"
+    finally:
+        env.close()
+
+
+def test_from_track_episode_uses_eval_kwargs():
+    load_env = MagicMock()
+    load_env.return_value = MagicMock(
+        task=SimpleNamespace(get_instruction=lambda: "pick fruit"),
+        get_robot_frame_position=MagicMock(return_value=np.array([0.0, -0.4, 0.78])),
+        close=MagicMock(),
+    )
+    episode_config = {"instructions": ["put fruit on plate"]}
+    with patch.object(vlabench_env, "_import_vlabench", return_value=load_env):
+        env = vlabench_env.VLABenchEnv.from_track_episode("select_fruit", episode_config)
+    try:
+        load_env.assert_called_once_with(
+            task="select_fruit",
+            render_resolution=(480, 480),
+            episode_config=episode_config,
+            random_init=False,
+            run_mode="eval",
+        )
     finally:
         env.close()
 
@@ -200,6 +226,21 @@ def test_step_does_not_passthrough_joint_ctrl(monkeypatch: pytest.MonkeyPatch):
         with pytest.raises(ValueError, match="expected 7-D EEF action"):
             env.step(np.zeros(8))
         env._mock_env.step.assert_not_called()
+    finally:
+        env.close()
+
+
+def test_step_binarizes_gripper(monkeypatch: pytest.MonkeyPatch):
+    env = _build_env_with_mocks()
+    try:
+        _patch_dm_control_ik(monkeypatch)
+        env.step(np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.20]))
+        ctrl_open = env._mock_env.step.call_args.args[0]
+        assert ctrl_open[-1] == pytest.approx(0.04)
+        env._mock_env.step.reset_mock()
+        env.step(np.array([0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.05]))
+        ctrl_closed = env._mock_env.step.call_args.args[0]
+        assert ctrl_closed[-1] == pytest.approx(0.0)
     finally:
         env.close()
 

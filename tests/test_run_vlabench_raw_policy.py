@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 from pathlib import Path
 from unittest.mock import patch
@@ -75,6 +76,24 @@ class FakeBaselineVLA:
         return self.actions
 
 
+def test_load_track_episode_configs_reads_first_n(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    mod = _load_script()
+    track_dir = tmp_path / "configs" / "evaluation" / "tracks"
+    track_dir.mkdir(parents=True)
+    track_file = track_dir / "track_1_in_distribution.json"
+    payload = {
+        "select_fruit": [
+            {"instructions": ["episode-1"]},
+            {"instructions": ["episode-2"]},
+            {"instructions": ["episode-3"]},
+        ]
+    }
+    track_file.write_text(json.dumps(payload), encoding="utf-8")
+    monkeypatch.setenv("VLABENCH_ROOT", str(tmp_path))
+    configs = mod.load_track_episode_configs("select_fruit", 2)
+    assert configs == payload["select_fruit"][:2]
+
+
 def test_main_pass_exits_zero(capsys: pytest.CaptureFixture[str]) -> None:
     mod = _load_script()
     with patch.object(mod, "run_baseline", return_value=(3, 10)), patch.object(
@@ -139,16 +158,21 @@ def test_run_episode_stops_on_success() -> None:
 
 def test_run_baseline_resets_env_each_episode() -> None:
     mod = _load_script()
+    episode_configs = [{"instructions": ["a"]}, {"instructions": ["b"]}, {"instructions": ["c"]}]
     env_instances: list[FakeBaselineEnv] = []
 
-    def make_env(task: str, task_idx) -> FakeBaselineEnv:
+    def make_env(task: str, config: dict[str, object]) -> FakeBaselineEnv:
+        assert task == "select_fruit"
+        assert config in episode_configs
         env = FakeBaselineEnv(success_after_steps=1)
         env_instances.append(env)
         return env
 
-    with patch.object(mod, "SimEnv", side_effect=make_env), patch.object(
-        mod, "VLAClient", return_value=FakeBaselineVLA()
-    ):
+    with patch.object(mod, "load_track_episode_configs", return_value=episode_configs), patch.object(
+        mod.VLABenchEnv,
+        "from_track_episode",
+        side_effect=make_env,
+    ), patch.object(mod, "VLAClient", return_value=FakeBaselineVLA()):
         successes, total = mod.run_baseline("select_fruit", 3)
 
     assert successes == 3
@@ -157,11 +181,36 @@ def test_run_baseline_resets_env_each_episode() -> None:
     assert all(env.closed for env in env_instances)
 
 
+def test_run_baseline_passes_native_instruction_from_each_episode() -> None:
+    mod = _load_script()
+    episode_configs = [{"instructions": ["episode-a"]}, {"instructions": ["episode-b"]}]
+    instructions = ["pick banana", "pick apple"]
+    env_instances = [
+        FakeBaselineEnv(task_description=instructions[0], success_after_steps=1),
+        FakeBaselineEnv(task_description=instructions[1], success_after_steps=1),
+    ]
+
+    with patch.object(mod, "load_track_episode_configs", return_value=episode_configs), patch.object(
+        mod.VLABenchEnv,
+        "from_track_episode",
+        side_effect=env_instances,
+    ), patch.object(mod, "VLAClient", return_value=FakeBaselineVLA()) as vla_cls:
+        mod.run_baseline("select_fruit", 2)
+
+    vla = vla_cls.return_value
+    called_tasks = [call[2] for call in vla.calls]
+    assert called_tasks == instructions
+
+
 def test_run_baseline_shares_one_vla_client() -> None:
     mod = _load_script()
     vla = FakeBaselineVLA()
     with patch.object(
-        mod, "SimEnv", return_value=FakeBaselineEnv()
+        mod, "load_track_episode_configs", return_value=[{"instructions": ["x"]}, {"instructions": ["y"]}]
+    ), patch.object(
+        mod.VLABenchEnv,
+        "from_track_episode",
+        side_effect=[FakeBaselineEnv(), FakeBaselineEnv()],
     ), patch.object(mod, "VLAClient", return_value=vla) as vla_cls:
         mod.run_baseline("select_fruit", 2)
 
