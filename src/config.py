@@ -23,7 +23,7 @@ LLM_MODEL = os.environ.get("LLM_MODEL", "gpt-4.1-mini").strip()
 SAVE_VIDEO = os.environ.get("SAVE_VIDEO") == "1"
 
 # --- VLA backend selection (launcher default) ------------------------------
-VLA_POLICY = "pi0fast"  # "pi0fast" | "pi05" | "smolvla"
+VLA_POLICY = "pi0fast"  # "pi0fast" | "smolvla"
 
 # --- VLA HTTP service ------------------------------------------------------
 VLA_PORT = 8765
@@ -31,7 +31,7 @@ VLA_URL = f"http://127.0.0.1:{VLA_PORT}"
 VLA_TIMEOUT = 60.0
 
 # --- sim environment -------------------------------------------------------
-SIM_ENV = "vlabench"  # "vlabench" | "libero"
+SIM_ENV = "vlabench"  # "vlabench"
 
 # --- video ------------------------------------------------------------------
 VIDEO_PATH = "run.mp4"
@@ -42,7 +42,7 @@ VIDEO_FPS = 10
 VLA_ACTIONS_PER_CHUNK = 5
 # Per-skill step cap (guard against a failing subtask; success path ends earlier).
 MAX_SKILL_STEPS = 120
-# Full-horizon cap for raw VLA baseline episodes (M5 select_fruit protocol).
+# Full-horizon cap for raw VLA baseline episodes (M1 baseline protocol).
 MAX_EPISODE_STEPS = 600
 # Independent episodes per raw-policy baseline campaign.
 BASELINE_EPISODES = 10

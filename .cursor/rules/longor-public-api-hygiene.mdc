@@ -28,9 +28,8 @@ Apply this rule to all runtime code under `src/**`.
 Examples:
 
 - Good: `Runner(task: str, task_idx: int = 0)` forwards those args to `SimEnv`;
-  goal comes from `env.task_description`. Examples: `Runner("select_fruit")`,
-  `Runner("libero_10", 0)`.
-- Bad: packing suite/index into one string (`"libero_10:0"`).
+  goal comes from `env.task_description`. Example: `Runner("select_fruit")`.
+- Bad: packing suite/index into one string (`"select_fruit:0"`).
 - Bad: `Runner(..., planner=None, executor=None, env=None, max_replans=...)`.
 - Good: planner prompt/goal shaping lives in `planner.py`.
 - Bad: LLM-facing goal shaping in `runner.py`.

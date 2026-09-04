@@ -10,6 +10,10 @@ import config
 from run_vla_server import _SERVICE_FILES, main
 
 
+def test_supported_policy_table_is_pi0fast_and_smolvla() -> None:
+    assert set(_SERVICE_FILES) == {"pi0fast", "smolvla"}
+
+
 def test_default_policy_is_pi0fast_from_config() -> None:
     assert config.VLA_POLICY == "pi0fast"
     with patch("run_vla_server.runpy.run_path") as mock_run:

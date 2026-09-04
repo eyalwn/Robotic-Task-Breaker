@@ -20,21 +20,17 @@ PLAN FORMAT (JSON):
   [<step>, ...]   OR   {"stop":"<reason>"}
 
 Each step is a flat object with a required "skill" field plus skill args:
-  {"skill":"grab","object_name":"..."}
-  {"skill":"place","object_name":"...","target_name":"...","position":"inside|on|center|left|right|top|bottom"}
-  {"skill":"close","target_name":"..."}
-  {"skill":"turn_on","target_name":"..."}
+  {"skill":"transfer","object_name":"...","target_name":"..."}
 
 Rules:
 - Only call skills from the catalog.
-- Decompose moves as grab then place (not transfer).
+- Use a single transfer step when one transfer completes the goal.
 - Name objects from the scene snapshot and natural-language goal, not sim ground-truth IDs.
 - Emit valid JSON.
 
 Example:
 [
-  {"skill":"grab","object_name":"alphabet soup"},
-  {"skill":"place","object_name":"alphabet soup","target_name":"basket","position":"inside"}
+  {"skill":"transfer","object_name":"alphabet soup","target_name":"basket"}
 ]\
 """
 

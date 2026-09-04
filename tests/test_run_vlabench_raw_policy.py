@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import importlib.util
-import json
 import sys
 from pathlib import Path
 from unittest.mock import patch
@@ -76,39 +75,21 @@ class FakeBaselineVLA:
         return self.actions
 
 
-def test_load_track_episode_configs_reads_first_n(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_load_track_episode_configs_reads_first_n() -> None:
     mod = _load_script()
-    track_dir = tmp_path / "configs" / "evaluation" / "tracks"
-    track_dir.mkdir(parents=True)
-    track_file = track_dir / "track_1_in_distribution.json"
-    payload = {
-        "select_fruit": [
-            {"instructions": ["episode-1"]},
-            {"instructions": ["episode-2"]},
-            {"instructions": ["episode-3"]},
-        ]
-    }
-    track_file.write_text(json.dumps(payload), encoding="utf-8")
-    monkeypatch.setenv("VLABENCH_ROOT", str(tmp_path))
-    configs = mod.load_track_episode_configs("select_fruit", 2)
-    assert configs == payload["select_fruit"][:2]
+    payload = [{"instructions": ["episode-1"]}, {"instructions": ["episode-2"]}]
+    with patch.object(mod, "get_track1_episode_configs", return_value=payload) as load_cfg:
+        configs = mod.load_track_episode_configs("select_fruit", 2)
+    load_cfg.assert_called_once_with("select_fruit")
+    assert configs == payload
 
 
-def test_load_track_episode_configs_uses_vendored_root_when_env_missing(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_load_track_episode_configs_raises_when_episode_count_exceeds_available() -> None:
     mod = _load_script()
-    vendored_root = tmp_path / ".vendor" / "VLABench" / "VLABench"
-    track_dir = vendored_root / "configs" / "evaluation" / "tracks"
-    track_dir.mkdir(parents=True)
-    track_file = track_dir / "track_1_in_distribution.json"
-    payload = {"select_fruit": [{"instructions": ["episode-1"]}]}
-    track_file.write_text(json.dumps(payload), encoding="utf-8")
-    monkeypatch.delenv("VLABENCH_ROOT", raising=False)
-    with patch.object(mod, "__file__", str(tmp_path / "examples" / "run_vlabench_raw_policy.py")):
-        configs = mod.load_track_episode_configs("select_fruit", 1)
-    assert configs == payload["select_fruit"]
+    payload = [{"instructions": ["episode-1"]}]
+    with patch.object(mod, "get_track1_episode_configs", return_value=payload):
+        with pytest.raises(RuntimeError, match="requested 2 episodes, but track has 1"):
+            mod.load_track_episode_configs("select_fruit", 2)
 
 
 def test_main_pass_exits_zero(capsys: pytest.CaptureFixture[str]) -> None:

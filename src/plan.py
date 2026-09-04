@@ -42,9 +42,18 @@ def _parse_step(step: dict) -> Step:
     skill = step.get("skill")
     if not isinstance(skill, str) or not skill.strip():
         raise ValueError("each step requires a non-empty 'skill'")
-    flat: Step = {"skill": skill.strip()}
-    for key, value in step.items():
-        if key == "skill":
-            continue
-        flat[str(key)] = str(value)
-    return flat
+    skill_name = skill.strip()
+    if skill_name != "transfer":
+        raise ValueError(f"unsupported skill: {skill_name!r}")
+
+    object_name = step.get("object_name")
+    target_name = step.get("target_name")
+    if not isinstance(object_name, str) or not object_name.strip():
+        raise ValueError("transfer step requires non-empty 'object_name'")
+    if not isinstance(target_name, str) or not target_name.strip():
+        raise ValueError("transfer step requires non-empty 'target_name'")
+    return {
+        "skill": "transfer",
+        "object_name": object_name.strip(),
+        "target_name": target_name.strip(),
+    }

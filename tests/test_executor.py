@@ -15,41 +15,35 @@ def _step_key(skill: str, **fields: str) -> tuple[str, frozenset]:
 
 
 def test_steps_execute_in_order() -> None:
-    grab = {"skill": "grab", "object_name": "a"}
-    place = {
-        "skill": "place",
-        "object_name": "a",
-        "target_name": "basket",
-        "position": "inside",
-    }
-    close = {"skill": "close", "target_name": "drawer"}
+    step_a = {"skill": "transfer", "object_name": "a", "target_name": "basket"}
+    step_b = {"skill": "transfer", "object_name": "b", "target_name": "plate_seen"}
+    step_c = {"skill": "transfer", "object_name": "c", "target_name": "bin"}
     env = FakeEnv(
         subtask_after={
-            ("grab", frozenset(grab.items())): 1,
-            ("place", frozenset(place.items())): 2,
-            ("close", frozenset(close.items())): 3,
+            ("transfer", frozenset(step_a.items())): 1,
+            ("transfer", frozenset(step_b.items())): 2,
+            ("transfer", frozenset(step_c.items())): 3,
         }
     )
     vla = FakeVLA(actions=[[0.0] * 7])
     executor = build_executor(env=env, vla=vla)
-    plan = make_plan([grab, place, close])
+    plan = make_plan([step_a, step_b, step_c])
     with patch("config.MAX_SKILL_STEPS", 1):
         run_plan(executor, plan)
     assert len(vla.calls) == 3
-    assert vla.calls[0][2] == "pick up the a"
-    assert vla.calls[1][2] == "place the a inside the basket"
-    assert vla.calls[2][2] == "close the drawer"
+    assert vla.calls[0][2] == "Put the a into the basket"
+    assert vla.calls[1][2] == "Put the b into the plate_seen"
+    assert vla.calls[2][2] == "Put the c into the bin"
 
 
 def test_runs_all_steps_without_early_stop() -> None:
     env = FakeEnv(
         subtask_satisfied={
-            _step_key("grab", object_name="a"): True,
+            _step_key("transfer", object_name="a", target_name="basket"): True,
             _step_key(
-                "place",
-                object_name="a",
-                target_name="basket",
-                position="inside",
+                "transfer",
+                object_name="b",
+                target_name="plate_seen",
             ): True,
         }
     )
@@ -57,13 +51,8 @@ def test_runs_all_steps_without_early_stop() -> None:
     executor = build_executor(env=env, vla=vla)
     plan = make_plan(
         [
-            {"skill": "grab", "object_name": "a"},
-            {
-                "skill": "place",
-                "object_name": "a",
-                "target_name": "basket",
-                "position": "inside",
-            },
+            {"skill": "transfer", "object_name": "a", "target_name": "basket"},
+            {"skill": "transfer", "object_name": "b", "target_name": "plate_seen"},
         ]
     )
     result = run_plan(executor, plan)
@@ -78,8 +67,7 @@ def test_subtask_timeout_returns_summary() -> None:
     executor = build_executor(env=env, vla=vla)
     plan = make_plan(
         [
-            {"skill": "grab", "object_name": "cube"},
-            {"skill": "close", "target_name": "drawer"},
+            {"skill": "transfer", "object_name": "cube", "target_name": "drawer"},
         ]
     )
     with patch("config.MAX_SKILL_STEPS", 2):
@@ -88,28 +76,61 @@ def test_subtask_timeout_returns_summary() -> None:
     assert len(env.step_calls) == 2
 
 
-def test_grab_subtask_success_immediate() -> None:
-    env = FakeEnv(subtask_satisfied={_step_key("grab", object_name="alphabet_soup_1"): True})
+def test_transfer_subtask_success_immediate() -> None:
+    env = FakeEnv(
+        subtask_satisfied={
+            _step_key(
+                "transfer",
+                object_name="alphabet_soup_1",
+                target_name="basket_1_contain_region",
+            ): True
+        }
+    )
     vla = FakeVLA()
     executor = build_executor(env=env, vla=vla)
-    plan = make_plan([{"skill": "grab", "object_name": "alphabet_soup_1"}])
+    plan = make_plan(
+        [
+            {
+                "skill": "transfer",
+                "object_name": "alphabet_soup_1",
+                "target_name": "basket_1_contain_region",
+            }
+        ]
+    )
     result = run_plan(executor, plan)
     assert result.reason == StopReason.PLAN_DONE
     assert len(vla.calls) == 1
     assert len(env.step_calls) == 1
 
 
-def test_grab_calls_vla_and_succeeds() -> None:
+def test_transfer_calls_vla_and_succeeds() -> None:
     env = FakeEnv(
-        subtask_after={_step_key("grab", object_name="alphabet_soup_1"): 2}
+        subtask_after={
+            _step_key(
+                "transfer",
+                object_name="alphabet_soup_1",
+                target_name="basket_1_contain_region",
+            ): 2
+        }
     )
     vla = FakeVLA(actions=[[0.0] * 7, [0.1] * 7])
     executor = build_executor(env=env, vla=vla)
-    plan = make_plan([{"skill": "grab", "object_name": "alphabet_soup_1"}])
+    plan = make_plan(
+        [
+            {
+                "skill": "transfer",
+                "object_name": "alphabet_soup_1",
+                "target_name": "basket_1_contain_region",
+            }
+        ]
+    )
     result = run_plan(executor, plan)
     assert result.reason == StopReason.PLAN_DONE
     assert len(vla.calls) == 1
-    assert vla.calls[0][2] == "pick up the alphabet_soup_1"
+    assert (
+        vla.calls[0][2]
+        == "Put the alphabet_soup_1 into the basket_1_contain_region"
+    )
     assert len(env.step_calls) == 2
 
 
@@ -118,113 +139,91 @@ def test_skill_timeout_contract() -> None:
     env = FakeEnv()
     vla = FakeVLA(actions=[[0.0] * 7])
     executor = build_executor(env=env, vla=vla)
-    step = {"skill": "grab", "object_name": "cube_1"}
+    step = {"skill": "transfer", "object_name": "cube_1", "target_name": "basket"}
     with patch("config.MAX_SKILL_STEPS", 3):
         assert executor._run_step_successfuly(step) is False
     assert len(env.step_calls) == 3
 
 
 def test_skill_done_when_subtask_already_satisfied() -> None:
-    env = FakeEnv(subtask_satisfied={_step_key("grab", object_name="cube_1"): True})
+    env = FakeEnv(
+        subtask_satisfied={
+            _step_key("transfer", object_name="cube_1", target_name="basket"): True
+        }
+    )
     vla = FakeVLA()
     executor = build_executor(env=env, vla=vla)
-    step = {"skill": "grab", "object_name": "cube_1"}
+    step = {"skill": "transfer", "object_name": "cube_1", "target_name": "basket"}
     assert executor._run_step_successfuly(step) is True
     assert len(vla.calls) == 1
     assert len(env.step_calls) == 1
 
 
-def test_place_subtask_success_ends_early() -> None:
+def test_transfer_subtask_success_ends_early() -> None:
     env = FakeEnv(
         subtask_satisfied={
             _step_key(
-                "place",
+                "transfer",
                 object_name="cream_cheese_1",
                 target_name="basket_1_contain_region",
-                position="inside",
             ): True,
         }
     )
     vla = FakeVLA(actions=[[0.0] * 7])
     executor = build_executor(env=env, vla=vla)
     step = {
-        "skill": "place",
+        "skill": "transfer",
         "object_name": "cream_cheese_1",
         "target_name": "basket_1_contain_region",
-        "position": "inside",
     }
     assert executor._run_step_successfuly(step) is True
     assert len(vla.calls) == 1
     assert len(env.step_calls) == 1
 
 
-def test_place_subtask_success_after_steps() -> None:
+def test_transfer_subtask_success_after_steps() -> None:
     env = FakeEnv(
         subtask_after={
             _step_key(
-                "place",
+                "transfer",
                 object_name="alphabet_soup_1",
                 target_name="basket_1_contain_region",
-                position="inside",
             ): 1,
         }
     )
     vla = FakeVLA(actions=[[0.0] * 7, [0.1] * 7])
     executor = build_executor(env=env, vla=vla)
     step = {
-        "skill": "place",
+        "skill": "transfer",
         "object_name": "alphabet_soup_1",
         "target_name": "basket_1_contain_region",
-        "position": "inside",
     }
     assert executor._run_step_successfuly(step) is True
     assert len(vla.calls) == 1
-    assert vla.calls[0][2] == "place the alphabet_soup_1 inside the basket_1_contain_region"
+    assert (
+        vla.calls[0][2]
+        == "Put the alphabet_soup_1 into the basket_1_contain_region"
+    )
     assert len(env.step_calls) == 2
 
 
-@pytest.mark.parametrize(
-    ("skill", "step", "expected_task"),
-    [
-        (
-            "grab",
-            {"skill": "grab", "object_name": "bowl_1"},
-            "pick up the bowl_1",
-        ),
-        (
-            "place",
-            {
-                "skill": "place",
-                "object_name": "bowl_1",
-                "target_name": "plate",
-                "position": "on",
-            },
-            "place the bowl_1 on the plate",
-        ),
-        (
-            "close",
-            {"skill": "close", "target_name": "microwave_1"},
-            "close the microwave_1",
-        ),
-        (
-            "turn_on",
-            {"skill": "turn_on", "target_name": "stove_1"},
-            "turn on the stove_1",
-        ),
-    ],
-)
-def test_skill_task_strings(skill: str, step: dict, expected_task: str) -> None:
-    env = FakeEnv(subtask_after={(skill, frozenset(step.items())): 1})
+def test_transfer_task_string_is_checkpoint_native() -> None:
+    step = {"skill": "transfer", "object_name": "banana", "target_name": "plate_seen"}
+    env = FakeEnv(subtask_after={("transfer", frozenset(step.items())): 1})
     vla = FakeVLA()
     executor = build_executor(env=env, vla=vla)
     run_plan(executor, [step])
-    assert vla.calls[0][2] == expected_task
+    assert vla.calls[0][2] == "Put the banana into the plate_seen"
+
 
 def test_unknown_skill_raises() -> None:
     env = FakeEnv()
     vla = FakeVLA()
     executor = build_executor(env=env, vla=vla)
-    result = run_plan(executor, [{"skill": "transfer", "object_name": "a"}])
+    result = run_plan(
+        executor,
+        [{"skill": "close", "target_name": "drawer"}],
+    )
     assert result.reason == StopReason.EXECUTION_ERROR
 
 
@@ -235,7 +234,7 @@ def test_executes_full_returned_chunk() -> None:
     env = FakeEnv()
     vla = FakeVLA(actions=actions)
     executor = build_executor(env=env, vla=vla)
-    step = {"skill": "grab", "object_name": "cube"}
+    step = {"skill": "transfer", "object_name": "cube", "target_name": "basket"}
     with patch("config.MAX_SKILL_STEPS", chunk_size):
         assert executor._run_step_successfuly(step) is False
     assert len(vla.calls) == 1

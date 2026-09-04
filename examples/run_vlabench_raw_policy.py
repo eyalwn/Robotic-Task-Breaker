@@ -6,35 +6,15 @@ Loops ``BASELINE_EPISODES`` full-horizon episodes with native
 from __future__ import annotations
 
 import argparse
-import json
 import logging
-import os
 import sys
-from pathlib import Path
 
 import config
-from envs.vlabench_env import VLABenchEnv
+from envs.vlabench_env import VLABenchEnv, get_track1_episode_configs
 from utils import configure_logging
 from vla_client import VLAClient
 
 logger = logging.getLogger(__name__)
-_TRACK_NAME = "track_1_in_distribution"
-_TRACK_RELATIVE_PATH = Path("configs") / "evaluation" / "tracks"
-
-
-def resolve_vlabench_root() -> Path:
-    """Resolve VLABench root from env, or fallback to vendored checkout."""
-    env_root = os.environ.get("VLABENCH_ROOT", "").strip()
-    if env_root:
-        return Path(env_root)
-    repo_root = Path(__file__).resolve().parent.parent
-    vendored_root = repo_root / ".vendor" / "VLABench" / "VLABench"
-    if vendored_root.is_dir():
-        return vendored_root
-    raise RuntimeError(
-        "VLABENCH_ROOT is required for Track-1 baseline episodes "
-        "(or install VLABench at .vendor/VLABench/VLABench)"
-    )
 
 
 def run_episode(env, vla: VLAClient) -> bool:
@@ -54,15 +34,8 @@ def run_episode(env, vla: VLAClient) -> bool:
 
 
 def load_track_episode_configs(task: str, episodes: int) -> list[dict[str, object]]:
-    """Load deterministic Track-1 held-out episode configs for one task."""
-    track_path = resolve_vlabench_root() / _TRACK_RELATIVE_PATH / f"{_TRACK_NAME}.json"
-    if not track_path.is_file():
-        raise RuntimeError(f"Track file not found: {track_path}")
-    with track_path.open("r", encoding="utf-8") as handle:
-        payload = json.load(handle)
-    configs = payload.get(task)
-    if not isinstance(configs, list) or not configs:
-        raise RuntimeError(f"Track file has no episodes for task {task!r}")
+    """Load the first N deterministic Track-1 configs for one task."""
+    configs = get_track1_episode_configs(task)
     if episodes > len(configs):
         raise RuntimeError(
             f"requested {episodes} episodes, but track has {len(configs)} for {task!r}"

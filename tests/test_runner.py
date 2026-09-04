@@ -122,7 +122,7 @@ def test_runner_uses_env_task_description_for_planner(
     assert planner.init_goal == _StubEnv.task_description
 
 
-def test_runner_libero_args_reach_sim_env(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_runner_args_reach_sim_env(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, object] = {}
 
     def _capture_sim(*args, **kwargs):
@@ -141,8 +141,8 @@ def test_runner_libero_args_reach_sim_env(monkeypatch: pytest.MonkeyPatch) -> No
             run=lambda _steps: ExecutionSum(reason=StopReason.PLAN_DONE)
         ),
     )
-    Runner("libero_10", 0).run()
-    assert captured["args"] == ("libero_10", 0)
+    Runner("select_fruit", 0).run()
+    assert captured["args"] == ("select_fruit", 0)
 
 
 def test_runner_plan_done_success(monkeypatch: pytest.MonkeyPatch) -> None:

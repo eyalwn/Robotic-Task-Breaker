@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import builtins
+import json
 import sys
 import types
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
@@ -104,6 +106,18 @@ def _patch_dm_control_ik(monkeypatch: pytest.MonkeyPatch) -> MagicMock:
     return ik_mock
 
 
+def _install_fake_vlabench_package(
+    monkeypatch: pytest.MonkeyPatch,
+    package_root: Path,
+) -> None:
+    package_root.mkdir(parents=True, exist_ok=True)
+    init_file = package_root / "__init__.py"
+    init_file.write_text("# fake VLABench package\n", encoding="utf-8")
+    module = types.ModuleType("VLABench")
+    module.__file__ = str(init_file)
+    monkeypatch.setitem(sys.modules, "VLABench", module)
+
+
 def test_observe_returns_front_second_wrist_order_and_7d_state():
     """rgb[2,0,3] -> front/second/wrist JPEGs; ee_state -> robot-frame 7-D state."""
     robot_base = np.array([0.0, -0.4, 0.78], dtype=np.float64)
@@ -141,6 +155,81 @@ def test_observe_returns_front_second_wrist_order_and_7d_state():
     assert state[6] == pytest.approx(0.5)
 
 
+def test_get_track1_episode_configs_derives_path_from_installed_package(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    package_root = tmp_path / "site-packages" / "VLABench"
+    _install_fake_vlabench_package(monkeypatch, package_root)
+    track_dir = package_root / "configs" / "evaluation" / "tracks"
+    track_dir.mkdir(parents=True)
+    payload = {
+        "select_fruit": [
+            {"instructions": ["episode-0"]},
+            {"instructions": ["episode-1"]},
+        ]
+    }
+    track_file = track_dir / "track_1_in_distribution.json"
+    track_file.write_text(json.dumps(payload), encoding="utf-8")
+
+    configs = vlabench_env.get_track1_episode_configs("select_fruit")
+
+    assert configs == payload["select_fruit"]
+
+
+def test_get_track1_episode_configs_raises_for_missing_track_file(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    package_root = tmp_path / "site-packages" / "VLABench"
+    _install_fake_vlabench_package(monkeypatch, package_root)
+
+    with pytest.raises(RuntimeError, match="Track-1 file not found"):
+        vlabench_env.get_track1_episode_configs("select_fruit")
+
+
+def test_get_track1_episode_configs_raises_for_missing_task(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    package_root = tmp_path / "site-packages" / "VLABench"
+    _install_fake_vlabench_package(monkeypatch, package_root)
+    track_dir = package_root / "configs" / "evaluation" / "tracks"
+    track_dir.mkdir(parents=True)
+    payload = {"other_task": [{"instructions": ["episode-0"]}]}
+    track_file = track_dir / "track_1_in_distribution.json"
+    track_file.write_text(json.dumps(payload), encoding="utf-8")
+
+    with pytest.raises(RuntimeError, match="has no episodes for task 'select_fruit'"):
+        vlabench_env.get_track1_episode_configs("select_fruit")
+
+
+def test_get_track1_episode_config_raises_runtime_error_for_out_of_range_index() -> None:
+    payload = [{"instructions": ["episode-0"]}]
+    with patch.object(vlabench_env, "get_track1_episode_configs", return_value=payload):
+        with pytest.raises(
+            RuntimeError,
+            match="task_idx=1.*task='select_fruit'.*available_config_count=1",
+        ):
+            vlabench_env.get_track1_episode_config("select_fruit", 1)
+
+
+def test_from_track_episode_index_propagates_invalid_index_error() -> None:
+    with patch.object(
+        vlabench_env,
+        "get_track1_episode_config",
+        side_effect=RuntimeError(
+            "Invalid Track-1 task_idx=9 for task='select_fruit'; available_config_count=2"
+        ),
+    ), patch.object(vlabench_env.VLABenchEnv, "from_track_episode") as from_episode:
+        with pytest.raises(
+            RuntimeError,
+            match="task_idx=9.*task='select_fruit'.*available_config_count=2",
+        ):
+            vlabench_env.VLABenchEnv.from_track_episode_index("select_fruit", 9)
+    from_episode.assert_not_called()
+
+
 def test_init_calls_load_env_once():
     env = _build_env_with_mocks()
     try:
@@ -174,6 +263,24 @@ def test_from_track_episode_uses_eval_kwargs():
         )
     finally:
         env.close()
+
+
+def test_from_track_episode_index_builds_selected_config():
+    episode_config = {"instructions": ["episode-2"]}
+    with patch.object(
+        vlabench_env,
+        "get_track1_episode_config",
+        return_value=episode_config,
+    ) as get_cfg, patch.object(
+        vlabench_env.VLABenchEnv,
+        "from_track_episode",
+        return_value="env",
+    ) as from_cfg:
+        env = vlabench_env.VLABenchEnv.from_track_episode_index("select_fruit", 2)
+
+    get_cfg.assert_called_once_with("select_fruit", 2)
+    from_cfg.assert_called_once_with("select_fruit", episode_config)
+    assert env == "env"
 
 
 def test_init_raises_if_instruction_missing():
@@ -259,30 +366,42 @@ def test_resolve_entity_exact_and_normalized():
         env.close()
 
 
-def test_check_subtask_grab_and_place():
+def test_check_subtask_transfer_uses_contain():
     env = _build_env_with_mocks()
     try:
-        grab = {"skill": "grab", "object_name": "apple"}
-        assert env.check_subtask(grab) is False  # contact, but mock gripper 0.5 is open
-        closed = _make_obs()
-        closed["ee_state"] = closed["ee_state"].copy()
-        closed["ee_state"][7] = 0.0
-        env._mock_env.get_observation.return_value = closed
-        assert env.check_subtask(grab) is True
-        place_step = {
-            "skill": "place",
+        transfer_step = {
+            "skill": "transfer",
             "object_name": "apple",
             "target_name": "basket",
-            "position": "inside",
         }
-        assert env.check_subtask(place_step) is True
-        with pytest.raises(AssertionError, match="close"):
+        assert env.check_subtask(transfer_step) is True
+        with pytest.raises(KeyError, match="unsupported skill"):
             env.check_subtask({"skill": "close", "target_name": "basket"})
     finally:
         env.close()
 
 
-def test_place_target_without_contain_raises():
+def test_check_subtask_transfer_false_when_contain_false():
+    entities = {
+        "apple": SimpleNamespace(get_xpos=lambda physics: np.zeros(3)),
+        "basket": SimpleNamespace(
+            contain=lambda obj_pos, physics: False,
+            get_xpos=lambda physics: np.zeros(3),
+        ),
+    }
+    env = _build_env_with_mocks(entities=entities)
+    try:
+        step = {
+            "skill": "transfer",
+            "object_name": "apple",
+            "target_name": "basket",
+        }
+        assert env.check_subtask(step) is False
+    finally:
+        env.close()
+
+
+def test_transfer_target_without_contain_raises():
     entities = {
         "apple": SimpleNamespace(get_xpos=lambda physics: np.zeros(3)),
         "table": SimpleNamespace(get_xpos=lambda physics: np.zeros(3)),
@@ -290,10 +409,9 @@ def test_place_target_without_contain_raises():
     env = _build_env_with_mocks(entities=entities)
     try:
         step = {
-            "skill": "place",
+            "skill": "transfer",
             "object_name": "apple",
             "target_name": "table",
-            "position": "on",
         }
         with pytest.raises(ValueError, match="is not a receptacle"):
             env.check_subtask(step)

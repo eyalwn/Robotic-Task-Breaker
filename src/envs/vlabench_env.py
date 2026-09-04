@@ -7,6 +7,7 @@ controls in this adapter (not in the executor).
 """
 from __future__ import annotations
 
+import json
 import logging
 from pathlib import Path
 
@@ -20,6 +21,9 @@ _RENDER_RESOLUTION = (480, 480)
 _FRANKA_FINGER_OPEN = 0.04
 _GRIPPER_OPEN = 0.1  # policy gripper: >= this is open, else closed
 _POLICY_CAMERA_SOURCE_COUNT = 4
+_TRACK_RELATIVE_PATH = (
+    Path("configs") / "evaluation" / "tracks" / "track_1_in_distribution.json"
+)
 
 
 def _import_vlabench():
@@ -32,6 +36,49 @@ def _import_vlabench():
             "VLABench is not installed. Follow README §2 (App venv / VLAbench)."
         ) from exc
     return load_env
+
+
+def _import_vlabench_package():
+    try:
+        import VLABench
+    except ImportError as exc:
+        raise ImportError(
+            "VLABench is not installed. Follow README §2 (App venv / VLAbench)."
+        ) from exc
+    return VLABench
+
+
+def _resolve_track1_path() -> Path:
+    """Resolve Track-1 config path from the installed VLABench package root."""
+    vlabench_pkg = _import_vlabench_package()
+    module_file = getattr(vlabench_pkg, "__file__", "")
+    if not module_file:
+        raise RuntimeError("Unable to resolve installed VLABench package location")
+    return Path(module_file).resolve().parent / _TRACK_RELATIVE_PATH
+
+
+def get_track1_episode_configs(task: str) -> list[dict[str, object]]:
+    """Return all deterministic Track-1 configs for one task."""
+    track_path = _resolve_track1_path()
+    if not track_path.is_file():
+        raise RuntimeError(f"Track-1 file not found: {track_path}")
+    with track_path.open("r", encoding="utf-8") as handle:
+        payload = json.load(handle)
+    configs = payload.get(task)
+    if not isinstance(configs, list) or not configs:
+        raise RuntimeError(f"Track-1 file has no episodes for task {task!r}")
+    return [dict(config) for config in configs]
+
+
+def get_track1_episode_config(task: str, task_idx: int) -> dict[str, object]:
+    """Return one deterministic Track-1 episode config by zero-based index."""
+    configs = get_track1_episode_configs(task)
+    if task_idx < 0 or task_idx >= len(configs):
+        raise RuntimeError(
+            "Invalid Track-1 task_idx="
+            f"{task_idx} for task={task!r}; available_config_count={len(configs)}"
+        )
+    return dict(configs[task_idx])
 
 
 def to_jpeg(rgb: np.ndarray) -> bytes:
@@ -60,6 +107,12 @@ class VLABenchEnv:
         env = cls.__new__(cls)
         env._init_env(task, episode_config=episode_config)
         return env
+
+    @classmethod
+    def from_track_episode_index(cls, task: str, task_idx: int) -> "VLABenchEnv":
+        """Build one deterministic Track-1 held-out episode by task/index."""
+        episode_config = get_track1_episode_config(task, task_idx)
+        return cls.from_track_episode(task, episode_config)
 
     def _init_env(
         self,
@@ -193,20 +246,10 @@ class VLABenchEnv:
             return entities[norm]
         raise ValueError(f"unknown object name {name!r}")
 
-    def is_grasping(self, object_name: str) -> bool:
-        """True when VLABench reports contact and the gripper is closed."""
-        entity = self._resolve_entity(object_name)
-        if not entity.is_grasped(self._env.physics, self._env.task.robot):
-            return False
-        return self.state()[-1] < _GRIPPER_OPEN
-
     def check_subtask(self, step: dict[str, str]) -> bool:
         """Evaluate structured subtask completion for one executor step."""
         skill = step["skill"]
-        if skill == "grab":
-            return self.is_grasping(step["object_name"])
-        if skill == "place":
-            position = step["position"].lower()
+        if skill == "transfer":
             obj = self._resolve_entity(step["object_name"])
             target = self._resolve_entity(step["target_name"])
             obj_pos = np.asarray(obj.get_xpos(self._env.physics), dtype=np.float64)
@@ -216,37 +259,18 @@ class VLABenchEnv:
                 raise ValueError(
                     f"target {step['target_name']!r} is not a receptacle"
                 ) from None
-            if position in {
-                "inside",
-                "on",
-                "center",
-                "left",
-                "right",
-                "top",
-                "bottom",
-            }:
-                return bool(contain_fn(obj_pos, self._env.physics))
-            raise ValueError(f"unsupported place position: {position!r}")
-        if skill in {"close", "turn_on"}:
-            raise AssertionError(f"{skill!r} not supported for this env")
+            return bool(contain_fn(obj_pos, self._env.physics))
         raise KeyError(f"unsupported skill: {skill!r}")
 
     def eef_goal_distance(self, step: dict[str, str]) -> float:
         """Return ||EEF xyz - current skill goal|| from sim GT (debug)."""
         skill = step["skill"]
         physics = self._env.physics
-        if skill == "grab":
-            goal = np.asarray(
-                self._resolve_entity(step["object_name"]).get_xpos(physics),
-                dtype=np.float64,
-            )
-        elif skill == "place":
+        if skill == "transfer":
             goal = np.asarray(
                 self._resolve_entity(step["target_name"]).get_xpos(physics),
                 dtype=np.float64,
             )
-        elif skill in {"close", "turn_on"}:
-            raise AssertionError(f"{skill!r} not supported for this env")
         else:
             raise KeyError(f"unsupported skill: {skill!r}")
         obs = self._env.get_observation(require_pcd=False)

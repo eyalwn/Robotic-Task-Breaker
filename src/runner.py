@@ -20,9 +20,9 @@ RunStatus = Literal["done", "plan_failed", "stopped", "execution_error"]
 class Runner:
     """Orchestrates a single observe → plan → execute pass for one task."""
 
-    def __init__(self, task_suite: str, task_idx: int | None = None) -> None:
+    def __init__(self, task: str, task_idx: int = 0) -> None:
         """Wire env, planner, and executor for one task."""
-        self._env: VLABenchEnv = SimEnv(task_suite, task_idx)
+        self._env: VLABenchEnv = SimEnv(task, task_idx)
         self._goal = self._env.task_description
         try:
             self._planner = LLMPlanner(self._goal, skill_catalog())

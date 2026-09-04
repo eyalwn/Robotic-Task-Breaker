@@ -53,9 +53,6 @@ export MUJOCO_GL=egl
 export PYOPENGL_PLATFORM=egl
 ```
 
-LIBERO remains a non-default backend (`SIM_ENV="libero"` plus
-`deps/requirements-libero.txt`).
-
 ### 3 - Policy venv (default: π0-fast / VLAbench)
 
 ```bash
@@ -82,8 +79,7 @@ python services/run_vla_server.py          # config.VLA_POLICY selects pi0fast
 
 ```bash
 source .venv/bin/activate
-python examples/run_vlabench_task.py
-# python examples/run_libero_task.py   # requires SIM_ENV=libero and LIBERO deps
+python examples/run_vlabench_task.py --task select_fruit --task-idx 0
 ```
 
 The client talks to `http://127.0.0.1:8765` and is backend-agnostic.

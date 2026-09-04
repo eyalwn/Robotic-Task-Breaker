@@ -72,18 +72,9 @@ class Executor:
     def _build_vla_task(self, step: dict[str, str]) -> str:
         """Build the VLA task string for one step."""
         skill = step["skill"]
-        if skill == "grab":
-            return f"pick up the {step['object_name']}"
-        if skill == "place":
-            position = step["position"]
-            return (
-                f"place the {step['object_name']} {position} the {step['target_name']}"
-            )
-        if skill == "close":
-            return f"close the {step['target_name']}"
-        if skill == "turn_on":
-            return f"turn on the {step['target_name']}"
-        return skill
+        if skill == "transfer":
+            return f"Put the {step['object_name']} into the {step['target_name']}"
+        raise KeyError(f"unsupported skill: {skill!r}")
 
     def _run_step_successfuly(self, step: dict[str, str]) -> bool:
         """Run one skill until subtask success or per-skill cap. Returns subtask ok."""

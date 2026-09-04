@@ -1,1 +1,1 @@
-"""Sim backend implementations (LIBERO, etc.)."""
+"""Simulation backend implementations."""

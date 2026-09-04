@@ -15,8 +15,8 @@ alwaysApply: true
 - `src/envs/sim_env.py` is a factory facade
   (`SimEnv.__new__(task: str, task_idx: int = 0)` lazy-imports the configured
   backend and returns that instance). It does not forward methods. It does not
-  import a backend at module level. `task_idx` is used only for LIBERO;
-  VLAbench is constructed with `task` only.
+  import a backend at module level. For VLAbench, `task_idx` selects a
+  deterministic Track-1 episode configuration.
 - Dependencies point strictly downward in this order; no module may import one
   above it: `config` -> `vla_client` / `envs.sim_env` -> `plan` -> `skills` ->
   `executor` -> `planner` -> `runner`.
@@ -28,8 +28,8 @@ alwaysApply: true
 - Files under `src/` except `src/envs/` must not mention VLA backend names
   (`pi05`, `smolvla`, checkpoint ids). `config.VLA_POLICY` is the exception;
   only `services/` consume it.
-- Sim class names (`VLABenchEnv`, `LiberoEnv`) may appear in `src/` only as
-  type hints (IDE jump-to-definition). Default annotation is `VLABenchEnv`.
+- Sim class names (`VLABenchEnv`) may appear in `src/` only as type hints (IDE
+  jump-to-definition). Default annotation is `VLABenchEnv`.
   Exactly one type per hint: no `X | Y`, no `Optional[X]`.
 - **The VLA-to-environment integration lives in `src/executor.py`**, in one
   visible method. Do not move it behind a skill class, a tool factory, a

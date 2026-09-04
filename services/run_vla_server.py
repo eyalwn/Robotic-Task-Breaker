@@ -1,4 +1,4 @@
-"""Launch the VLA HTTP server for pi0fast / smolvla / pi05."""
+"""Launch the VLA HTTP server for pi0fast or smolvla."""
 from __future__ import annotations
 
 import runpy
@@ -9,7 +9,6 @@ import config
 
 _SERVICE_FILES = {
     "pi0fast": "pi0fast_service.py",
-    "pi05": "pi05_service.py",
     "smolvla": "smolvla_service.py",
 }
 _SUPPORTED_POLICIES = tuple(_SERVICE_FILES)
@@ -51,21 +50,6 @@ def main() -> None:
             )
             print(
                 "    pip install -r deps/requirements-vla-pi0fast-linux.txt && pip install -e .",
-                file=sys.stderr,
-            )
-        elif policy == "pi05":
-            print(
-                "error: OpenPI (Pi0.5) or HTTP deps not importable in this venv.",
-                file=sys.stderr,
-            )
-            print(
-                "  Linux + NVIDIA: install OpenPI from "
-                "https://github.com/Physical-Intelligence/openpi "
-                "(uv sync / pip install -e . per upstream), then:",
-                file=sys.stderr,
-            )
-            print(
-                "    pip install -r deps/requirements-vla-pi05-linux.txt && pip install -e .",
                 file=sys.stderr,
             )
         else:
