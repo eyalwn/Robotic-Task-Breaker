@@ -21,8 +21,8 @@ alwaysApply: true
   above it: `config` -> `vla_client` / `envs.sim_env` -> `plan` -> `skills` ->
   `executor` -> `planner` -> `runner`.
 - **`src/config.py` is the only place defaults are defined.** Reading
-  `os.environ` anywhere else is a defect. `.env` carries only
-  `OPENAI_API_KEY`, `LOG_LEVEL`, `LLM_MODEL`, `SAVE_VIDEO`; adding a fifth
+  `os.environ` anywhere else is a defect. `.env` contents are defined by
+  `src/config.py` and documented in `SRD.md`; adding or changing env switches
   requires a mapped acceptance criterion in `SRD.md`.
   Task identity is constructor args, not config constants.
 - Files under `src/` except `src/envs/` must not mention VLA backend names

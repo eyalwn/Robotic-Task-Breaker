@@ -61,7 +61,10 @@ Module responsibilities:
 
 - `config.py`: user-selectable runtime composition and cross-module defaults,
 plus `.env` switches. No task identity here.
-- `.env`: where user-defined configurations + secrets live. It is intentionally minimal: `OPENAI_API_KEY`, `LOG_LEVEL`, `LLM_MODEL`, `SAVE_VIDEO`. `.env` must match `.env.example`. Adding a new env var requires explicit SRD-level approval.
+- `.env`: where user-defined runtime switches and secrets live. `src/config.py`
+  is the only runtime reader of environment variables. `.env` must match
+  `.env.example`. Adding or changing an env var requires explicit SRD-level
+  approval.
 - `envs/sim_env.py`: `SimEnv` factory. `__new__(task: str, task_idx: int = 0)`
 lazy-imports the configured VLABench backend and returns that instance (no
 method forwarding). `task_idx` selects the deterministic held-out Track-1
