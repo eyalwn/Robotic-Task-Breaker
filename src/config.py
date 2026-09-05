@@ -40,7 +40,7 @@ VIDEO_FPS = int(os.environ.get("VIDEO_FPS", "10"))
 # Max actions returned per /predict response (enforced by the VLA service).
 VLA_ACTIONS_PER_CHUNK = int(os.environ.get("VLA_ACTIONS_PER_CHUNK", "5"))
 # Per-skill step cap (guard against a failing subtask; success path ends earlier).
-MAX_SKILL_STEPS = int(os.environ.get("MAX_SKILL_STEPS", "150"))
+MAX_SKILL_STEPS = int(os.environ.get("MAX_SKILL_STEPS", "170"))
 # Full-horizon cap for raw VLA baseline episodes (M1 baseline protocol).
 MAX_EPISODE_STEPS = 600
 # Independent episodes per raw-policy baseline campaign.

@@ -9,6 +9,18 @@ from conftest import FakeEnv, FakeVLA, build_executor, make_plan, run_plan
 from executor import StopReason
 
 
+class FakeEnvStepDone(FakeEnv):
+    """Returns True from step() once the step count reaches done_after."""
+
+    def __init__(self, done_after: int, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self._done_after = done_after
+
+    def step(self, action: list[float]) -> bool:
+        super().step(action)
+        return len(self.step_calls) >= self._done_after
+
+
 def _step_key(skill: str, **fields: str) -> tuple[str, frozenset]:
     step = {"skill": skill, **fields}
     return skill, frozenset(step.items())
@@ -240,3 +252,32 @@ def test_executes_full_returned_chunk() -> None:
     assert len(vla.calls) == 1
     assert len(env.step_calls) == chunk_size
     assert env.step_calls[-1][0] == float(chunk_size - 1)
+
+
+def test_env_step_done_mid_chunk_stops_remaining_actions() -> None:
+    """env.step() returning True ends the skill before later chunk actions."""
+    chunk_size = 7
+    done_after = 2
+    actions = [[float(i)] * 7 for i in range(chunk_size)]
+    env = FakeEnvStepDone(done_after=done_after)
+    vla = FakeVLA(actions=actions)
+    executor = build_executor(env=env, vla=vla)
+    step = {"skill": "transfer", "object_name": "cube", "target_name": "basket"}
+    with patch("config.MAX_SKILL_STEPS", chunk_size):
+        assert executor._run_step_successfuly(step) is True
+    assert len(vla.calls) == 1
+    assert len(env.step_calls) == done_after
+    assert env.step_calls[0][0] == 0.0
+    assert env.step_calls[1][0] == 1.0
+
+
+def test_env_step_done_reports_plan_done() -> None:
+    env = FakeEnvStepDone(done_after=1)
+    vla = FakeVLA(actions=[[0.0] * 7, [0.1] * 7, [0.2] * 7])
+    executor = build_executor(env=env, vla=vla)
+    plan = make_plan(
+        [{"skill": "transfer", "object_name": "cube", "target_name": "basket"}]
+    )
+    result = run_plan(executor, plan)
+    assert result.reason == StopReason.PLAN_DONE
+    assert len(env.step_calls) == 1

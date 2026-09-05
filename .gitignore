@@ -1,15 +1,14 @@
 .*
 !.env.example
 !.cursor/
-.cursor/*
-!.cursor/rules/
-!.cursor/rules/**
+!.cursor/**
 
 notes.txt
 *.db
 *.log
+*.mp4
 temp.*
-_*.txt
+notes.txt
 
 __pycache__/
 examples/_out/
