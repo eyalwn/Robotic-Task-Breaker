@@ -79,15 +79,16 @@ class Executor:
     def _run_step_successfuly(self, step: dict[str, str]) -> bool:
         """Run one skill until subtask success or per-skill cap. Returns subtask ok."""
         prompt = self._build_vla_task(step)
+        max_skill_steps = config.MAX_SKILL_STEPS[step["skill"]]
         logger.debug("full skill prompt: %s", prompt)
         skill_steps, is_done = 0, False
-        while skill_steps < config.MAX_SKILL_STEPS and not is_done:
+        while skill_steps < max_skill_steps and not is_done:
             images, state = self._env.observe()
             actions_chunk = self._vla.predict(images, state, prompt)
             for action in actions_chunk:
                 is_done = self._env.step(action)
                 skill_steps += 1
-                if skill_steps >= config.MAX_SKILL_STEPS or is_done:
+                if skill_steps >= max_skill_steps or is_done:
                     break
             is_done = is_done or self._env.check_subtask(step)
             logger.debug("steps=%d, eef_delta=%s, check_subtask=%s",

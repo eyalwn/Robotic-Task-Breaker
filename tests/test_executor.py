@@ -40,7 +40,7 @@ def test_steps_execute_in_order() -> None:
     vla = FakeVLA(actions=[[0.0] * 7])
     executor = build_executor(env=env, vla=vla)
     plan = make_plan([step_a, step_b, step_c])
-    with patch("config.MAX_SKILL_STEPS", 1):
+    with patch("config.MAX_SKILL_STEPS", {"transfer": 1}):
         run_plan(executor, plan)
     assert len(vla.calls) == 3
     assert vla.calls[0][2] == "Put the a into the basket"
@@ -82,7 +82,7 @@ def test_subtask_timeout_returns_summary() -> None:
             {"skill": "transfer", "object_name": "cube", "target_name": "drawer"},
         ]
     )
-    with patch("config.MAX_SKILL_STEPS", 2):
+    with patch("config.MAX_SKILL_STEPS", {"transfer": 2}):
         result = run_plan(executor, plan)
     assert result.reason == StopReason.SUBTASK_TIMEOUT
     assert len(env.step_calls) == 2
@@ -152,7 +152,7 @@ def test_skill_timeout_contract() -> None:
     vla = FakeVLA(actions=[[0.0] * 7])
     executor = build_executor(env=env, vla=vla)
     step = {"skill": "transfer", "object_name": "cube_1", "target_name": "basket"}
-    with patch("config.MAX_SKILL_STEPS", 3):
+    with patch("config.MAX_SKILL_STEPS", {"transfer": 3}):
         assert executor._run_step_successfuly(step) is False
     assert len(env.step_calls) == 3
 
@@ -247,7 +247,7 @@ def test_executes_full_returned_chunk() -> None:
     vla = FakeVLA(actions=actions)
     executor = build_executor(env=env, vla=vla)
     step = {"skill": "transfer", "object_name": "cube", "target_name": "basket"}
-    with patch("config.MAX_SKILL_STEPS", chunk_size):
+    with patch("config.MAX_SKILL_STEPS", {"transfer": chunk_size}):
         assert executor._run_step_successfuly(step) is False
     assert len(vla.calls) == 1
     assert len(env.step_calls) == chunk_size
@@ -263,7 +263,7 @@ def test_env_step_done_mid_chunk_stops_remaining_actions() -> None:
     vla = FakeVLA(actions=actions)
     executor = build_executor(env=env, vla=vla)
     step = {"skill": "transfer", "object_name": "cube", "target_name": "basket"}
-    with patch("config.MAX_SKILL_STEPS", chunk_size):
+    with patch("config.MAX_SKILL_STEPS", {"transfer": chunk_size}):
         assert executor._run_step_successfuly(step) is True
     assert len(vla.calls) == 1
     assert len(env.step_calls) == done_after
