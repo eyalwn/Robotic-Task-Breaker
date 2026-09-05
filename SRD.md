@@ -16,10 +16,12 @@ This is intentionally not an AST system.
 ## Milestones
 
 - **M1 — DONE.** Bare π0-FAST solves VLABench `select_fruit` at least once.
-- **M2 — ACTIVE.** Longor solves one fixed, held-out Track-1 `select_fruit`
+- **M2 — DONE.** Longor solves one fixed, held-out Track-1 `select_fruit`
 episode.
 - **M3 — PLANNED.** Establish bare-VLA and Longor success rates on a harder,
 decomposable VLABench task suite. Select the suite before implementation.
+
+
 
 ### Notes about success-rate evaluation
 
@@ -62,9 +64,9 @@ Module responsibilities:
 - `config.py`: user-selectable runtime composition and cross-module defaults,
 plus `.env` switches. No task identity here.
 - `.env`: where user-defined runtime switches and secrets live. `src/config.py`
-  is the only runtime reader of environment variables. `.env` must match
-  `.env.example`. Adding or changing an env var requires explicit SRD-level
-  approval.
+is the only runtime reader of environment variables. `.env` must match
+`.env.example`. Adding or changing an env var requires explicit SRD-level
+approval.
 - `envs/sim_env.py`: `SimEnv` factory. `__new__(task: str, task_idx: int = 0)`
 lazy-imports the configured VLABench backend and returns that instance (no
 method forwarding). `task_idx` selects the deterministic held-out Track-1
