@@ -1,0 +1,1448 @@
+{
+  "provenance": {
+    "dataset": "VLABench/vlm_evaluation_v1.0",
+    "revision": "b432f0c69ec0731935ff49a916d460936a000624",
+    "task": "cook_dishes",
+    "path_template": "Complex/cook_dishes/example{N}/env_config/env_config.json",
+    "episode_sha256": [
+      "2a2e33d510f806cecfab995b61814ad81ace11eda349d695e4a650c41789f3df",
+      "b8ffc62e1ad0cf5f3d543576f219d852fdb68a86d2925500a746afc48026f671",
+      "a5f8425154d32569572eeabbf4365cddc3ec6e8e5b602d95934132b323e9fdc5",
+      "473c8b2503f58605b4537c84b4a8f4bf896e62fb29390f8a6391c36590106541",
+      "151745be97f8f522b3b127e882c1a940338705f612545b707840a7d589f4f498",
+      "a8fdfee7f75ec8251048ac1c47cbc6d9e716de818a1eeb76e62520a3b2206983",
+      "afb577525cc6d3070c15d6f1b1952818332945ca98e7e14bfe8e1b248c6ee163",
+      "3e2440775a47250562a6bf88a1f994d13f33878195b5409640f1a0a6fda140b2",
+      "868b3f2ef60363b14b7c02ae09427050b3f1202becaed9190d293b87b4923d73",
+      "1532c225143401a9bffaea9966b69b35c2245d3faf04ab9be22cb5d6999e0421"
+    ]
+  },
+  "episodes": [
+    {
+      "task": {
+        "components": [
+          {
+            "name": "counter",
+            "xml_path": "obj/meshes/counters/counter_0/counter.xml",
+            "position": [
+              -1.5532604850393538e-08,
+              -0.00013995033625652467,
+              0.004124506712997142
+            ],
+            "orientation": [
+              0.9999408954797978,
+              0.010872237444812059,
+              2.096859271275333e-08,
+              -3.903557035686346e-08
+            ],
+            "class": "Counter",
+            "materials": [
+              "stone3"
+            ]
+          },
+          {
+            "name": "plate_seen",
+            "xml_path": "obj/meshes/tablewares/plates/plate_0/model.xml",
+            "position": [
+              -0.2688775149978939,
+              0.013151058088297527,
+              0.7669471596443637
+            ],
+            "orientation": [
+              0.9987450488630607,
+              0.012400047175491388,
+              0.0006652815964248045,
+              -0.04851931163944273
+            ],
+            "class": "Plate"
+          },
+          {
+            "name": "steak",
+            "xml_path": "obj/meshes/ingredients/steak/steak_10/model.xml",
+            "position": [
+              0.17617685950622325,
+              0.12423544191737297,
+              0.7563141850428703
+            ],
+            "orientation": [
+              0.9965806455446371,
+              0.036425973951981994,
+              0.0027398262564143827,
+              0.0741124733062453
+            ],
+            "class": "Ingredient"
+          },
+          {
+            "name": "egg",
+            "xml_path": "obj/meshes/ingredients/egg/egg_0/model.xml",
+            "position": [
+              0.04960857289611428,
+              0.2569301941026925,
+              0.7812150279856414
+            ],
+            "orientation": [
+              0.9983470272089894,
+              -0.006876874818018739,
+              0.021857781530071764,
+              -0.052708246435388975
+            ],
+            "class": "Ingredient"
+          },
+          {
+            "name": "potato",
+            "xml_path": "obj/meshes/ingredients/potato/potato_10/model.xml",
+            "position": [
+              0.24894634214296446,
+              0.2791002795334323,
+              0.7782845952139232
+            ],
+            "orientation": [
+              0.9997556987867525,
+              -0.011242171236647936,
+              -0.018487418926138983,
+              0.004513498725901251
+            ],
+            "class": "Ingredient"
+          },
+          {
+            "name": "tomato",
+            "xml_path": "obj/meshes/ingredients/tomato/tomato_3/model.xml",
+            "position": [
+              0.029813027715821682,
+              0.021048913145413926,
+              0.7850631977819388
+            ],
+            "orientation": [
+              0.9965633845374146,
+              0.07417165419528475,
+              -0.007315435652356624,
+              -0.03614513403605356
+            ],
+            "class": "Ingredient"
+          }
+        ],
+        "scene": {
+          "name": "kitchen_2",
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "orientation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "floor_textures": [
+            "floorplane"
+          ]
+        },
+        "instructions": [
+          "Prepare the ingredients of tomato_and_egg_stir_fry in the plate."
+        ],
+        "conditions": {
+          "contain": {
+            "container": "plate_seen",
+            "entities": [
+              "tomato",
+              "egg"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "task": {
+        "components": [
+          {
+            "name": "counter",
+            "xml_path": "obj/meshes/counters/counter_0/counter.xml",
+            "position": [
+              2.451384655454317e-08,
+              -0.00014044566014524405,
+              0.004124505710827131
+            ],
+            "orientation": [
+              0.9999408956033631,
+              0.010872226080412085,
+              1.1616502458164802e-08,
+              2.3154396539895198e-08
+            ],
+            "class": "Counter",
+            "materials": [
+              "stone3"
+            ]
+          },
+          {
+            "name": "plate_seen",
+            "xml_path": "obj/meshes/tablewares/plates/plate_12/model.xml",
+            "position": [
+              -0.24065648043598725,
+              -0.007837271338585005,
+              0.7634278310861387
+            ],
+            "orientation": [
+              0.9991623636684239,
+              8.565339749922227e-08,
+              1.4331055080964524e-05,
+              0.04092152029362704
+            ],
+            "class": "Plate"
+          },
+          {
+            "name": "eggplant",
+            "xml_path": "obj/meshes/ingredients/eggplant/eggplant_4/model.xml",
+            "position": [
+              0.048736061909081196,
+              0.10152648050886363,
+              0.7711006256134182
+            ],
+            "orientation": [
+              0.9896004637441229,
+              -0.1145932695318962,
+              -0.032654506263491714,
+              -0.08057907889827307
+            ],
+            "class": "Ingredient"
+          },
+          {
+            "name": "bell_pepper",
+            "xml_path": "obj/meshes/ingredients/bell_pepper/bell_pepper_3/model.xml",
+            "position": [
+              0.247179596982062,
+              0.252858698647658,
+              0.7841901560436221
+            ],
+            "orientation": [
+              0.9982585034460824,
+              0.04764312378932547,
+              0.022808081351515068,
+              0.026265652062067636
+            ],
+            "class": "Ingredient"
+          },
+          {
+            "name": "garlic",
+            "xml_path": "obj/meshes/ingredients/garlic/garlic_5/model.xml",
+            "position": [
+              0.25399952381168717,
+              0.04931816100905813,
+              0.7695122941173134
+            ],
+            "orientation": [
+              0.9914524616180792,
+              0.08804125759972159,
+              -0.08854941578496442,
+              -0.03781209166195343
+            ],
+            "class": "Ingredient"
+          },
+          {
+            "name": "onion",
+            "xml_path": "obj/meshes/ingredients/onion/onion_4/model.xml",
+            "position": [
+              0.029458136119235527,
+              0.2566894055125469,
+              0.7870615108433143
+            ],
+            "orientation": [
+              0.99749767081629,
+              -0.008297380795843875,
+              -0.017984477474746633,
+              0.06786831925107167
+            ],
+            "class": "Ingredient"
+          }
+        ],
+        "scene": {
+          "name": "kitchen_2",
+          "position": [
+            -2.0,
+            1.5,
+            0.0
+          ],
+          "orientation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "floor_textures": [
+            "floorplane"
+          ]
+        },
+        "instructions": [
+          "Prepare the ingredients of bell_pepper_and_eggplant_stir_fry in the plate."
+        ],
+        "conditions": {
+          "contain": {
+            "container": "plate_seen",
+            "entities": [
+              "bell_pepper",
+              "eggplant",
+              "garlic"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "task": {
+        "components": [
+          {
+            "name": "counter",
+            "xml_path": "obj/meshes/counters/counter_0/counter.xml",
+            "position": [
+              -1.8230537695177583e-07,
+              -0.00014104805297535683,
+              0.004124461044145425
+            ],
+            "orientation": [
+              0.9999409047398057,
+              0.010871385719377966,
+              -8.215151510702921e-07,
+              -6.867914957485127e-08
+            ],
+            "class": "Counter",
+            "materials": [
+              "stone0"
+            ]
+          },
+          {
+            "name": "plate_seen",
+            "xml_path": "obj/meshes/tablewares/plates/plate3/plate.xml",
+            "position": [
+              -0.2273075016365328,
+              0.38125587124409743,
+              0.7440726087412188
+            ],
+            "orientation": [
+              0.9965524015815415,
+              -0.06820733698189328,
+              0.0032887197946814104,
+              0.047119575613670285
+            ],
+            "class": "Plate"
+          },
+          {
+            "name": "tomato",
+            "xml_path": "obj/meshes/ingredients/tomato/tomato_5/model.xml",
+            "position": [
+              0.02035175411884831,
+              0.10505063605828974,
+              0.7809354368757478
+            ],
+            "orientation": [
+              0.9968700995177304,
+              0.0542738700918966,
+              0.002501368679580052,
+              0.05742904202132596
+            ],
+            "class": "Ingredient"
+          },
+          {
+            "name": "garlic",
+            "xml_path": "obj/meshes/ingredients/garlic/garlic_4/model.xml",
+            "position": [
+              0.2657027071806318,
+              0.26121660087149534,
+              0.7847925085085834
+            ],
+            "orientation": [
+              0.9971699924747622,
+              0.06133482850528337,
+              -0.03720779764247149,
+              -0.022486100478011008
+            ],
+            "class": "Ingredient"
+          },
+          {
+            "name": "bell_pepper",
+            "xml_path": "obj/meshes/ingredients/bell_pepper/bell_pepper_3/model.xml",
+            "position": [
+              0.25379406470745264,
+              0.041457454813505865,
+              0.7823156388303024
+            ],
+            "orientation": [
+              0.9995196210812004,
+              -0.018020901198037623,
+              -0.023994482494860234,
+              0.007748483948974149
+            ],
+            "class": "Ingredient"
+          },
+          {
+            "name": "cheese",
+            "xml_path": "obj/meshes/ingredients/cheese/cheese_5/model.xml",
+            "position": [
+              0.03565082311357201,
+              0.2726806903107923,
+              0.7868110423381439
+            ],
+            "orientation": [
+              0.9999281006896865,
+              -0.001155914691865639,
+              -0.005825427891132006,
+              -0.010417375016090568
+            ],
+            "class": "Ingredient"
+          },
+          {
+            "name": "eggplant",
+            "xml_path": "obj/meshes/ingredients/eggplant/eggplant_2/model.xml",
+            "position": [
+              0.19326706849816977,
+              0.18329287284114149,
+              0.7727039914764213
+            ],
+            "orientation": [
+              0.9901071686679841,
+              -0.10005692574691562,
+              -0.06779821609448751,
+              -0.07127277219774016
+            ],
+            "class": "Ingredient"
+          }
+        ],
+        "scene": {
+          "name": "kitchen_2",
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "orientation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "floor_textures": [
+            "floorplane"
+          ]
+        },
+        "instructions": [
+          "Prepare the ingredients of eggplant_and_tomato_stew in the plate."
+        ],
+        "conditions": {
+          "contain": {
+            "container": "plate_seen",
+            "entities": [
+              "eggplant",
+              "tomato",
+              "garlic"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "task": {
+        "components": [
+          {
+            "name": "counter",
+            "xml_path": "obj/meshes/counters/counter_0/counter.xml",
+            "position": [
+              4.968380081458807e-08,
+              -0.0001398451602952357,
+              0.004124504276970717
+            ],
+            "orientation": [
+              0.9999408959095559,
+              0.010872197919093751,
+              -1.5381534000678866e-08,
+              -4.073305899658201e-08
+            ],
+            "class": "Counter",
+            "materials": [
+              "wood4"
+            ]
+          },
+          {
+            "name": "plate_seen",
+            "xml_path": "obj/meshes/tablewares/plates/plate_1/model.xml",
+            "position": [
+              -0.30082222247225826,
+              0.4075474591518159,
+              0.7422757619047092
+            ],
+            "orientation": [
+              0.9927544598467473,
+              -0.11680924794793472,
+              -0.026548864135618563,
+              -0.009451976583701368
+            ],
+            "class": "Plate"
+          },
+          {
+            "name": "bell_pepper",
+            "xml_path": "obj/meshes/ingredients/bell_pepper/bell_pepper_2/model.xml",
+            "position": [
+              0.26038144229495375,
+              0.1801509976707259,
+              0.7831880264926786
+            ],
+            "orientation": [
+              0.995555422559494,
+              0.09104477846005068,
+              0.009855065582846516,
+              -0.021980141262183714
+            ],
+            "class": "Ingredient"
+          },
+          {
+            "name": "broccoli",
+            "xml_path": "obj/meshes/ingredients/broccoli/broccoli_3/model.xml",
+            "position": [
+              0.04418094226858755,
+              0.054855841914492914,
+              0.7716771575763915
+            ],
+            "orientation": [
+              0.9939982565608907,
+              0.08264710386456303,
+              0.03579364419528972,
+              0.06209458279055409
+            ],
+            "class": "Ingredient"
+          },
+          {
+            "name": "cheese",
+            "xml_path": "obj/meshes/ingredients/cheese/cheese_0/model.xml",
+            "position": [
+              0.030570832840629475,
+              0.26570948495759744,
+              0.7765814969088175
+            ],
+            "orientation": [
+              0.9995846592685584,
+              7.479595773716553e-06,
+              2.1547092715498696e-05,
+              -0.028818543244531637
+            ],
+            "class": "Ingredient"
+          },
+          {
+            "name": "garlic",
+            "xml_path": "obj/meshes/ingredients/garlic/garlic_5/model.xml",
+            "position": [
+              0.18227634969278966,
+              0.042295843636406906,
+              0.7695113137808833
+            ],
+            "orientation": [
+              0.9897537253777824,
+              0.09628077881682394,
+              -0.07996778852386197,
+              0.06872210364816782
+            ],
+            "class": "Ingredient"
+          },
+          {
+            "name": "sweet_potato",
+            "xml_path": "obj/meshes/ingredients/sweet_potato/sweet_potato_1/model.xml",
+            "position": [
+              0.2043355806958301,
+              0.2575305415337543,
+              0.7777542683001005
+            ],
+            "orientation": [
+              0.9988363559163267,
+              -0.01617944231319739,
+              0.03314402508552301,
+              0.03107464154835941
+            ],
+            "class": "Ingredient"
+          }
+        ],
+        "scene": {
+          "name": "kitchen_2",
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "orientation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "floor_textures": [
+            "floorplane"
+          ]
+        },
+        "instructions": [
+          "Prepare the ingredients of sweet_potato_and_cheese_bake in the plate."
+        ],
+        "conditions": {
+          "contain": {
+            "container": "plate_seen",
+            "entities": [
+              "sweet_potato",
+              "cheese"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "task": {
+        "components": [
+          {
+            "name": "counter",
+            "xml_path": "obj/meshes/counters/counter_0/counter.xml",
+            "position": [
+              3.748633551719901e-08,
+              -0.00013984386220668795,
+              0.004124505187714787
+            ],
+            "orientation": [
+              0.9999408958717799,
+              0.010872201393457322,
+              -9.69708925548643e-09,
+              -3.895445853425768e-08
+            ],
+            "class": "Counter",
+            "materials": [
+              "wood2"
+            ]
+          },
+          {
+            "name": "plate_seen",
+            "xml_path": "obj/meshes/tablewares/plates/plate_14/model.xml",
+            "position": [
+              -0.1826546955098483,
+              -0.008877407168458478,
+              0.7614629864252004
+            ],
+            "orientation": [
+              0.9993954333734298,
+              -0.02815999492758126,
+              -0.0005898615633250314,
+              0.02038221041372983
+            ],
+            "class": "Plate"
+          },
+          {
+            "name": "mushroom",
+            "xml_path": "obj/meshes/ingredients/mushroom/mushroom_0/model.xml",
+            "position": [
+              0.13020618314605598,
+              0.26637278211988924,
+              0.7628616926523576
+            ],
+            "orientation": [
+              0.987326318336584,
+              0.12811049619459142,
+              -0.0844826854494034,
+              -0.04046131169352794
+            ],
+            "class": "Ingredient"
+          },
+          {
+            "name": "sweet_potato",
+            "xml_path": "obj/meshes/ingredients/sweet_potato/sweet_potato_1/model.xml",
+            "position": [
+              0.2807874377514561,
+              0.029836102597654606,
+              0.7778402031813488
+            ],
+            "orientation": [
+              0.9989431987862673,
+              -0.031114146726482838,
+              0.01457367616655891,
+              -0.030528731305681636
+            ],
+            "class": "Ingredient"
+          },
+          {
+            "name": "potato",
+            "xml_path": "obj/meshes/ingredients/potato/potato_19/model.xml",
+            "position": [
+              0.04983238978207353,
+              0.044157364120715796,
+              0.7842818529021034
+            ],
+            "orientation": [
+              0.9997275317606472,
+              -0.021508987388806244,
+              -0.00017939787703205617,
+              0.009066064067427292
+            ],
+            "class": "Ingredient"
+          },
+          {
+            "name": "cheese",
+            "xml_path": "obj/meshes/ingredients/cheese/cheese_0/model.xml",
+            "position": [
+              0.2496805172015246,
+              0.2644286611981872,
+              0.7765890288503847
+            ],
+            "orientation": [
+              0.999266037876373,
+              4.0682280062918977e-05,
+              0.00013255389824448453,
+              0.038306217788629665
+            ],
+            "class": "Ingredient"
+          }
+        ],
+        "scene": {
+          "name": "kitchen_2",
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "orientation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "floor_textures": [
+            "floorplane"
+          ]
+        },
+        "instructions": [
+          "Prepare the ingredients of sweet_potato_and_cheese_bake in the plate."
+        ],
+        "conditions": {
+          "contain": {
+            "container": "plate_seen",
+            "entities": [
+              "sweet_potato",
+              "cheese"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "task": {
+        "components": [
+          {
+            "name": "counter",
+            "xml_path": "obj/meshes/counters/counter_0/counter.xml",
+            "position": [
+              -3.637111624630628e-07,
+              -0.0001403475079982083,
+              0.004124494979768055
+            ],
+            "orientation": [
+              0.9999408957552467,
+              0.010872212111355285,
+              4.8361492359608e-09,
+              -3.7505515421977824e-08
+            ],
+            "class": "Counter",
+            "materials": [
+              "stone3"
+            ]
+          },
+          {
+            "name": "plate_seen",
+            "xml_path": "obj/meshes/tablewares/plates/plate_13/model.xml",
+            "position": [
+              -0.2159549220437454,
+              0.38680274208109006,
+              0.745577347885082
+            ],
+            "orientation": [
+              0.9925523149684038,
+              -0.1161673361245878,
+              0.02699222682430516,
+              0.02482884934194006
+            ],
+            "class": "Plate"
+          },
+          {
+            "name": "garlic",
+            "xml_path": "obj/meshes/ingredients/garlic/garlic_4/model.xml",
+            "position": [
+              0.2600321245444148,
+              0.09598520182803046,
+              0.7841920144037827
+            ],
+            "orientation": [
+              0.9933261473146336,
+              0.10744946947232699,
+              0.00392799352627522,
+              0.041741435505247795
+            ],
+            "class": "Ingredient"
+          },
+          {
+            "name": "steak",
+            "xml_path": "obj/meshes/ingredients/steak/steak_10/model.xml",
+            "position": [
+              0.04675094773072573,
+              0.2697646258669706,
+              0.7563256527055942
+            ],
+            "orientation": [
+              0.9972303423215435,
+              0.03652826623881881,
+              -0.00203977292275743,
+              -0.06475468666642177
+            ],
+            "class": "Ingredient"
+          },
+          {
+            "name": "mushroom",
+            "xml_path": "obj/meshes/ingredients/mushroom/mushroom_11/model.xml",
+            "position": [
+              0.021304450543187782,
+              0.04723948181015408,
+              0.7675350916396835
+            ],
+            "orientation": [
+              0.9835645262048202,
+              0.16527236208111012,
+              -0.04599131504102214,
+              -0.056308685514898794
+            ],
+            "class": "Ingredient"
+          },
+          {
+            "name": "onion",
+            "xml_path": "obj/meshes/ingredients/onion/onion_0/model.xml",
+            "position": [
+              0.27716212814013547,
+              0.25093828025043036,
+              0.7852993467876326
+            ],
+            "orientation": [
+              0.9998167756835922,
+              0.009473045188933804,
+              -0.014422291838361577,
+              0.008286976206303023
+            ],
+            "class": "Ingredient"
+          },
+          {
+            "name": "corn",
+            "xml_path": "obj/meshes/ingredients/corn/corn_3/model.xml",
+            "position": [
+              0.1749138787458521,
+              0.18319547690443858,
+              0.7674595120956437
+            ],
+            "orientation": [
+              0.9992504431966759,
+              -0.016008482886852495,
+              -0.005748588173774518,
+              -0.03477404176848649
+            ],
+            "class": "Ingredient"
+          }
+        ],
+        "scene": {
+          "name": "kitchen_2",
+          "position": [
+            -2.0,
+            -1.0,
+            0.0
+          ],
+          "orientation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "floor_textures": [
+            "floorplane"
+          ]
+        },
+        "instructions": [
+          "Prepare the ingredients of garlic_steak_with_mushroom in the plate."
+        ],
+        "conditions": {
+          "contain": {
+            "container": "plate_seen",
+            "entities": [
+              "steak",
+              "garlic",
+              "mushroom"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "task": {
+        "components": [
+          {
+            "name": "counter",
+            "xml_path": "obj/meshes/counters/counter_0/counter.xml",
+            "position": [
+              3.232781346686348e-08,
+              -0.0001398455079291086,
+              0.004124499113867005
+            ],
+            "orientation": [
+              0.9999408957427478,
+              0.010872213260810611,
+              1.2895953858457984e-08,
+              -4.0243428773470256e-08
+            ],
+            "class": "Counter",
+            "materials": [
+              "wood1"
+            ]
+          },
+          {
+            "name": "plate_seen",
+            "xml_path": "obj/meshes/tablewares/plates/plate_13/model.xml",
+            "position": [
+              -0.28018717697124657,
+              0.3921242804348187,
+              0.7436255325730476
+            ],
+            "orientation": [
+              0.9924451659233547,
+              -0.11879571961499061,
+              -0.030589242881934035,
+              0.0021137304536837215
+            ],
+            "class": "Plate"
+          },
+          {
+            "name": "cheese",
+            "xml_path": "obj/meshes/ingredients/cheese/cheese_3/model.xml",
+            "position": [
+              0.040574344097164906,
+              0.026608750490260718,
+              0.7817076421003862
+            ],
+            "orientation": [
+              0.9999989348731251,
+              -3.2681246787089585e-05,
+              -2.2042056736599173e-05,
+              -0.0014590060656748957
+            ],
+            "class": "Ingredient"
+          },
+          {
+            "name": "steak",
+            "xml_path": "obj/meshes/ingredients/steak/steak_9/model.xml",
+            "position": [
+              0.28020242663109396,
+              0.24984501643675042,
+              0.7740200496030218
+            ],
+            "orientation": [
+              0.9995301869648485,
+              0.009930193260368009,
+              0.005512006805133973,
+              -0.028467778079923227
+            ],
+            "class": "Ingredient"
+          },
+          {
+            "name": "corn",
+            "xml_path": "obj/meshes/ingredients/corn/corn_1/model.xml",
+            "position": [
+              0.26625841223701613,
+              0.0512843168699249,
+              0.7731223656857062
+            ],
+            "orientation": [
+              0.9974807469485558,
+              5.293249915821251e-05,
+              -0.0196933239607397,
+              0.06814931882622409
+            ],
+            "class": "Ingredient"
+          },
+          {
+            "name": "tomato",
+            "xml_path": "obj/meshes/ingredients/tomato/tomato_8/model.xml",
+            "position": [
+              0.035799764281661,
+              0.25399203243500035,
+              0.7776773127872022
+            ],
+            "orientation": [
+              0.998032957452621,
+              0.01991442243777791,
+              -0.00011630705774065852,
+              -0.059444243539735646
+            ],
+            "class": "Ingredient"
+          },
+          {
+            "name": "broccoli",
+            "xml_path": "obj/meshes/ingredients/broccoli/broccoli_0/model.xml",
+            "position": [
+              0.20501703504963395,
+              0.1843769779561084,
+              0.7819955616661524
+            ],
+            "orientation": [
+              0.9935291424894198,
+              0.006230796617213954,
+              0.08686834810471959,
+              0.07290343129997652
+            ],
+            "class": "Ingredient"
+          }
+        ],
+        "scene": {
+          "name": "kitchen_2",
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "orientation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "floor_textures": [
+            "floorplane"
+          ]
+        },
+        "instructions": [
+          "Prepare the ingredients of broccoli_and_cheese_bake in the plate."
+        ],
+        "conditions": {
+          "contain": {
+            "container": "plate_seen",
+            "entities": [
+              "broccoli",
+              "cheese"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "task": {
+        "components": [
+          {
+            "name": "counter",
+            "xml_path": "obj/meshes/counters/counter_0/counter.xml",
+            "position": [
+              -2.693805928292826e-07,
+              -0.00013995013063232902,
+              0.004124506554052982
+            ],
+            "orientation": [
+              0.9999408951206658,
+              0.010872270474948478,
+              5.092686973382383e-08,
+              -9.313861827612803e-09
+            ],
+            "class": "Counter",
+            "materials": [
+              "stone3"
+            ]
+          },
+          {
+            "name": "plate_seen",
+            "xml_path": "obj/meshes/tablewares/plates/plate2/plate.xml",
+            "position": [
+              -0.2448748651559365,
+              0.013815924652879341,
+              0.7533880561849837
+            ],
+            "orientation": [
+              0.9983396704724762,
+              6.421700251963356e-07,
+              -2.0128390201477964e-06,
+              -0.05760123571977119
+            ],
+            "class": "Plate"
+          },
+          {
+            "name": "sweet_potato",
+            "xml_path": "obj/meshes/ingredients/sweet_potato/sweet_potato_1/model.xml",
+            "position": [
+              0.20165268077381338,
+              0.20657393100037674,
+              0.7777105563728074
+            ],
+            "orientation": [
+              0.9993813019469578,
+              -0.02570169297034822,
+              0.018591358439652515,
+              -0.015192027140203915
+            ],
+            "class": "Ingredient"
+          },
+          {
+            "name": "garlic",
+            "xml_path": "obj/meshes/ingredients/garlic/garlic_4/model.xml",
+            "position": [
+              0.04377054882977719,
+              0.025328593927957183,
+              0.7844692452661567
+            ],
+            "orientation": [
+              0.9968159863680158,
+              0.06602518830654765,
+              -0.012321292953714053,
+              -0.04297382424445911
+            ],
+            "class": "Ingredient"
+          },
+          {
+            "name": "onion",
+            "xml_path": "obj/meshes/ingredients/onion/onion_0/model.xml",
+            "position": [
+              0.273166867716567,
+              0.03744934843300263,
+              0.7855290874003508
+            ],
+            "orientation": [
+              0.9997325779738102,
+              0.015829960984384696,
+              0.0021476598742382965,
+              0.016720419556265322
+            ],
+            "class": "Ingredient"
+          },
+          {
+            "name": "fish",
+            "xml_path": "obj/meshes/ingredients/fish/fish_8/model.xml",
+            "position": [
+              0.032294789709039366,
+              0.2800182003835955,
+              0.7598365510656095
+            ],
+            "orientation": [
+              0.9991840973177545,
+              0.002493386114409163,
+              0.029229864078445033,
+              0.027758561543169608
+            ],
+            "class": "Ingredient"
+          }
+        ],
+        "scene": {
+          "name": "kitchen_2",
+          "position": [
+            -2.0,
+            1.5,
+            0.0
+          ],
+          "orientation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "floor_textures": [
+            "floorplane"
+          ]
+        },
+        "instructions": [
+          "Prepare the ingredients of fish_with_garlic_and_onion in the plate."
+        ],
+        "conditions": {
+          "contain": {
+            "container": "plate_seen",
+            "entities": [
+              "fish",
+              "garlic",
+              "onion"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "task": {
+        "components": [
+          {
+            "name": "counter",
+            "xml_path": "obj/meshes/counters/counter_0/counter.xml",
+            "position": [
+              -1.375995881306265e-06,
+              -0.00014018261843567773,
+              0.00412450349645824
+            ],
+            "orientation": [
+              0.9999408958224075,
+              0.010872205932767174,
+              -3.897646570899089e-09,
+              1.9091510125807353e-07
+            ],
+            "class": "Counter",
+            "materials": [
+              "wood3"
+            ]
+          },
+          {
+            "name": "plate_seen",
+            "xml_path": "obj/meshes/tablewares/plates/plate_0/model.xml",
+            "position": [
+              -0.17528484800806518,
+              0.3876450406125418,
+              0.7531738663412784
+            ],
+            "orientation": [
+              0.9916136860117593,
+              -0.127599927056767,
+              -0.006802611880700362,
+              -0.019346338177553567
+            ],
+            "class": "Plate"
+          },
+          {
+            "name": "carrot",
+            "xml_path": "obj/meshes/ingredients/carrot/carrot_1/model.xml",
+            "position": [
+              0.032056743797942475,
+              0.02767055590939322,
+              0.7652352148586081
+            ],
+            "orientation": [
+              0.9985233318041854,
+              0.03069843167556018,
+              -0.023184750080485216,
+              0.038356609587321545
+            ],
+            "class": "Ingredient"
+          },
+          {
+            "name": "bell_pepper",
+            "xml_path": "obj/meshes/ingredients/bell_pepper/bell_pepper_2/model.xml",
+            "position": [
+              0.25284326528423884,
+              0.2413093809924469,
+              0.7832135622986388
+            ],
+            "orientation": [
+              0.9926109192799554,
+              0.10767764794313382,
+              0.017987369728984022,
+              0.05296736344079758
+            ],
+            "class": "Ingredient"
+          },
+          {
+            "name": "potato",
+            "xml_path": "obj/meshes/ingredients/potato/potato_11/model.xml",
+            "position": [
+              0.25295417757438327,
+              0.012002511845966637,
+              0.792307280349127
+            ],
+            "orientation": [
+              0.9987490499957088,
+              0.011859617192441689,
+              0.000860411520017155,
+              0.048568964419005316
+            ],
+            "class": "Ingredient"
+          },
+          {
+            "name": "eggplant",
+            "xml_path": "obj/meshes/ingredients/eggplant/eggplant_2/model.xml",
+            "position": [
+              0.028363678718944758,
+              0.2697691059226095,
+              0.772728209919408
+            ],
+            "orientation": [
+              0.9896496261021948,
+              -0.10044464579490442,
+              -0.07018165187072467,
+              -0.07469288070237196
+            ],
+            "class": "Ingredient"
+          },
+          {
+            "name": "garlic",
+            "xml_path": "obj/meshes/ingredients/garlic/garlic_2/model.xml",
+            "position": [
+              0.1977309069638789,
+              0.18956845779203088,
+              0.7710586697070715
+            ],
+            "orientation": [
+              0.9836154743444179,
+              -0.11656088019301078,
+              0.13502978883122757,
+              -0.02609819853993972
+            ],
+            "class": "Ingredient"
+          }
+        ],
+        "scene": {
+          "name": "kitchen_2",
+          "position": [
+            0.0,
+            0.0,
+            0.0
+          ],
+          "orientation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "floor_textures": [
+            "floorplane"
+          ]
+        },
+        "instructions": [
+          "Prepare the ingredients of bell_pepper_and_eggplant_stir_fry in the plate."
+        ],
+        "conditions": {
+          "contain": {
+            "container": "plate_seen",
+            "entities": [
+              "bell_pepper",
+              "eggplant",
+              "garlic"
+            ]
+          }
+        }
+      }
+    },
+    {
+      "task": {
+        "components": [
+          {
+            "name": "counter",
+            "xml_path": "obj/meshes/counters/counter_0/counter.xml",
+            "position": [
+              -3.5334613108484514e-07,
+              -0.00013994154623195285,
+              0.004124508246313812
+            ],
+            "orientation": [
+              0.9999408954612896,
+              0.010872239147133353,
+              2.1465701791847046e-08,
+              4.704806588357399e-08
+            ],
+            "class": "Counter",
+            "materials": [
+              "stone0"
+            ]
+          },
+          {
+            "name": "plate_seen",
+            "xml_path": "obj/meshes/tablewares/plates/plate_0/model.xml",
+            "position": [
+              -0.13639789972658653,
+              0.004416650382865446,
+              0.7669479936566824
+            ],
+            "orientation": [
+              0.9998730337279245,
+              0.012378070677500406,
+              0.0011413702866655939,
+              -0.009969807615382595
+            ],
+            "class": "Plate"
+          },
+          {
+            "name": "eggplant",
+            "xml_path": "obj/meshes/ingredients/eggplant/eggplant_4/model.xml",
+            "position": [
+              0.16988294070696294,
+              0.2777212737724581,
+              0.7707330804908313
+            ],
+            "orientation": [
+              0.9904138339725463,
+              -0.11844235563495609,
+              -0.05688012680221908,
+              -0.04262038294534119
+            ],
+            "class": "Ingredient"
+          },
+          {
+            "name": "onion",
+            "xml_path": "obj/meshes/ingredients/onion/onion_8/model.xml",
+            "position": [
+              0.055792680792714544,
+              0.051304287719842405,
+              0.782715665828169
+            ],
+            "orientation": [
+              0.996242877905937,
+              -0.06042084294348295,
+              0.004200685536189998,
+              -0.06190156864507228
+            ],
+            "class": "Ingredient"
+          },
+          {
+            "name": "tomato",
+            "xml_path": "obj/meshes/ingredients/tomato/tomato_6/model.xml",
+            "position": [
+              0.2774523861248383,
+              0.01608613605159187,
+              0.7895792916651463
+            ],
+            "orientation": [
+              0.9999480215240067,
+              0.007988462307204586,
+              -0.00044619300138223667,
+              -0.0063197810087134015
+            ],
+            "class": "Ingredient"
+          },
+          {
+            "name": "garlic",
+            "xml_path": "obj/meshes/ingredients/garlic/garlic_5/model.xml",
+            "position": [
+              0.028812645750725067,
+              0.17344180852086202,
+              0.7695258645608761
+            ],
+            "orientation": [
+              0.9913979605683911,
+              0.09012055614973075,
+              -0.0837288386798264,
+              -0.04469732333624995
+            ],
+            "class": "Ingredient"
+          }
+        ],
+        "scene": {
+          "name": "kitchen_2",
+          "position": [
+            -2.0,
+            1.5,
+            0.0
+          ],
+          "orientation": [
+            1.0,
+            0.0,
+            0.0,
+            0.0
+          ],
+          "floor_textures": [
+            "floorplane"
+          ]
+        },
+        "instructions": [
+          "Prepare the ingredients of eggplant_and_tomato_stew in the plate."
+        ],
+        "conditions": {
+          "contain": {
+            "container": "plate_seen",
+            "entities": [
+              "eggplant",
+              "tomato",
+              "garlic"
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

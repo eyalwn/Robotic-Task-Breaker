@@ -7,6 +7,7 @@ controls in this adapter (not in the executor).
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from pathlib import Path
@@ -24,6 +25,10 @@ _POLICY_CAMERA_SOURCE_COUNT = 4
 _TRACK_RELATIVE_PATH = (
     Path("configs") / "evaluation" / "tracks" / "track_1_in_distribution.json"
 )
+_COOK_DISHES_EVAL_FILE = Path(__file__).with_name(
+    "cook_dishes_evaluation_episodes.json"
+)
+_COOK_DISHES_TASK = "cook_dishes"
 
 
 def _import_vlabench():
@@ -81,6 +86,82 @@ def get_track1_episode_config(task: str, task_idx: int) -> dict[str, object]:
     return dict(configs[task_idx])
 
 
+def _canonical_episode_json(episode: dict[str, object]) -> str:
+    """Return one episode config as canonical JSON (sorted keys, compact)."""
+    return json.dumps(episode, sort_keys=True, separators=(",", ":"))
+
+
+def _episode_sha256(episode: dict[str, object]) -> str:
+    """Return the SHA-256 digest of one canonical episode config payload."""
+    return hashlib.sha256(_canonical_episode_json(episode).encode("utf-8")).hexdigest()
+
+
+def _load_cook_dishes_evaluation_episodes() -> list[dict[str, object]]:
+    """Return the frozen official cook_dishes evaluation episode configs."""
+    if not _COOK_DISHES_EVAL_FILE.is_file():
+        raise RuntimeError(
+            f"cook_dishes evaluation file not found: {_COOK_DISHES_EVAL_FILE}"
+        )
+    with _COOK_DISHES_EVAL_FILE.open("r", encoding="utf-8") as handle:
+        payload = json.load(handle)
+    episodes = payload.get("episodes")
+    if not isinstance(episodes, list) or not episodes:
+        raise RuntimeError(
+            f"cook_dishes evaluation file has no episodes: {_COOK_DISHES_EVAL_FILE}"
+        )
+    provenance = payload.get("provenance")
+    expected_hashes = (
+        provenance.get("episode_sha256") if isinstance(provenance, dict) else None
+    )
+    if not isinstance(expected_hashes, list) or len(expected_hashes) != len(episodes):
+        raise RuntimeError(
+            "cook_dishes evaluation provenance missing episode_sha256 list"
+        )
+    episodes_out = [dict(episode) for episode in episodes]
+    actual_hashes = [_episode_sha256(episode) for episode in episodes_out]
+    if actual_hashes != expected_hashes:
+        raise RuntimeError("cook_dishes evaluation episode integrity check failed")
+    return episodes_out
+
+
+def get_evaluation_episode_configs(task: str) -> list[dict[str, object]]:
+    """Return evaluation episode configs for one task (Track-1 or fixed M3 set)."""
+    if task == _COOK_DISHES_TASK:
+        return _load_cook_dishes_evaluation_episodes()
+    return get_track1_episode_configs(task)
+
+
+def get_evaluation_episode_config(task: str, task_idx: int) -> dict[str, object]:
+    """Return one evaluation episode config by zero-based index."""
+    configs = get_evaluation_episode_configs(task)
+    if task_idx < 0 or task_idx >= len(configs):
+        raise RuntimeError(
+            "Invalid evaluation task_idx="
+            f"{task_idx} for task={task!r}; available_config_count={len(configs)}"
+        )
+    return dict(configs[task_idx])
+
+
+def validate_evaluation_episode_range(
+    task: str,
+    task_idx: int,
+    episodes: int,
+) -> None:
+    """Fail fast when a multi-episode campaign index range is invalid."""
+    if task_idx < 0:
+        raise RuntimeError(
+            f"Invalid evaluation task_idx={task_idx} for task={task!r}; must be >= 0"
+        )
+    available = len(get_evaluation_episode_configs(task))
+    last_idx = task_idx + episodes - 1
+    if last_idx >= available:
+        raise RuntimeError(
+            "Invalid evaluation range "
+            f"task_idx={task_idx} episodes={episodes} for task={task!r}; "
+            f"available_config_count={available}"
+        )
+
+
 def to_jpeg(rgb: np.ndarray) -> bytes:
     """Encode an RGB uint8 frame as JPEG bytes."""
     import cv2
@@ -112,6 +193,12 @@ class VLABenchEnv:
     def from_track_episode_index(cls, task: str, task_idx: int) -> "VLABenchEnv":
         """Build one deterministic Track-1 held-out episode by task/index."""
         episode_config = get_track1_episode_config(task, task_idx)
+        return cls.from_track_episode(task, episode_config)
+
+    @classmethod
+    def from_evaluation_episode_index(cls, task: str, task_idx: int) -> "VLABenchEnv":
+        """Build one evaluation episode by task/index (Track-1 or fixed M3 set)."""
+        episode_config = get_evaluation_episode_config(task, task_idx)
         return cls.from_track_episode(task, episode_config)
 
     def _init_env(

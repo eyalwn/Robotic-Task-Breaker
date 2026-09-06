@@ -75,21 +75,33 @@ class FakeBaselineVLA:
         return self.actions
 
 
-def test_load_track_episode_configs_reads_first_n() -> None:
+def test_load_evaluation_episode_configs_reads_first_n() -> None:
     mod = _load_script()
     payload = [{"instructions": ["episode-1"]}, {"instructions": ["episode-2"]}]
-    with patch.object(mod, "get_track1_episode_configs", return_value=payload) as load_cfg:
-        configs = mod.load_track_episode_configs("select_fruit", 2)
+    with patch.object(mod, "get_evaluation_episode_configs", return_value=payload) as load_cfg:
+        configs = mod.load_evaluation_episode_configs("select_fruit", 2)
     load_cfg.assert_called_once_with("select_fruit")
     assert configs == payload
 
 
-def test_load_track_episode_configs_raises_when_episode_count_exceeds_available() -> None:
+def test_load_evaluation_episode_configs_raises_when_episode_count_exceeds_available() -> None:
     mod = _load_script()
     payload = [{"instructions": ["episode-1"]}]
-    with patch.object(mod, "get_track1_episode_configs", return_value=payload):
-        with pytest.raises(RuntimeError, match="requested 2 episodes, but track has 1"):
-            mod.load_track_episode_configs("select_fruit", 2)
+    with patch.object(mod, "get_evaluation_episode_configs", return_value=payload):
+        with pytest.raises(RuntimeError, match="requested 2 episodes, but evaluation has 1"):
+            mod.load_evaluation_episode_configs("select_fruit", 2)
+
+
+def test_load_evaluation_episode_configs_uses_cook_dishes_evaluation() -> None:
+    mod = _load_script()
+    with patch.object(
+        mod,
+        "get_evaluation_episode_configs",
+        return_value=[{"task": {"components": []}}] * 10,
+    ) as load_cfg:
+        configs = mod.load_evaluation_episode_configs("cook_dishes", 10)
+    load_cfg.assert_called_once_with("cook_dishes")
+    assert len(configs) == 10
 
 
 def test_main_pass_exits_zero(capsys: pytest.CaptureFixture[str]) -> None:
@@ -166,7 +178,7 @@ def test_run_baseline_resets_env_each_episode() -> None:
         env_instances.append(env)
         return env
 
-    with patch.object(mod, "load_track_episode_configs", return_value=episode_configs), patch.object(
+    with patch.object(mod, "load_evaluation_episode_configs", return_value=episode_configs), patch.object(
         mod.VLABenchEnv,
         "from_track_episode",
         side_effect=make_env,
@@ -188,7 +200,7 @@ def test_run_baseline_passes_native_instruction_from_each_episode() -> None:
         FakeBaselineEnv(task_description=instructions[1], success_after_steps=1),
     ]
 
-    with patch.object(mod, "load_track_episode_configs", return_value=episode_configs), patch.object(
+    with patch.object(mod, "load_evaluation_episode_configs", return_value=episode_configs), patch.object(
         mod.VLABenchEnv,
         "from_track_episode",
         side_effect=env_instances,
@@ -204,7 +216,7 @@ def test_run_baseline_shares_one_vla_client() -> None:
     mod = _load_script()
     vla = FakeBaselineVLA()
     with patch.object(
-        mod, "load_track_episode_configs", return_value=[{"instructions": ["x"]}, {"instructions": ["y"]}]
+        mod, "load_evaluation_episode_configs", return_value=[{"instructions": ["x"]}, {"instructions": ["y"]}]
     ), patch.object(
         mod.VLABenchEnv,
         "from_track_episode",

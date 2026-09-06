@@ -417,3 +417,122 @@ def test_transfer_target_without_contain_raises():
             env.check_subtask(step)
     finally:
         env.close()
+
+
+_EXPECTED_COOK_DISHES_EPISODE_SHA256 = [
+    "2a2e33d510f806cecfab995b61814ad81ace11eda349d695e4a650c41789f3df",
+    "b8ffc62e1ad0cf5f3d543576f219d852fdb68a86d2925500a746afc48026f671",
+    "a5f8425154d32569572eeabbf4365cddc3ec6e8e5b602d95934132b323e9fdc5",
+    "473c8b2503f58605b4537c84b4a8f4bf896e62fb29390f8a6391c36590106541",
+    "151745be97f8f522b3b127e882c1a940338705f612545b707840a7d589f4f498",
+    "a8fdfee7f75ec8251048ac1c47cbc6d9e716de818a1eeb76e62520a3b2206983",
+    "afb577525cc6d3070c15d6f1b1952818332945ca98e7e14bfe8e1b248c6ee163",
+    "3e2440775a47250562a6bf88a1f994d13f33878195b5409640f1a0a6fda140b2",
+    "868b3f2ef60363b14b7c02ae09427050b3f1202becaed9190d293b87b4923d73",
+    "1532c225143401a9bffaea9966b69b35c2245d3faf04ab9be22cb5d6999e0421",
+]
+
+
+def test_cook_dishes_evaluation_data_provenance() -> None:
+    eval_file = Path(vlabench_env.__file__).with_name(
+        "cook_dishes_evaluation_episodes.json"
+    )
+    with eval_file.open("r", encoding="utf-8") as handle:
+        payload = json.load(handle)
+    provenance = payload["provenance"]
+    assert provenance["dataset"] == "VLABench/vlm_evaluation_v1.0"
+    assert provenance["revision"] == "b432f0c69ec0731935ff49a916d460936a000624"
+    assert provenance["task"] == "cook_dishes"
+    assert provenance["path_template"] == (
+        "Complex/cook_dishes/example{N}/env_config/env_config.json"
+    )
+    assert provenance["episode_sha256"] == _EXPECTED_COOK_DISHES_EPISODE_SHA256
+
+
+def test_cook_dishes_evaluation_episode_sha256_integrity() -> None:
+    eval_file = Path(vlabench_env.__file__).with_name(
+        "cook_dishes_evaluation_episodes.json"
+    )
+    with eval_file.open("r", encoding="utf-8") as handle:
+        payload = json.load(handle)
+    episodes = payload["episodes"]
+    digests = [
+        vlabench_env._episode_sha256(dict(episode)) for episode in episodes
+    ]
+    assert digests == _EXPECTED_COOK_DISHES_EPISODE_SHA256
+    configs = vlabench_env.get_evaluation_episode_configs("cook_dishes")
+    loaded_digests = [vlabench_env._episode_sha256(config) for config in configs]
+    assert loaded_digests == _EXPECTED_COOK_DISHES_EPISODE_SHA256
+
+
+def test_cook_dishes_evaluation_has_ten_episodes() -> None:
+    configs = vlabench_env.get_evaluation_episode_configs("cook_dishes")
+    assert len(configs) == 10
+    for config in configs:
+        assert isinstance(config, dict)
+        assert "task" in config
+
+
+def test_get_evaluation_episode_config_cook_dishes_bounds() -> None:
+    with pytest.raises(
+        RuntimeError,
+        match="task_idx=10.*task='cook_dishes'.*available_config_count=10",
+    ):
+        vlabench_env.get_evaluation_episode_config("cook_dishes", 10)
+
+
+def test_get_evaluation_episode_configs_primitive_delegates_to_track1() -> None:
+    payload = [{"instructions": ["episode-0"]}]
+    with patch.object(
+        vlabench_env,
+        "get_track1_episode_configs",
+        return_value=payload,
+    ) as track1:
+        configs = vlabench_env.get_evaluation_episode_configs("select_fruit")
+    track1.assert_called_once_with("select_fruit")
+    assert configs == payload
+
+
+def test_validate_evaluation_episode_range_rejects_negative_start() -> None:
+    with pytest.raises(RuntimeError, match="task_idx=-1.*must be >= 0"):
+        vlabench_env.validate_evaluation_episode_range("cook_dishes", -1, 1)
+
+
+def test_validate_evaluation_episode_range_rejects_out_of_range_end() -> None:
+    with pytest.raises(
+        RuntimeError,
+        match="task_idx=8 episodes=3.*available_config_count=10",
+    ):
+        vlabench_env.validate_evaluation_episode_range("cook_dishes", 8, 3)
+
+
+def test_validate_evaluation_episode_range_accepts_full_campaign() -> None:
+    vlabench_env.validate_evaluation_episode_range("cook_dishes", 0, 10)
+
+
+def test_from_evaluation_episode_index_cook_dishes_uses_static_config() -> None:
+    configs = vlabench_env.get_evaluation_episode_configs("cook_dishes")
+    with patch.object(
+        vlabench_env.VLABenchEnv,
+        "from_track_episode",
+        return_value="env",
+    ) as from_episode:
+        env = vlabench_env.VLABenchEnv.from_evaluation_episode_index("cook_dishes", 3)
+    from_episode.assert_called_once_with("cook_dishes", configs[3])
+    assert env == "env"
+
+
+def test_from_evaluation_episode_index_primitive_uses_track1() -> None:
+    episode_config = {"instructions": ["episode-2"]}
+    with patch.object(
+        vlabench_env,
+        "get_track1_episode_configs",
+        return_value=[{}, {}, episode_config],
+    ), patch.object(
+        vlabench_env.VLABenchEnv,
+        "from_track_episode",
+        return_value="env",
+    ) as from_episode:
+        env = vlabench_env.VLABenchEnv.from_evaluation_episode_index("select_fruit", 2)
+    from_episode.assert_called_once_with("select_fruit", episode_config)
+    assert env == "env"

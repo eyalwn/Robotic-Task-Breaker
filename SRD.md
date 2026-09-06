@@ -18,8 +18,8 @@ This is intentionally not an AST system.
 - **M1 — DONE.** Bare π0-FAST solves VLABench `select_fruit` at least once.
 - **M2 — DONE.** Longor solves one fixed, held-out Track-1 `select_fruit`
 episode.
-- **M3 — PLANNED.** Establish bare-VLA and Longor success rates on a harder,
-decomposable VLABench task suite. Select the suite before implementation.
+- **M3 — ACTIVE.** Establish bare-VLA and Longor success rates on ten fixed
+`cook_dishes` episodes.
 
 
 
@@ -34,6 +34,23 @@ planner, or executor); full returned chunks with `VLA_ACTIONS_PER_CHUNK = 5`;
 stop on `env.success()` or `MAX_EPISODE_STEPS`; report aggregate success rate.
 Working verdict is `success_rate > 0.30` (at least 4/10). This is a
 cost-bounded subset of the upstream 50-episode protocol.
+
+### M3 evaluation protocol
+
+M3 evaluates `cook_dishes` on examples 0–9 from
+`VLABench/vlm_evaluation_v1.0`, revision
+`b432f0c69ec0731935ff49a916d460936a000624`, under
+`Complex/cook_dishes/example{N}/env_config/env_config.json`. Exact payloads
+and canonical SHA-256 hashes are frozen in
+`src/envs/cook_dishes_evaluation_episodes.json`.
+
+Both arms run those same ten configurations with `random_init=False` and
+`run_mode=eval`: bare π0-FAST receives the native task instruction; Longor
+receives its planner-produced sequence of existing `transfer` prompts. Report
+successes/10, success rate, and Longor-minus-bare rate. The task template is
+out of distribution for the primitive π0-FAST checkpoint, while each
+low-level transfer uses its trained pick/place behavior. Report Longor results
+as "given a subtask-completion oracle."
 
 ### Historical findings
 
@@ -70,7 +87,8 @@ approval.
 - `envs/sim_env.py`: `SimEnv` factory. `__new__(task: str, task_idx: int = 0)`
 lazy-imports the configured VLABench backend and returns that instance (no
 method forwarding). `task_idx` selects the deterministic held-out Track-1
-episode configuration for VLABench and defaults to the first config.
+episode configuration for VLABench primitives, or the frozen M3 configuration
+for `cook_dishes`; it defaults to the first config.
 - `vla_client.py`: HTTP client for the VLA policy service (backend-agnostic).
 - `plan.py`: step-array / STOP parsing.
 - `skills.py`: static skill catalog text for planner prompting.
@@ -124,7 +142,8 @@ Runtime skills are:
 
 For π0-FAST/VLABench, `transfer` maps exactly to
 `Put the <object_name> into the <target_name>`. Do not add skills until a task
-or selected M3 suite requires them.
+or selected M3 suite requires them. M3 `cook_dishes` requires no new skill:
+the planner emits one `transfer` step per recipe ingredient.
 
 M2 uses `Runner("select_fruit", task_idx)`, where `task_idx` selects one
 held-out `select_fruit` configuration from Track 1.

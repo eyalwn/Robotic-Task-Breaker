@@ -18,5 +18,5 @@ class SimEnv:
         if sim == "vlabench":
             from envs.vlabench_env import VLABenchEnv
 
-            return VLABenchEnv.from_track_episode_index(task, task_idx)
+            return VLABenchEnv.from_evaluation_episode_index(task, task_idx)
         raise AssertionError(f"{sim!r} not supported for this env")
