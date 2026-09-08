@@ -88,7 +88,7 @@ Set `SAVE_VIDEO=1` in `.env` to write `run.mp4`.
 
 Colab launchers:
 
-- `colab/run_vlabench_task.ipynb` — Longor path (`examples/run_vlabench_task.py`).
+- `colab/run_vlabench_task.ipynb` — Longor M3 path (`validation/run_m3_longor.py`).
 - `colab/run_vlabench_raw_policy.ipynb` — bare pi0-fast baseline, 10 episodes (`examples/run_vlabench_raw_policy.py`; no planner/LLM).
 
 ## Tests
