@@ -172,6 +172,24 @@ def to_jpeg(rgb: np.ndarray) -> bytes:
     return buf.tobytes()
 
 
+def _normalize_entity_name(name: str) -> str:
+    """Normalize one planner or sim entity name for lookup."""
+    text = name.strip().lower().replace("_", " ")
+    if "seen" in text:
+        text = text.replace("seen", "")
+    return "_".join(text.split())
+
+
+def _build_entity_aliases(entity_names: dict[str, object]) -> dict[str, str]:
+    """Map normalized NL names to sim entity keys for oracle resolution."""
+    aliases: dict[str, str] = {}
+    for sim_name in entity_names:
+        nl_key = _normalize_entity_name(sim_name)
+        if nl_key and nl_key not in entity_names:
+            aliases[nl_key] = sim_name
+    return aliases
+
+
 class VLABenchEnv:
     """One VLABench task episode: build, observe, step, check success."""
 
@@ -227,6 +245,8 @@ class VLABenchEnv:
         ).reshape(3)
         self._steps = 0
         self._writer = None
+        entities = getattr(self._env.task, "entities", None) or {}
+        self._entity_aliases = _build_entity_aliases(entities)
         logger.info("VLABench ready: %r - %r", task, self.task_description)
 
     @property
@@ -324,13 +344,16 @@ class VLABenchEnv:
 
     def _resolve_entity(self, name: str):
         entities = self._env.task.entities
-        norm = name.strip().lower().replace(" ", "_")
+        norm = _normalize_entity_name(name)
         if not norm:
             raise ValueError(f"empty object name: {name!r}")
         if name in entities:
             return entities[name]
         if norm in entities:
             return entities[norm]
+        sim_name = self._entity_aliases.get(norm)
+        if sim_name is not None:
+            return entities[sim_name]
         raise ValueError(f"unknown object name {name!r}")
 
     def check_subtask(self, step: dict[str, str]) -> bool:

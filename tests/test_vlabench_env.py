@@ -352,6 +352,24 @@ def test_step_binarizes_gripper(monkeypatch: pytest.MonkeyPatch):
         env.close()
 
 
+def test_normalize_entity_name_strips_seen_and_collapses_tokens():
+    assert vlabench_env._normalize_entity_name("plate_seen") == "plate"
+    assert vlabench_env._normalize_entity_name("bell_pepper") == "bell_pepper"
+    assert vlabench_env._normalize_entity_name("tomato") == "tomato"
+    assert vlabench_env._normalize_entity_name("Alphabet Soup") == "alphabet_soup"
+
+
+def test_build_entity_aliases_maps_nl_to_sim_keys():
+    aliases = vlabench_env._build_entity_aliases(
+        {
+            "plate_seen": object(),
+            "tomato": object(),
+            "bell_pepper": object(),
+        }
+    )
+    assert aliases == {"plate": "plate_seen"}
+
+
 def test_resolve_entity_exact_and_normalized():
     env = _build_env_with_mocks()
     try:
@@ -362,6 +380,28 @@ def test_resolve_entity_exact_and_normalized():
         )
         with pytest.raises(ValueError, match="unknown object name 'orange'"):
             env._resolve_entity("orange")
+    finally:
+        env.close()
+
+
+def test_resolve_entity_uses_nl_alias_for_plate_seen():
+    entities = {
+        "plate_seen": SimpleNamespace(
+            contain=lambda obj_pos, physics: True,
+            get_xpos=lambda physics: np.zeros(3),
+        ),
+        "tomato": SimpleNamespace(get_xpos=lambda physics: np.zeros(3)),
+    }
+    env = _build_env_with_mocks(entities=entities)
+    try:
+        assert (
+            env._resolve_entity("plate")
+            is env._mock_env.task.entities["plate_seen"]
+        )
+        assert (
+            env._resolve_entity("Plate")
+            is env._mock_env.task.entities["plate_seen"]
+        )
     finally:
         env.close()
 
