@@ -372,17 +372,19 @@ class VLABenchEnv:
             return bool(contain_fn(obj_pos, self._env.physics))
         raise KeyError(f"unsupported skill: {skill!r}")
 
-    def eef_goal_distance(self, step: dict[str, str]) -> float:
-        """Return ||EEF xyz - current skill goal|| from sim GT (debug)."""
-        skill = step["skill"]
+    def transfer_distances(self, step: dict[str, str]) -> tuple[float, float]:
+        """Return (EEF→object, object→target) metres from sim GT."""
+        if step["skill"] != "transfer":
+            raise KeyError(f"unsupported skill: {step['skill']!r}")
         physics = self._env.physics
-        if skill == "transfer":
-            goal = np.asarray(
-                self._resolve_entity(step["target_name"]).get_xpos(physics),
-                dtype=np.float64,
-            )
-        else:
-            raise KeyError(f"unsupported skill: {skill!r}")
+        obj_pos = np.asarray(
+            self._resolve_entity(step["object_name"]).get_xpos(physics),
+            dtype=np.float64,
+        )
+        target_pos = np.asarray(
+            self._resolve_entity(step["target_name"]).get_xpos(physics),
+            dtype=np.float64,
+        )
         obs = self._env.get_observation(require_pcd=False)
         if "ee_state" not in obs:
             raise RuntimeError("VLABench observation missing 'ee_state'")
@@ -392,7 +394,10 @@ class VLABenchEnv:
                 f"VLABench ee_state too short for EEF xyz: got {raw.size}"
             )
         eef = raw[:3]
-        return float(np.linalg.norm(eef - goal))
+        return (
+            float(np.linalg.norm(eef - obj_pos)),
+            float(np.linalg.norm(obj_pos - target_pos)),
+        )
 
     def _record(self) -> None:
         if not config.SAVE_VIDEO:

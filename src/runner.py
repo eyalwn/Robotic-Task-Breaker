@@ -50,7 +50,10 @@ class Runner:
                     status = "done"
                 elif execution_sum.reason == StopReason.SUBTASK_TIMEOUT:
                     status = "execution_error"
-                    error = "subtask step cap exceeded"
+                    error = execution_sum.error or "subtask step cap exceeded"
+                elif execution_sum.reason == StopReason.SKILL_ABORT:
+                    status = "execution_error"
+                    error = execution_sum.error or "skill aborted"
                 elif execution_sum.reason == StopReason.EXECUTION_ERROR:
                     status = "execution_error"
                     error = execution_sum.error or ""

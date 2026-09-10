@@ -16,11 +16,13 @@ class FakeEnv:
         subtask_satisfied=None,
         subtask_after=None,
         steps: int = 0,
+        distances: tuple[float, float] = (1.0, 1.0),
     ) -> None:
         self._steps = steps
         self.step_calls: list[list[float]] = []
         self._subtask_satisfied = {} if subtask_satisfied is None else subtask_satisfied
         self._subtask_after = {} if subtask_after is None else subtask_after
+        self._distances = distances
 
     @property
     def steps(self) -> int:
@@ -43,8 +45,10 @@ class FakeEnv:
             return self._steps >= self._subtask_after[key]
         return bool(self._subtask_satisfied.get(key, False))
 
-    def eef_goal_distance(self, step: dict[str, str]) -> float:
-        return 0.0
+    def transfer_distances(self, step: dict[str, str]) -> tuple[float, float]:
+        if step["skill"] != "transfer":
+            raise KeyError(f"unsupported skill: {step['skill']!r}")
+        return self._distances
 
 
 class FakeVLA:

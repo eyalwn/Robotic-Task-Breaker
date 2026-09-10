@@ -459,6 +459,23 @@ def test_transfer_target_without_contain_raises():
         env.close()
 
 
+def test_transfer_distances_eef_obj_and_obj_target():
+    env = _build_env_with_mocks()
+    try:
+        step = {
+            "skill": "transfer",
+            "object_name": "apple",
+            "target_name": "basket",
+        }
+        eef_obj, obj_tgt = env.transfer_distances(step)
+        assert eef_obj == pytest.approx(float(np.linalg.norm([0.1, 0.2, 0.3])))
+        assert obj_tgt == pytest.approx(2.0)
+        with pytest.raises(KeyError, match="unsupported skill"):
+            env.transfer_distances({"skill": "close", "target_name": "basket"})
+    finally:
+        env.close()
+
+
 _EXPECTED_COOK_DISHES_EPISODE_SHA256 = [
     "2a2e33d510f806cecfab995b61814ad81ace11eda349d695e4a650c41789f3df",
     "b8ffc62e1ad0cf5f3d543576f219d852fdb68a86d2925500a746afc48026f671",

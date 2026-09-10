@@ -101,7 +101,8 @@ Non-negotiable boundaries:
 
 - VLA-to-environment integration lives in `executor.py` in one visible path.
 - No hidden retuning layer between policy output and `env.step()` (no remap,
-rescale, sign flips, success rewriting).
+rescale, sign flips, success rewriting). Transfer stall/drop abort is a
+sim-GT termination check, not an action rewrite.
 - User-selectable runtime composition and cross-module defaults live in
 `config.py`. Backend-specific implementation constants stay in their owning
 modules.

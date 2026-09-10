@@ -186,3 +186,11 @@ def test_runner_subtask_timeout_from_executor(monkeypatch: pytest.MonkeyPatch) -
         monkeypatch,
     )
     assert runner.run() is False
+
+
+def test_runner_skill_abort_from_executor(monkeypatch: pytest.MonkeyPatch) -> None:
+    runner, _, _ = _runner_with_stub_executor(
+        [ExecutionSum(reason=StopReason.SKILL_ABORT, error="transfer dropped object")],
+        monkeypatch,
+    )
+    assert runner.run() is False

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from typing import TYPE_CHECKING
 
 import config
@@ -13,13 +14,24 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+_Tracker = tuple[bool, float, int]
+
 
 class StopReason:
     """Why ``Executor.run(steps)`` stopped."""
 
     PLAN_DONE = "plan_done"
     SUBTASK_TIMEOUT = "subtask_timeout"
+    SKILL_ABORT = "skill_abort"
     EXECUTION_ERROR = "execution_error"
+
+
+class SkillTimeout(Exception):
+    """Per-skill step cap reached without subtask success."""
+
+
+class SkillAbort(Exception):
+    """Skill ended early without subtask success (stall or drop)."""
 
 
 class ExecutionSum:
@@ -37,6 +49,21 @@ class ExecutionSum:
         self.error = error
 
 
+def _advance_progress(
+    best: float,
+    stall: int,
+    current: float,
+    why: str,
+) -> tuple[float, int]:
+    """Update running-min patience; raise SkillAbort when progress stalls."""
+    if current < best - config.TRANSFER_PROGRESS_EPS:
+        return current, 0
+    stall += 1
+    if stall >= config.SKILL_STALL_STEPS:
+        raise SkillAbort(f"transfer stalled {why}")
+    return best, stall
+
+
 class Executor:
     """Executes a linear step list against the environment and VLA policy."""
 
@@ -45,21 +72,30 @@ class Executor:
         self._vla = VLAClient()
 
     def run(self, steps: Plan) -> ExecutionSum:
-        """Execute steps in order until done, subtask timeout, or error."""
+        """Execute steps in order until done, timeout, abort, or error."""
         steps_at_start = self._env.steps
         try:
             for step in steps:
                 logger.info("executing step: %s", step["skill"])
-                if self._run_step_successfuly(step):
-                    logger.info("skill done successfuly: %s", step["skill"])
-                else:
-                    return ExecutionSum(
-                        reason=StopReason.SUBTASK_TIMEOUT,
-                        steps=self._env.steps - steps_at_start,
-                    )
+                self._run_step(step)
+                logger.info("skill done successfully: %s", step["skill"])
             return ExecutionSum(
                 reason=StopReason.PLAN_DONE,
                 steps=self._env.steps - steps_at_start,
+            )
+        except SkillTimeout as exc:
+            logger.info("skill timed out: %s", exc)
+            return ExecutionSum(
+                reason=StopReason.SUBTASK_TIMEOUT,
+                steps=self._env.steps - steps_at_start,
+                error=str(exc),
+            )
+        except SkillAbort as exc:
+            logger.info("skill aborted: %s", exc)
+            return ExecutionSum(
+                reason=StopReason.SKILL_ABORT,
+                steps=self._env.steps - steps_at_start,
+                error=str(exc),
             )
         except Exception as exc:
             logger.exception("executor error")
@@ -76,21 +112,54 @@ class Executor:
             return f"Put the {step['object_name']} into the {step['target_name']}"
         raise KeyError(f"unsupported skill: {skill!r}")
 
-    def _run_step_successfuly(self, step: dict[str, str]) -> bool:
-        """Run one skill until subtask success or per-skill cap. Returns subtask ok."""
+    def _run_step(self, step: dict[str, str]) -> None:
+        """Run one skill until subtask success. Raise SkillTimeout or SkillAbort."""
         prompt = self._build_vla_task(step)
         max_skill_steps = config.MAX_SKILL_STEPS[step["skill"]]
         logger.debug("full skill prompt: %s", prompt)
-        skill_steps, is_done = 0, False
-        while skill_steps < max_skill_steps and not is_done:
+        skill_steps = 0
+        tracker: _Tracker = (False, math.inf, 0)
+        while True:
             images, state = self._env.observe()
             actions_chunk = self._vla.predict(images, state, prompt)
             for action in actions_chunk:
                 is_done = self._env.step(action)
                 skill_steps += 1
-                if skill_steps >= max_skill_steps or is_done:
-                    break
-            is_done = is_done or self._env.check_subtask(step)
-            logger.debug("steps=%d, eef_delta=%s, check_subtask=%s",
-                skill_steps, self._env.eef_goal_distance(step), is_done)
-        return is_done
+                is_done = is_done or self._env.check_subtask(step)
+                if is_done:
+                    return
+                if skill_steps >= max_skill_steps:
+                    raise SkillTimeout(
+                        f"{step['skill']} exceeded {max_skill_steps} steps"
+                    )
+                distances = self._env.transfer_distances(step)
+                logger.debug("steps=%d, distances=%s, check_subtask=%s",
+                    skill_steps, distances, is_done)
+                tracker = self._abort_if_stuck(step, tracker, distances)
+
+    def _abort_if_stuck(
+        self,
+        step: dict[str, str],
+        tracker: _Tracker,
+        distances: tuple[float, float],
+    ) -> _Tracker:
+        """Raise SkillAbort if transfer GT progress stalled or the object dropped."""
+        if step["skill"] != "transfer":
+            return tracker
+        eef_obj, obj_tgt = distances
+        if not math.isfinite(eef_obj) or not math.isfinite(obj_tgt):
+            raise RuntimeError("non-finite transfer distances")
+        held, best, stall = tracker
+        if not held:
+            if eef_obj <= config.TRANSFER_HOLD_DISTANCE:
+                return True, obj_tgt, 0
+            best, stall = _advance_progress(
+                best, stall, eef_obj, "approaching object"
+            )
+            return False, best, stall
+        if eef_obj > config.TRANSFER_DROP_DISTANCE:
+            raise SkillAbort("transfer dropped object")
+        best, stall = _advance_progress(
+            best, stall, obj_tgt, "moving to target"
+        )
+        return True, best, stall
