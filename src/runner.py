@@ -1,8 +1,9 @@
-"""Wire and run single-pass planner-executor for one task."""
+"""Wire and run planner-executor for one task."""
 
 import logging
 from typing import TYPE_CHECKING, Literal
 
+import config
 from envs.sim_env import SimEnv
 from executor import Executor, StopReason
 from plan import get_stop_reason, is_stop_plan
@@ -18,7 +19,7 @@ RunStatus = Literal["done", "plan_failed", "stopped", "execution_error"]
 
 
 class Runner:
-    """Orchestrates a single observe → plan → execute pass for one task."""
+    """Orchestrates observe → plan → execute, replanning after skill failure."""
 
     def __init__(self, task: str, task_idx: int = 0) -> None:
         """Wire env, planner, and executor for one task."""
@@ -37,29 +38,31 @@ class Runner:
         error = ""
         total_steps = 0
         try:
-            images, _state = self._env.observe()
-            snapshot = images[0]
-            current_plan = self._planner.plan(snapshot)
-            if is_stop_plan(current_plan):
-                status = "stopped"
-                error = get_stop_reason(current_plan)
-            else:
+            for attempt in range(config.MAX_REPLANS + 1):
+                images, _state = self._env.observe()
+                current_plan = self._planner.plan(images[0])
+                if is_stop_plan(current_plan):
+                    status = "stopped"
+                    error = get_stop_reason(current_plan)
+                    break
                 execution_sum = self._executor.run(current_plan)
-                total_steps = execution_sum.steps
+                total_steps += execution_sum.steps
                 if execution_sum.reason == StopReason.PLAN_DONE:
                     status = "done"
-                elif execution_sum.reason == StopReason.SUBTASK_TIMEOUT:
-                    status = "execution_error"
+                    break
+                status = "execution_error"
+                if execution_sum.reason == StopReason.SUBTASK_TIMEOUT:
                     error = execution_sum.error or "subtask step cap exceeded"
                 elif execution_sum.reason == StopReason.SKILL_ABORT:
-                    status = "execution_error"
                     error = execution_sum.error or "skill aborted"
                 elif execution_sum.reason == StopReason.EXECUTION_ERROR:
-                    status = "execution_error"
                     error = execution_sum.error or ""
+                    break
                 else:
-                    status = "execution_error"
                     error = f"unexpected stop reason: {execution_sum.reason}"
+                    break
+                if attempt < config.MAX_REPLANS:
+                    logger.info("replanning after %s", execution_sum.reason)
         except RuntimeError as exc:
             error = str(exc)
         finally:

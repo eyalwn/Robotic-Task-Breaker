@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+import config
 from executor import ExecutionSum, Executor, StopReason
 from plan import Plan
 from runner import Runner
@@ -181,16 +182,45 @@ def test_runner_planner_stop(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_runner_subtask_timeout_from_executor(monkeypatch: pytest.MonkeyPatch) -> None:
-    runner, _, _ = _runner_with_stub_executor(
-        [ExecutionSum(reason=StopReason.SUBTASK_TIMEOUT)],
+    n = config.MAX_REPLANS + 1
+    runner, planner, executor = _runner_with_stub_executor(
+        [ExecutionSum(reason=StopReason.SUBTASK_TIMEOUT)] * n,
         monkeypatch,
     )
     assert runner.run() is False
+    assert planner.plan_calls == n
+    assert executor.run.call_count == n
 
 
 def test_runner_skill_abort_from_executor(monkeypatch: pytest.MonkeyPatch) -> None:
-    runner, _, _ = _runner_with_stub_executor(
-        [ExecutionSum(reason=StopReason.SKILL_ABORT, error="transfer dropped object")],
+    n = config.MAX_REPLANS + 1
+    runner, planner, executor = _runner_with_stub_executor(
+        [ExecutionSum(reason=StopReason.SKILL_ABORT, error="transfer dropped object")] * n,
         monkeypatch,
     )
     assert runner.run() is False
+    assert planner.plan_calls == n
+    assert executor.run.call_count == n
+
+
+def test_runner_replans_after_skill_abort(monkeypatch: pytest.MonkeyPatch) -> None:
+    runner, planner, executor = _runner_with_stub_executor(
+        [
+            ExecutionSum(reason=StopReason.SKILL_ABORT, error="transfer dropped object"),
+            ExecutionSum(reason=StopReason.PLAN_DONE),
+        ],
+        monkeypatch,
+    )
+    assert runner.run() is True
+    assert planner.plan_calls == 2
+    assert executor.run.call_count == 2
+
+
+def test_runner_execution_error_does_not_replan(monkeypatch: pytest.MonkeyPatch) -> None:
+    runner, planner, executor = _runner_with_stub_executor(
+        [ExecutionSum(reason=StopReason.EXECUTION_ERROR, error="boom")],
+        monkeypatch,
+    )
+    assert runner.run() is False
+    assert planner.plan_calls == 1
+    assert executor.run.call_count == 1

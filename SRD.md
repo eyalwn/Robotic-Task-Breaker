@@ -94,7 +94,8 @@ for `cook_dishes`; it defaults to the first config.
 - `skills.py`: static skill catalog text for planner prompting.
 - `executor.py`: linear step executor; owns VLA-to-env control loop.
 - `planner.py`: LLM planner that emits step arrays or STOP.
-- `runner.py`: composition root; single observe -> plan -> execute pass.
+- `runner.py`: composition root; observe → plan → execute, then replan up
+to `MAX_REPLANS` after skill abort or subtask timeout.
 `Runner(task: str, task_idx: int = 0)` forwards those args to `SimEnv`.
 
 Non-negotiable boundaries:
