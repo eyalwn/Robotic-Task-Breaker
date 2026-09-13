@@ -79,7 +79,7 @@ python services/run_vla_server.py          # config.VLA_POLICY selects pi0fast
 
 ```bash
 source .venv/bin/activate
-python examples/run_vlabench_task.py --task select_fruit --task-idx 0
+python examples/run_longor_task.py --task select_fruit --task-idx 0
 ```
 
 The client talks to `http://127.0.0.1:8765` and is backend-agnostic.
@@ -88,8 +88,9 @@ Set `SAVE_VIDEO=1` in `.env` to write `run.mp4`.
 
 Colab launchers:
 
-- `colab/run_vlabench_task.ipynb` — Longor M3 path (`validation/run_m3_longor.py`).
-- `colab/run_vlabench_raw_policy.ipynb` — bare pi0-fast baseline, 10 episodes (`examples/run_vlabench_raw_policy.py`; no planner/LLM).
+- `colab/run_longor_task.ipynb` — Longor single-episode path (`examples/run_longor_task.py`).
+- `colab/run_longor_campaign.ipynb` — Longor M3 campaign (`validation/run_longor_campaign.py`).
+- `colab/run_raw_policy.ipynb` — bare pi0-fast baseline, 10 episodes (`examples/run_raw_policy.py`; no planner/LLM).
 
 ## Tests
 

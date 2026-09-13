@@ -1,4 +1,4 @@
-"""Hermetic tests for examples/run_vlabench_raw_policy.py baseline entrypoint."""
+"""Hermetic tests for examples/run_raw_policy.py baseline entrypoint."""
 from __future__ import annotations
 
 import importlib.util
@@ -9,12 +9,12 @@ from unittest.mock import patch
 import pytest
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
-_SCRIPT = _REPO_ROOT / "examples" / "run_vlabench_raw_policy.py"
+_SCRIPT = _REPO_ROOT / "examples" / "run_raw_policy.py"
 _SCRIPT_ARGV = [str(_SCRIPT)]
 
 
 def _load_script():
-    spec = importlib.util.spec_from_file_location("run_vlabench_raw_policy", _SCRIPT)
+    spec = importlib.util.spec_from_file_location("run_raw_policy", _SCRIPT)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     spec.loader.exec_module(module)

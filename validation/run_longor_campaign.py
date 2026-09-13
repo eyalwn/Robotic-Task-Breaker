@@ -9,7 +9,7 @@ from pathlib import Path
 from envs.vlabench_env import validate_evaluation_episode_range
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
-_EXAMPLE = _REPO_ROOT / "examples" / "run_vlabench_task.py"
+_EXAMPLE = _REPO_ROOT / "examples" / "run_longor_task.py"
 _TASK = "cook_dishes"
 
 

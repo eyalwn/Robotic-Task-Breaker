@@ -15,6 +15,7 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _Tracker = tuple[bool, float, int]
+_VLA_TARGET_ALIASES = {"plate": "plate_seen"}
 
 
 class StopReason:
@@ -109,7 +110,10 @@ class Executor:
         """Build the VLA task string for one step."""
         skill = step["skill"]
         if skill == "transfer":
-            return f"Put the {step['object_name']} into the {step['target_name']}"
+            target = step["target_name"]
+            normalized_target = target.strip().lower()
+            vla_target = _VLA_TARGET_ALIASES.get(normalized_target, target)
+            return f"Put the {step['object_name']} into the {vla_target}"
         raise KeyError(f"unsupported skill: {skill!r}")
 
     def _run_step(self, step: dict[str, str]) -> None:

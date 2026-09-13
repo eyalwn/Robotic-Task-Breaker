@@ -1,4 +1,4 @@
-"""Hermetic tests for validation/run_m3_longor.py M3 campaign contract."""
+"""Hermetic tests for validation/run_longor_campaign.py M3 campaign contract."""
 from __future__ import annotations
 
 import importlib.util
@@ -9,18 +9,18 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
-_SCRIPT = _REPO_ROOT / "validation" / "run_m3_longor.py"
+_SCRIPT = _REPO_ROOT / "validation" / "run_longor_campaign.py"
 
 
 def _load_script():
-    spec = importlib.util.spec_from_file_location("run_m3_longor", _SCRIPT)
+    spec = importlib.util.spec_from_file_location("run_longor_campaign", _SCRIPT)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
     spec.loader.exec_module(module)
     return module
 
 
-def test_run_m3_longor_campaign_runs_consecutive_indices(
+def test_run_longor_campaign_runs_consecutive_indices(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     mod = _load_script()
@@ -38,7 +38,7 @@ def test_run_m3_longor_campaign_runs_consecutive_indices(
     assert subprocess_calls == [
         [
             sys.executable,
-            str(_REPO_ROOT / "examples" / "run_vlabench_task.py"),
+            str(_REPO_ROOT / "examples" / "run_longor_task.py"),
             "--task",
             "cook_dishes",
             "--task-idx",
@@ -53,7 +53,7 @@ def test_run_m3_longor_campaign_runs_consecutive_indices(
     )
 
 
-def test_run_m3_longor_invalid_episode_count_exits_nonzero(
+def test_run_longor_campaign_invalid_episode_count_exits_nonzero(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     mod = _load_script()
@@ -63,7 +63,7 @@ def test_run_m3_longor_invalid_episode_count_exits_nonzero(
     assert "episodes must be >= 1" in out
 
 
-def test_run_m3_longor_invalid_range_exits_before_subprocess(
+def test_run_longor_campaign_invalid_range_exits_before_subprocess(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     mod = _load_script()
@@ -77,7 +77,7 @@ def test_run_m3_longor_invalid_range_exits_before_subprocess(
     assert "must be >= 0" in out
 
 
-def test_run_m3_longor_out_of_range_exits_before_subprocess(
+def test_run_longor_campaign_out_of_range_exits_before_subprocess(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     mod = _load_script()

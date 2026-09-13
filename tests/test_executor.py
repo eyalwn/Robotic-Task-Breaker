@@ -231,6 +231,15 @@ def test_transfer_task_string_is_checkpoint_native() -> None:
     assert vla.calls[0][2] == "Put the banana into the plate_seen"
 
 
+def test_transfer_prompt_maps_plate_to_plate_seen() -> None:
+    step = {"skill": "transfer", "object_name": "banana", "target_name": "plate"}
+    env = FakeEnv(subtask_after={("transfer", frozenset(step.items())): 1})
+    vla = FakeVLA()
+    executor = build_executor(env=env, vla=vla)
+    run_plan(executor, [step])
+    assert vla.calls[0][2] == "Put the banana into the plate_seen"
+
+
 def test_unknown_skill_raises() -> None:
     env = FakeEnv()
     vla = FakeVLA()
