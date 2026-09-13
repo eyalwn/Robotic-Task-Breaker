@@ -1,4 +1,4 @@
-"""Run Longor on the fixed M3 cook_dishes evaluation episodes."""
+"""Run Longor on consecutive evaluation episodes for one task."""
 from __future__ import annotations
 
 import argparse
@@ -10,33 +10,40 @@ from envs.vlabench_env import validate_evaluation_episode_range
 
 _REPO_ROOT = Path(__file__).resolve().parent.parent
 _EXAMPLE = _REPO_ROOT / "examples" / "run_longor_task.py"
-_TASK = "cook_dishes"
 
 
 def main() -> int:
-    """Run ``episodes`` consecutive M3 Longor episodes and return an exit code."""
+    """Run consecutive Longor episodes for one task and return an exit code."""
     parser = argparse.ArgumentParser()
-    parser.add_argument("episodes", type=int)
+    parser.add_argument("--task", default="select_fruit")
+    parser.add_argument("--start-idx", type=int, default=0)
+    parser.add_argument("--episodes", type=int, default=10)
     args = parser.parse_args()
+    task = args.task
+    start_idx = args.start_idx
+    episodes = args.episodes
 
-    if args.episodes < 1:
-        print(f"FAIL task={_TASK!r} error='episodes must be >= 1'")
+    if episodes < 1:
+        print(f"FAIL task={task!r} error='episodes must be >= 1'")
+        return 1
+    if start_idx < 0:
+        print(f"FAIL task={task!r} error='start_idx must be >= 0'")
         return 1
 
     try:
-        validate_evaluation_episode_range(_TASK, 0, args.episodes)
+        validate_evaluation_episode_range(task, start_idx, episodes)
     except Exception as exc:
-        print(f"FAIL task={_TASK!r} task_idx=0 error={exc!r}")
+        print(f"FAIL task={task!r} task_idx={start_idx} error={exc!r}")
         return 1
 
     successes = 0
-    for task_idx in range(args.episodes):
+    for task_idx in range(start_idx, start_idx + episodes):
         result = subprocess.run(
             [
                 sys.executable,
                 str(_EXAMPLE),
                 "--task",
-                _TASK,
+                task,
                 "--task-idx",
                 str(task_idx),
             ],
@@ -46,11 +53,10 @@ def main() -> int:
         if result.returncode == 0:
             successes += 1
 
-    total = args.episodes
-    rate = successes / total
+    rate = successes / episodes
     print(
-        f"PASS task={_TASK!r} task_idx=0 episodes={total} "
-        f"successes={successes}/{total} rate={rate:.2f}"
+        f"PASS task={task!r} start_idx={start_idx} episodes={episodes} "
+        f"successes={successes}/{episodes} rate={rate:.2f}"
     )
     return 0
 

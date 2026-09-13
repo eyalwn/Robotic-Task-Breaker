@@ -1,4 +1,4 @@
-"""Hermetic tests for validation/run_longor_campaign.py M3 campaign contract."""
+"""Hermetic tests for validation/run_longor_campaign.py campaign contract."""
 from __future__ import annotations
 
 import importlib.util
@@ -32,7 +32,19 @@ def test_run_longor_campaign_runs_consecutive_indices(
 
     with patch.object(mod.subprocess, "run", side_effect=fake_run), patch.object(
         mod, "validate_evaluation_episode_range"
-    ), patch.object(sys, "argv", [str(_SCRIPT), "10"]):
+    ), patch.object(
+        sys,
+        "argv",
+        [
+            str(_SCRIPT),
+            "--task",
+            "select_fruit",
+            "--start-idx",
+            "2",
+            "--episodes",
+            "4",
+        ],
+    ):
         assert mod.main() == 0
 
     assert subprocess_calls == [
@@ -40,15 +52,15 @@ def test_run_longor_campaign_runs_consecutive_indices(
             sys.executable,
             str(_REPO_ROOT / "examples" / "run_longor_task.py"),
             "--task",
-            "cook_dishes",
+            "select_fruit",
             "--task-idx",
             str(task_idx),
         ]
-        for task_idx in range(10)
+        for task_idx in range(2, 6)
     ]
     out = capsys.readouterr().out
     assert (
-        "PASS task='cook_dishes' task_idx=0 episodes=10 successes=5/10 rate=0.50"
+        "PASS task='select_fruit' start_idx=2 episodes=4 successes=2/4 rate=0.50"
         in out
     )
 
@@ -57,7 +69,7 @@ def test_run_longor_campaign_invalid_episode_count_exits_nonzero(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     mod = _load_script()
-    with patch.object(sys, "argv", [str(_SCRIPT), "0"]):
+    with patch.object(sys, "argv", [str(_SCRIPT), "--episodes", "0"]):
         assert mod.main() == 1
     out = capsys.readouterr().out
     assert "episodes must be >= 1" in out
@@ -70,7 +82,7 @@ def test_run_longor_campaign_invalid_range_exits_before_subprocess(
     with patch.object(mod.subprocess, "run") as run_cmd, patch.object(
         mod, "validate_evaluation_episode_range",
         side_effect=RuntimeError("must be >= 0"),
-    ), patch.object(sys, "argv", [str(_SCRIPT), "2"]):
+    ), patch.object(sys, "argv", [str(_SCRIPT), "--episodes", "2"]):
         assert mod.main() == 1
     run_cmd.assert_not_called()
     out = capsys.readouterr().out
@@ -84,8 +96,18 @@ def test_run_longor_campaign_out_of_range_exits_before_subprocess(
     with patch.object(mod.subprocess, "run") as run_cmd, patch.object(
         mod, "validate_evaluation_episode_range",
         side_effect=RuntimeError("available_config_count=10"),
-    ), patch.object(sys, "argv", [str(_SCRIPT), "3"]):
+    ), patch.object(sys, "argv", [str(_SCRIPT), "--episodes", "3"]):
         assert mod.main() == 1
     run_cmd.assert_not_called()
     out = capsys.readouterr().out
     assert "available_config_count=10" in out
+
+
+def test_run_longor_campaign_invalid_start_idx_exits_nonzero(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    mod = _load_script()
+    with patch.object(sys, "argv", [str(_SCRIPT), "--start-idx", "-1"]):
+        assert mod.main() == 1
+    out = capsys.readouterr().out
+    assert "start_idx must be >= 0" in out
