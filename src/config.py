@@ -42,6 +42,9 @@ MAX_REPLANS = 2
 MAX_SKILL_STEPS = ast.literal_eval(
     os.environ.get("MAX_SKILL_STEPS", '{"transfer": 250}')
 )
+# temporary for testing plate_seen hypothesis
+FORCE_TARGET_NAME = os.environ.get("FORCE_TARGET_NAME", "")
+
 # Transfer GT abort (sim-oracle): stall patience, hold/drop distances, progress eps.
 SKILL_STALL_STEPS = 20
 TRANSFER_HOLD_DISTANCE = 0.12

@@ -1,4 +1,4 @@
-"""Run planner-bypass Longor campaigns with a fixed transfer target token."""
+"""Run planner-bypass Longor campaigns over consecutive evaluation episodes."""
 from __future__ import annotations
 
 import argparse
@@ -9,46 +9,30 @@ from envs.sim_env import SimEnv
 from envs.vlabench_env import validate_evaluation_episode_range
 from executor import Executor, StopReason
 from utils import configure_logging
-from vla_client import VLAClient
 
 configure_logging()
 
 _GOAL_PATTERN = re.compile(r"^Put the (?P<object>.+) into the (?P<target>.+)$")
-_ORACLE_TARGET_NAME = "plate_seen"
 
 
-class _FixedPromptVLAClient(VLAClient):
-    """Send a fixed task prompt while the executor retains oracle step names."""
-
-    def __init__(self, task_prompt: str) -> None:
-        super().__init__()
-        self._task_prompt = task_prompt
-
-    def predict(
-        self,
-        images: tuple[bytes, ...],
-        state: list[float],
-        task: str,
-    ) -> list[list[float]]:
-        """Request the policy action chunk using the fixed validation prompt."""
-        return super().predict(images, state, self._task_prompt)
-
-
-def _extract_transfer_object(task_description: str) -> str:
-    """Extract the object token from a VLABench transfer goal string."""
+def _extract_transfer_step(task_description: str) -> dict[str, str]:
+    """Build one transfer step from a VLABench transfer goal string."""
     match = _GOAL_PATTERN.match(task_description.strip())
     if match is None:
         raise RuntimeError(
             "unsupported task instruction format for planner-bypass transfer: "
             f"{task_description!r}"
         )
-    return match.group("object").strip()
+    return {
+        "skill": "transfer",
+        "object_name": match.group("object").strip(),
+        "target_name": match.group("target").strip(),
+    }
 
 
 def _run_fixed_transfer_episode(
     task: str,
     task_idx: int,
-    prompt_target: str,
     max_replans: int,
 ) -> tuple[bool, int, str]:
     """Run one episode with a single fixed transfer step and return outcome."""
@@ -59,18 +43,8 @@ def _run_fixed_transfer_episode(
     success = False
     status = "execution_error"
     try:
-        object_name = _extract_transfer_object(env.task_description)
-        task_prompt = f"Put the {object_name} into the {prompt_target}"
-        step = {
-            "skill": "transfer",
-            "object_name": object_name,
-            "target_name": _ORACLE_TARGET_NAME,
-        }
-        executor._vla = _FixedPromptVLAClient(task_prompt)
-        print(
-            f"INFO task={task!r} task_idx={task_idx} "
-            f"vla_prompt={task_prompt!r} oracle_target={_ORACLE_TARGET_NAME!r}"
-        )
+        step = _extract_transfer_step(env.task_description)
+        print(f"INFO task={task!r} task_idx={task_idx} step={step!r}")
         for attempt in range(max_replans + 1):
             execution_sum = executor.run([step])
             total_steps += execution_sum.steps
@@ -99,7 +73,6 @@ def main() -> int:
     parser.add_argument("--task", default="select_fruit")
     parser.add_argument("--start-idx", type=int, default=0)
     parser.add_argument("--episodes", type=int, default=10)
-    parser.add_argument("--prompt-target", required=True)
     parser.add_argument("--max-replans", type=int, default=config.MAX_REPLANS)
     args = parser.parse_args()
 
@@ -125,7 +98,6 @@ def main() -> int:
             success, steps, detail = _run_fixed_transfer_episode(
                 task=args.task,
                 task_idx=task_idx,
-                prompt_target=args.prompt_target,
                 max_replans=args.max_replans,
             )
         except Exception as exc:
@@ -134,7 +106,7 @@ def main() -> int:
         verdict = "PASS" if success else "FAIL"
         print(
             f"{verdict} task={args.task!r} task_idx={task_idx} "
-            f"success={success} prompt_target={args.prompt_target!r} "
+            f"success={success} "
             f"steps={steps} detail={detail}"
         )
         if success:
@@ -143,7 +115,6 @@ def main() -> int:
     rate = successes / args.episodes
     print(
         f"PASS task={args.task!r} start_idx={args.start_idx} episodes={args.episodes} "
-        f"prompt_target={args.prompt_target!r} "
         f"successes={successes}/{args.episodes} rate={rate:.2f}"
     )
     return 0
