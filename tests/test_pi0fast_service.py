@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import io
 import json
-from dataclasses import dataclass
 from unittest.mock import MagicMock, patch
 
 import numpy as np
@@ -14,11 +13,7 @@ import config
 import pi0fast_service as svc
 from pi0fast_service import (
     PI0FAST_CHECKPOINT_REVISION,
-    _FAST_TOKENIZER_REPO,
-    _FAST_TOKENIZER_REVISION,
     _download_checkpoint,
-    _download_fast_tokenizer,
-    _with_pinned_fast_tokenizer,
     actions_to_wire_format,
     app,
     build_pi0fast_observation,
@@ -71,46 +66,6 @@ def test_download_checkpoint_uses_inference_only_patterns() -> None:
     assert "params/**" in calls["allow_patterns"]
     assert "assets/**" in calls["allow_patterns"]
     assert calls["ignore_patterns"] == ["train_state/**"]
-
-
-def test_download_fast_tokenizer_uses_pinned_revision() -> None:
-    pytest.importorskip("huggingface_hub")
-    calls = {}
-
-    def _fake_snapshot_download(repo_id, revision):
-        calls["repo_id"] = repo_id
-        calls["revision"] = revision
-        return "/tmp/fast"
-
-    with patch("huggingface_hub.snapshot_download", _fake_snapshot_download):
-        out = _download_fast_tokenizer()
-    assert out == "/tmp/fast"
-    assert calls == {
-        "repo_id": _FAST_TOKENIZER_REPO,
-        "revision": _FAST_TOKENIZER_REVISION,
-    }
-
-
-@dataclass(frozen=True)
-class _ModelConfig:
-    fast_model_tokenizer_kwargs: dict[str, str] | None = None
-
-
-@dataclass(frozen=True)
-class _TrainConfig:
-    model: _ModelConfig
-
-
-def test_pinned_fast_tokenizer_replaces_model_path_only() -> None:
-    train_cfg = _TrainConfig(
-        model=_ModelConfig(fast_model_tokenizer_kwargs={"other_option": "value"})
-    )
-    updated = _with_pinned_fast_tokenizer(train_cfg, "/tmp/fast")
-    assert updated.model.fast_model_tokenizer_kwargs == {
-        "other_option": "value",
-        "fast_tokenizer_path": "/tmp/fast",
-    }
-    assert train_cfg.model.fast_model_tokenizer_kwargs == {"other_option": "value"}
 
 
 def test_truncates_to_max_actions() -> None:

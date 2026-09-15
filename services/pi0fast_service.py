@@ -18,7 +18,6 @@ import logging
 import sys
 import time
 from contextlib import asynccontextmanager
-from dataclasses import replace
 
 import numpy as np
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
@@ -37,8 +36,6 @@ OPENPI_CONFIG = "pifast_ft_vlabench_primitive_aligned"
 _VLABENCH_STATE_DIM = 7
 _EXPECTED_IMAGES = 3
 _IMAGE_SIZE = 224
-_FAST_TOKENIZER_REPO = "physical-intelligence/fast"
-_FAST_TOKENIZER_REVISION = "ec4d7aa71691cac0b8bed6942be45684db2110f4"
 
 # SRD checkpoint id maps to the published Hugging Face repo name.
 _HF_CHECKPOINT_ALIASES = {
@@ -136,36 +133,6 @@ def _download_checkpoint(repo_id: str) -> str:
     )
 
 
-def _download_fast_tokenizer() -> str:
-    """Download the exact FAST tokenizer revision used for policy inference."""
-    from huggingface_hub import snapshot_download
-
-    return snapshot_download(
-        _FAST_TOKENIZER_REPO,
-        revision=_FAST_TOKENIZER_REVISION,
-    )
-
-
-def _with_pinned_fast_tokenizer(train_cfg, tokenizer_dir: str):
-    """Return a train config whose FAST tokenizer loads from ``tokenizer_dir``."""
-    try:
-        tokenizer_kwargs = dict(
-            getattr(train_cfg.model, "fast_model_tokenizer_kwargs", None) or {}
-        )
-        tokenizer_kwargs["fast_tokenizer_path"] = tokenizer_dir
-        return replace(
-            train_cfg,
-            model=replace(
-                train_cfg.model,
-                fast_model_tokenizer_kwargs=tokenizer_kwargs,
-            ),
-        )
-    except (AttributeError, TypeError) as exc:
-        raise RuntimeError(
-            "OpenPI config does not support a pinned FAST tokenizer path"
-        ) from exc
-
-
 def _load_openpi_policy():
     try:
         from openpi.policies import policy_config
@@ -182,8 +149,6 @@ def _load_openpi_policy():
     log.info("Downloading OpenPI checkpoint repo_id=%s ...", repo_id)
     checkpoint_dir = _download_checkpoint(repo_id)
     train_cfg = openpi_train_config.get_config(OPENPI_CONFIG)
-    tokenizer_dir = _download_fast_tokenizer()
-    train_cfg = _with_pinned_fast_tokenizer(train_cfg, tokenizer_dir)
     return policy_config.create_trained_policy(train_cfg, checkpoint_dir)
 
 
@@ -191,13 +156,10 @@ def _load_openpi_policy():
 async def lifespan(app: FastAPI):
     global _policy
     log.info(
-        "Loading Pi0-FAST (OpenPI) config=%s checkpoint=%s@%s "
-        "fast_tokenizer=%s@%s ...",
+        "Loading Pi0-FAST (OpenPI) config=%s checkpoint=%s@%s ...",
         OPENPI_CONFIG,
         PI0FAST_CHECKPOINT,
         PI0FAST_CHECKPOINT_REVISION,
-        _FAST_TOKENIZER_REPO,
-        _FAST_TOKENIZER_REVISION,
     )
     t0 = time.perf_counter()
     try:
