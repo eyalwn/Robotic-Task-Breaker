@@ -18,7 +18,7 @@ load_dotenv(find_dotenv())
 
 # --- App level -------------------------------------------------------------
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").strip() or "INFO"
-# Full-horizon cap for raw VLA baseline episodes (M1 baseline protocol).
+# Full-horizon action cap for all VLA evaluation episodes.
 MAX_EPISODE_STEPS = 600
 # Independent episodes per raw-policy baseline campaign.
 BASELINE_EPISODES = 10
@@ -42,8 +42,6 @@ MAX_REPLANS = 2
 MAX_SKILL_STEPS = ast.literal_eval(
     os.environ.get("MAX_SKILL_STEPS", '{"transfer": 250}')
 )
-# temporary for testing plate_seen hypothesis
-FORCE_TARGET_NAME = os.environ.get("FORCE_TARGET_NAME", "")
 
 # Transfer GT abort (sim-oracle): stall patience, hold/drop distances, progress eps.
 SKILL_STALL_STEPS = 20

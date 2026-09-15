@@ -88,8 +88,23 @@ def test_load_evaluation_episode_configs_raises_when_episode_count_exceeds_avail
     mod = _load_script()
     payload = [{"instructions": ["episode-1"]}]
     with patch.object(mod, "get_evaluation_episode_configs", return_value=payload):
-        with pytest.raises(RuntimeError, match="requested 2 episodes, but evaluation has 1"):
+        with pytest.raises(
+            RuntimeError,
+            match="requested start_idx=0 episodes=2, but evaluation has 1",
+        ):
             mod.load_evaluation_episode_configs("select_fruit", 2)
+
+
+def test_load_evaluation_episode_configs_reads_requested_range() -> None:
+    mod = _load_script()
+    payload = [
+        {"instructions": ["episode-0"]},
+        {"instructions": ["episode-1"]},
+        {"instructions": ["episode-2"]},
+    ]
+    with patch.object(mod, "get_evaluation_episode_configs", return_value=payload):
+        configs = mod.load_evaluation_episode_configs("select_fruit", 2, 1)
+    assert configs == payload[1:]
 
 
 def test_load_evaluation_episode_configs_uses_cook_dishes_evaluation() -> None:

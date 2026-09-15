@@ -45,12 +45,13 @@ and canonical SHA-256 hashes are frozen in
 `src/envs/cook_dishes_evaluation_episodes.json`.
 
 Both arms run those same ten configurations with `random_init=False` and
-`run_mode=eval`: bare π0-FAST receives the native task instruction; Longor
-receives its planner-produced sequence of existing `transfer` prompts. Report
-successes/10, success rate, and Longor-minus-bare rate. The task template is
-out of distribution for the primitive π0-FAST checkpoint, while each
-low-level transfer uses its trained pick/place behavior. Report Longor results
-as "given a subtask-completion oracle."
+`run_mode=eval`, capped at `MAX_EPISODE_STEPS`: bare π0-FAST receives the
+native task instruction; Longor receives its planner-produced sequence of
+existing `transfer` prompts. Report successes/10, success rate, and
+Longor-minus-bare rate. The task template is out of distribution for the
+primitive π0-FAST checkpoint, while each low-level transfer uses its trained
+pick/place behavior. Report Longor results as "given a subtask-completion
+oracle."
 
 ### Historical findings
 

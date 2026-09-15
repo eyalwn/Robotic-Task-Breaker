@@ -216,6 +216,21 @@ def test_runner_replans_after_skill_abort(monkeypatch: pytest.MonkeyPatch) -> No
     assert executor.run.call_count == 2
 
 
+def test_runner_episode_timeout_does_not_replan(monkeypatch: pytest.MonkeyPatch) -> None:
+    runner, planner, executor = _runner_with_stub_executor(
+        [
+            ExecutionSum(
+                reason=StopReason.EPISODE_TIMEOUT,
+                error="episode hits maximum steps-budget: 2 steps",
+            )
+        ],
+        monkeypatch,
+    )
+    assert runner.run() is False
+    assert planner.plan_calls == 1
+    assert executor.run.call_count == 1
+
+
 def test_runner_execution_error_does_not_replan(monkeypatch: pytest.MonkeyPatch) -> None:
     runner, planner, executor = _runner_with_stub_executor(
         [ExecutionSum(reason=StopReason.EXECUTION_ERROR, error="boom")],

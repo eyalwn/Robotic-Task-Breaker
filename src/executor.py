@@ -22,12 +22,17 @@ class StopReason:
 
     PLAN_DONE = "plan_done"
     SUBTASK_TIMEOUT = "subtask_timeout"
+    EPISODE_TIMEOUT = "episode_timeout"
     SKILL_ABORT = "skill_abort"
     EXECUTION_ERROR = "execution_error"
 
 
 class SkillTimeout(Exception):
     """Per-skill step cap reached without subtask success."""
+
+
+class EpisodeTimeout(Exception):
+    """episode step cap reached without subtask success."""
 
 
 class SkillAbort(Exception):
@@ -90,6 +95,13 @@ class Executor:
                 steps=self._env.steps - steps_at_start,
                 error=str(exc),
             )
+        except EpisodeTimeout as exc:
+            logger.info("episode timed out: %s", exc)
+            return ExecutionSum(
+                reason=StopReason.EPISODE_TIMEOUT,
+                steps=self._env.steps - steps_at_start,
+                error=str(exc),
+            )
         except SkillAbort as exc:
             logger.info("skill aborted: %s", exc)
             return ExecutionSum(
@@ -110,16 +122,16 @@ class Executor:
         skill = step["skill"]
         object_name = step['object_name']
         target_name = step['target_name']
-        if config.FORCE_TARGET_NAME:
-            target_name = config.FORCE_TARGET_NAME
         if skill == "transfer":
             return f"Put the {object_name} into the {target_name}"
         raise KeyError(f"unsupported skill: {skill!r}")
 
     def _run_step(self, step: dict[str, str]) -> None:
-        """Run one skill until subtask success. Raise SkillTimeout or SkillAbort."""
+        """Run one skill until subtask success.
+
+        Raise SkillTimeout, EpisodeTimeout, or SkillAbort.
+        """
         prompt = self._build_vla_task(step)
-        max_skill_steps = config.MAX_SKILL_STEPS[step["skill"]]
         logger.debug("full skill prompt: %s", prompt)
         skill_steps = 0
         tracker: _Tracker = (False, math.inf, 0)
@@ -132,15 +144,23 @@ class Executor:
                 is_done = is_done or self._env.check_subtask(step)
                 if is_done:
                     return
-                if skill_steps >= max_skill_steps:
-                    raise SkillTimeout(
-                        f"{step['skill']} exceeded {max_skill_steps} steps"
-                    )
+                self._enforce_max_steps_budget(step, skill_steps)
                 distances = self._env.transfer_distances(step)
                 logger.debug("steps=%d, distances=%s, check_subtask=%s",
                     skill_steps, distances, is_done)
                 tracker = self._abort_if_stuck(step, tracker, distances)
-
+    
+    def _enforce_max_steps_budget(self, step, skill_steps):
+        """Raise SkillTimeout / EpisodeTimeout if either MAX_SKILL_STEPS / 
+            MAX_EPISODE_STEPS was exceeded."""
+        max_skill_steps = config.MAX_SKILL_STEPS[step["skill"]]
+        if skill_steps >= max_skill_steps:
+            raise SkillTimeout(
+                f"{step['skill']} exceeded {max_skill_steps} steps")
+        elif self._env.steps >= config.MAX_EPISODE_STEPS:
+            raise EpisodeTimeout(
+                f"episode hits maximum steps-budget: {self._env.steps} steps")
+    
     def _abort_if_stuck(
         self,
         step: dict[str, str],

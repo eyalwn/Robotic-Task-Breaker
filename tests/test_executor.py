@@ -8,7 +8,7 @@ import pytest
 
 import config
 from conftest import FakeEnv, FakeVLA, build_executor, make_plan, run_plan
-from executor import SkillAbort, SkillTimeout, StopReason
+from executor import EpisodeTimeout, SkillAbort, SkillTimeout, StopReason
 
 
 class FakeEnvStepDone(FakeEnv):
@@ -90,6 +90,20 @@ def test_subtask_timeout_returns_summary() -> None:
     assert len(env.step_calls) == 2
 
 
+def test_episode_timeout_returns_summary() -> None:
+    env = FakeEnv()
+    vla = FakeVLA(actions=[[0.0] * 7])
+    executor = build_executor(env=env, vla=vla)
+    plan = make_plan(
+        [{"skill": "transfer", "object_name": "cube", "target_name": "basket"}]
+    )
+    with patch("config.MAX_EPISODE_STEPS", 2):
+        result = run_plan(executor, plan)
+    assert result.reason == StopReason.EPISODE_TIMEOUT
+    assert result.error == "episode hits maximum steps-budget: 2 steps"
+    assert len(env.step_calls) == 2
+
+
 def test_transfer_subtask_success_immediate() -> None:
     env = FakeEnv(
         subtask_satisfied={
@@ -158,6 +172,20 @@ def test_skill_timeout_contract() -> None:
         with pytest.raises(SkillTimeout, match="exceeded 3 steps"):
             executor._run_step(step)
     assert len(env.step_calls) == 3
+
+
+def test_episode_timeout_contract() -> None:
+    """Skills without subtask success time out at the episode cap."""
+    env = FakeEnv()
+    vla = FakeVLA(actions=[[0.0] * 7])
+    executor = build_executor(env=env, vla=vla)
+    step = {"skill": "transfer", "object_name": "cube_1", "target_name": "basket"}
+    with patch("config.MAX_EPISODE_STEPS", 2):
+        with pytest.raises(
+            EpisodeTimeout, match="episode hits maximum steps-budget: 2 steps"
+        ):
+            executor._run_step(step)
+    assert len(env.step_calls) == 2
 
 
 def test_skill_done_when_subtask_already_satisfied() -> None:
@@ -231,13 +259,13 @@ def test_transfer_task_string_is_checkpoint_native() -> None:
     assert vla.calls[0][2] == "Put the banana into the plate_seen"
 
 
-def test_transfer_prompt_maps_plate_to_plate_seen() -> None:
+def test_transfer_prompt_uses_target_name_as_is() -> None:
     step = {"skill": "transfer", "object_name": "banana", "target_name": "plate"}
     env = FakeEnv(subtask_after={("transfer", frozenset(step.items())): 1})
     vla = FakeVLA()
     executor = build_executor(env=env, vla=vla)
     run_plan(executor, [step])
-    assert vla.calls[0][2] == "Put the banana into the plate_seen"
+    assert vla.calls[0][2] == "Put the banana into the plate"
 
 
 def test_unknown_skill_raises() -> None:

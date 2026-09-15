@@ -89,7 +89,9 @@ Set `SAVE_VIDEO=1` in `.env` to write `run.mp4`.
 Colab launchers:
 
 - `colab/run_longor_task.ipynb` — Longor single-episode path (`examples/run_longor_task.py`).
-- `colab/run_longor_campaign.ipynb` — Longor M3 campaign (`validation/run_longor_campaign.py`).
+- `colab/run_longor_campaign.ipynb` — raw-policy versus executor control
+  (`examples/run_raw_policy.py` and
+  `validation/run_longor_fixed_plan_campaign.py`; no planner/LLM).
 - `colab/run_raw_policy.ipynb` — bare pi0-fast baseline, 10 episodes (`examples/run_raw_policy.py`; no planner/LLM).
 
 ## Tests

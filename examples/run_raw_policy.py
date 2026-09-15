@@ -33,23 +33,31 @@ def run_episode(env, vla: VLAClient) -> bool:
     return env.success()
 
 
-def load_evaluation_episode_configs(task: str, episodes: int) -> list[dict[str, object]]:
-    """Load the first N evaluation configs for one task."""
+def load_evaluation_episode_configs(
+    task: str,
+    episodes: int,
+    start_idx: int = 0,
+) -> list[dict[str, object]]:
+    """Load a consecutive evaluation range for one task."""
     configs = get_evaluation_episode_configs(task)
-    if episodes > len(configs):
+    if start_idx < 0 or start_idx + episodes > len(configs):
         raise RuntimeError(
-            f"requested {episodes} episodes, but evaluation has {len(configs)} "
-            f"for {task!r}"
+            f"requested start_idx={start_idx} episodes={episodes}, but evaluation "
+            f"has {len(configs)} for {task!r}"
         )
-    return configs[:episodes]
+    return configs[start_idx : start_idx + episodes]
 
 
-def run_baseline(task: str, episodes: int) -> tuple[int, int]:
+def run_baseline(
+    task: str,
+    episodes: int,
+    start_idx: int = 0,
+) -> tuple[int, int]:
     """Run ``episodes`` independent raw-policy episodes. Return (successes, total)."""
     vla = VLAClient()
     successes = 0
-    episode_configs = load_evaluation_episode_configs(task, episodes)
-    for episode_idx, episode_config in enumerate(episode_configs):
+    episode_configs = load_evaluation_episode_configs(task, episodes, start_idx)
+    for episode_idx, episode_config in enumerate(episode_configs, start=start_idx):
         env = VLABenchEnv.from_track_episode(task, episode_config)
         try:
             logger.info(
@@ -61,9 +69,9 @@ def run_baseline(task: str, episodes: int) -> tuple[int, int]:
             )
             if run_episode(env, vla):
                 successes += 1
-                logger.info("episode %s succeeded", episode_idx + 1)
+                logger.info("episode %s succeeded", episode_idx)
             else:
-                logger.info("episode %s failed (step cap or goal not met)", episode_idx + 1)
+                logger.info("episode %s failed (step cap or goal not met)", episode_idx)
         finally:
             env.close()
     return successes, len(episode_configs)
@@ -73,6 +81,7 @@ def main() -> int:
     """Parse CLI args, run the baseline campaign, and return an exit code."""
     parser = argparse.ArgumentParser()
     parser.add_argument("--task", default="select_fruit")
+    parser.add_argument("--start-idx", type=int, default=0)
     parser.add_argument("--episodes", type=int, default=config.BASELINE_EPISODES)
     args = parser.parse_args()
     configure_logging()
@@ -80,9 +89,12 @@ def main() -> int:
     if args.episodes < 1:
         print(f"FAIL task={args.task!r} error='episodes must be >= 1'")
         return 1
+    if args.start_idx < 0:
+        print(f"FAIL task={args.task!r} error='start_idx must be >= 0'")
+        return 1
 
     try:
-        successes, total = run_baseline(args.task, args.episodes)
+        successes, total = run_baseline(args.task, args.episodes, args.start_idx)
     except Exception as exc:
         logger.exception("baseline campaign failed")
         print(f"FAIL task={args.task!r} error={exc!r}")
