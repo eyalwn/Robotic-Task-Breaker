@@ -25,14 +25,14 @@ def test_run_longor_task_pass_exits_zero(capsys: pytest.CaptureFixture[str]) -> 
     code = _run_script(success=True)
     assert code == 0
     out = capsys.readouterr().out
-    assert "PASS task='select_fruit' task_idx=3 success=True" in out
+    assert "PASS task='open_drawer' task_idx=3 success=True" in out
 
 
 def test_run_longor_task_fail_exits_nonzero(capsys: pytest.CaptureFixture[str]) -> None:
     code = _run_script(success=False)
     assert code == 1
     out = capsys.readouterr().out
-    assert "FAIL task='select_fruit' task_idx=3 success=False" in out
+    assert "FAIL task='open_drawer' task_idx=3 success=False" in out
 
 
 def test_run_longor_task_forwards_task_idx() -> None:
@@ -40,7 +40,7 @@ def test_run_longor_task_forwards_task_idx() -> None:
         runner_cls.return_value.run.return_value = True
         with pytest.raises(SystemExit):
             runpy.run_path(str(_SCRIPT), run_name="__main__")
-    runner_cls.assert_called_once_with("select_fruit", 3)
+    runner_cls.assert_called_once_with("open_drawer", 3)
 
 
 def test_run_longor_task_construction_error_prints_fail_and_exits_nonzero(
@@ -53,5 +53,5 @@ def test_run_longor_task_construction_error_prints_fail_and_exits_nonzero(
             runpy.run_path(str(_SCRIPT), run_name="__main__")
     assert exc.value.code == 1
     out = capsys.readouterr().out
-    assert "FAIL task='select_fruit' task_idx=3" in out
+    assert "FAIL task='open_drawer' task_idx=3" in out
     assert "bad task_idx" in out

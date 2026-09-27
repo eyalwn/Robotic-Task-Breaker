@@ -19,4 +19,8 @@ class SimEnv:
             from envs.vlabench_env import VLABenchEnv
 
             return VLABenchEnv.from_evaluation_episode_index(task, task_idx)
+        if sim == "robocasa":
+            from envs.robocasa_env import RoboCasaEnv
+
+            return RoboCasaEnv.from_task(task, task_idx)
         raise AssertionError(f"{sim!r} not supported for this env")

@@ -6,10 +6,6 @@ task into short steps a VLA can execute.
 It is platform-generic: switch LLM, VLA, or simulator with a venv plus
 constants in `src/config.py`. One of each per process. Contracts: `SRD.md`.
 
-Default stack: **VLAbench** + **π0-fast**
-(`VLABench/pi0-fast-primitive-10task-deltachunk`),
-Linux + NVIDIA/CUDA.
-
 ## Setup
 
 Two envs are required in repo root:
@@ -25,7 +21,12 @@ cp .env.example .env
 
 Set `OPENAI_API_KEY` in `.env` (do not commit this file).
 
-### 2 - App venv (VLAbench)
+Current defaults:
+
+- `SIM_ENV = "robocasa"` in `src/config.py`
+- `VLA_POLICY = "groot"` from `.env` default in `src/config.py`
+
+### 2 - App venv (VLAbench legacy stack)
 
 Python 3.10. Run each command from the repo root:
 
@@ -53,7 +54,7 @@ export MUJOCO_GL=egl
 export PYOPENGL_PLATFORM=egl
 ```
 
-### 3 - Policy venv (default: π0-fast / VLAbench)
+### 3 - Policy venv (π0-fast legacy stack)
 
 ```bash
 python3.11 -m venv .vla-venv
@@ -65,34 +66,43 @@ git clone --recurse-submodules https://github.com/Shiduo-zh/openpi ../openpi
 .vla-venv/bin/python -m pip install -e .
 ```
 
+For the default RoboCasa + GR00T stack, install Isaac-GR00T on Linux and run
+the GR00T adapter service (`services/groot_service.py`).
+
 ## Usage
 
-**Terminal A - policy service.** Wait for it to report that it is listening
-(startup includes a checkpoint download on first run).
+**Terminal A — policy service.** Wait until it reports listening (first run may
+download a checkpoint).
 
 ```bash
 source .vla-venv/bin/activate
-python services/run_vla_server.py          # config.VLA_POLICY selects pi0fast
+python services/run_vla_server.py
 ```
 
-**Terminal B - the run.**
+**Terminal B — the run.**
 
 ```bash
 source .venv/bin/activate
-python examples/run_longor_task.py --task select_fruit --task-idx 0
+python examples/run_longor_task.py --task open_drawer --task-idx 0
 ```
 
 The client talks to `http://127.0.0.1:8765` and is backend-agnostic.
 
+For legacy VLABench runs, switch `SIM_ENV` to `"vlabench"` in `src/config.py`
+and set `VLA_POLICY=pi0fast` in `.env`.
+
 Set `SAVE_VIDEO=1` in `.env` to write `run.mp4`.
 
-Colab launchers:
+Colab launchers (orchestration lives in Python scripts they call):
 
-- `colab/run_longor_task.ipynb` — Longor single-episode path (`examples/run_longor_task.py`).
-- `colab/run_longor_campaign.ipynb` — M3 `cook_dishes` campaign: bare
-  pi0-fast baseline versus full Longor (`examples/run_raw_policy.py` and
-  `validation/run_longor_campaign.py`).
-- `colab/run_raw_policy.ipynb` — bare pi0-fast baseline, 10 episodes (`examples/run_raw_policy.py`; no planner/LLM).
+- `colab/run_longor_task.ipynb` — **M2** primary launcher: one RoboCasa
+  OpenDrawer Longor episode (`examples/run_longor_task.py`; optional live
+  `validation/run_robocasa_m2_gate.py`).
+- `colab/run_robocasa_primitive_gate.ipynb` — **M1** upstream-only RoboCasa /
+  GR00T primitive suitability gate (no Longor planner/executor).
+
+RoboCasa raw-policy smoke: `python examples/run_robocasa_raw_policy.py`
+(Linux, set `SIM_ENV` to `"robocasa"` in `src/config.py`, GR00T service up).
 
 ## Tests
 
@@ -102,9 +112,7 @@ With `.venv` active:
 pytest
 ```
 
-Unit tests are hermetic: no live sim, no network. They cover executor step
-flow, runner stop/verdict flow, plan parsing, VLA client wire contract, and
-planner JSON extraction/retry.
+Unit tests are hermetic: no live sim, no network.
 
 Opt-in live planner check (non-hermetic, billed OpenAI calls; Windows-ok; no
 sim). Needs `OPENAI_API_KEY` in `.env` / environment:

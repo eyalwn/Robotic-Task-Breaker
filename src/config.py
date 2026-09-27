@@ -29,7 +29,7 @@ VIDEO_PATH = os.environ.get("VIDEO_PATH", "run.mp4")
 VIDEO_FPS = int(os.environ.get("VIDEO_FPS", "10"))
 
 # --- sim environment -------------------------------------------------------
-SIM_ENV = "vlabench"  # "vlabench"
+SIM_ENV = "robocasa"  # "robocasa" | "vlabench"
 
 # --- Planner ---------------------------------------------------------------
 LLM_MODEL = os.environ.get("LLM_MODEL", "gpt-4.1-mini").strip()
@@ -39,8 +39,12 @@ MAX_REPLANS = 2
 
 # --- Executor --------------------------------------------------------------
 # Per-skill step cap (guard against a failing subtask; success path ends earlier).
+# Includes `open_drawer` timeout for RoboCasa M2.
 MAX_SKILL_STEPS = ast.literal_eval(
-    os.environ.get("MAX_SKILL_STEPS", '{"transfer": 250}')
+    os.environ.get(
+        "MAX_SKILL_STEPS",
+        '{"transfer": 250, "open_drawer": 720}',
+    )
 )
 
 # Transfer GT abort (sim-oracle): stall patience, hold/drop distances, progress eps.
@@ -51,7 +55,7 @@ TRANSFER_PROGRESS_EPS = 0.01
 
 # --- VLA server ------------------------------------------------------------
 # VLA backend selection (launcher default)
-VLA_POLICY = os.environ.get("VLA_POLICY", "pi0fast")  # "pi0fast" | "smolvla"
+VLA_POLICY = os.environ.get("VLA_POLICY", "groot")  # "groot" | "pi0fast" | "smolvla"
 # Max actions returned per /predict response (enforced by the VLA service).
 VLA_ACTIONS_PER_CHUNK = int(os.environ.get("VLA_ACTIONS_PER_CHUNK", "5"))
 VLA_PORT = 8765

@@ -43,6 +43,10 @@ def _parse_step(step: dict) -> Step:
     if not isinstance(skill, str) or not skill.strip():
         raise ValueError("each step requires a non-empty 'skill'")
     skill_name = skill.strip()
+    if skill_name == "open_drawer":
+        if step.get("object_name") or step.get("target_name"):
+            raise ValueError("open_drawer step must not include transfer fields")
+        return {"skill": "open_drawer"}
     if skill_name != "transfer":
         raise ValueError(f"unsupported skill: {skill_name!r}")
 

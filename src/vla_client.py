@@ -1,7 +1,8 @@
 """HTTP client for the VLA policy service (``services/run_vla_server.py``).
 
 Wire contract: ``POST /predict`` with multipart JPEG frames plus a JSON-encoded
-state, answered with ``{"actions": [[...7 floats...], ...]}``.
+state, answered with ``{"actions": [[...], ...]}``. Action vectors must be
+finite; every vector in a chunk shares the same length (inferred from the first).
 """
 from __future__ import annotations
 
@@ -13,8 +14,6 @@ import requests
 import config
 
 logger = logging.getLogger(__name__)
-
-ACTION_DIM = 7
 
 
 class VLAError(Exception):
@@ -45,7 +44,7 @@ class VLAClient:
         state: list[float],
         task: str,
     ) -> list[list[float]]:
-        """Return a chunk of 7-D actions for the current observation."""
+        """Return a chunk of validated action vectors for the current observation."""
         if not images:
             raise VLAError("predict requires at least one image frame")
         try:
@@ -68,12 +67,26 @@ class VLAClient:
         actions = payload.get("actions")
         if not isinstance(actions, list) or not actions:
             raise VLAError(f"expected a non-empty 'actions' list, got {payload!r}")
-        return [self._validate(action, idx) for idx, action in enumerate(actions)]
+        return self._validate_chunk(actions)
+
+    def _validate_chunk(self, actions: list[object]) -> list[list[float]]:
+        out: list[list[float]] = []
+        chunk_dim: int | None = None
+        for idx, action in enumerate(actions):
+            vec = self._parse_action(action, idx)
+            if chunk_dim is None:
+                chunk_dim = len(vec)
+            elif len(vec) != chunk_dim:
+                raise VLAError(
+                    f"action {idx} length {len(vec)} != chunk length {chunk_dim}"
+                )
+            out.append(vec)
+        return out
 
     @staticmethod
-    def _validate(action: object, idx: int) -> list[float]:
-        if not isinstance(action, list) or len(action) != ACTION_DIM:
-            raise VLAError(f"action {idx} must be {ACTION_DIM} floats, got {action!r}")
+    def _parse_action(action: object, idx: int) -> list[float]:
+        if not isinstance(action, list) or not action:
+            raise VLAError(f"action {idx} must be a non-empty float list, got {action!r}")
         try:
             values = [float(v) for v in action]
         except (TypeError, ValueError) as exc:

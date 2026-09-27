@@ -250,6 +250,29 @@ def test_transfer_subtask_success_after_steps() -> None:
     assert len(env.step_calls) == 2
 
 
+def test_open_drawer_task_string_and_skips_transfer_abort() -> None:
+    step = {"skill": "open_drawer"}
+    env = FakeEnv(
+        subtask_after={("open_drawer", frozenset(step.items())): 1},
+        distances=(1.0, 1.0),
+    )
+    vla = FakeVLA(actions=[[0.0] * 12])
+    executor = build_executor(env=env, vla=vla)
+    run_plan(executor, [step])
+    assert vla.calls[0][2] == "Open the drawer"
+    assert len(env.step_calls) == 1
+
+
+def test_open_drawer_check_subtask_completes_skill() -> None:
+    step = {"skill": "open_drawer"}
+    env = FakeEnv(subtask_satisfied={("open_drawer", frozenset(step.items())): True})
+    vla = FakeVLA(actions=[[0.0] * 12])
+    executor = build_executor(env=env, vla=vla)
+    result = run_plan(executor, [step])
+    assert result.reason == StopReason.PLAN_DONE
+    assert len(env.step_calls) == 1
+
+
 def test_transfer_task_string_is_checkpoint_native() -> None:
     step = {"skill": "transfer", "object_name": "banana", "target_name": "plate_seen"}
     env = FakeEnv(subtask_after={("transfer", frozenset(step.items())): 1})

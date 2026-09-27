@@ -5,7 +5,7 @@ from runner import Runner
 from utils import configure_logging
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--task", default="select_fruit")
+parser.add_argument("--task", default="open_drawer")
 parser.add_argument("--task-idx", type=int, default=0)
 args = parser.parse_args()
 configure_logging()

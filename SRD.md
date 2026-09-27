@@ -1,201 +1,96 @@
 # Longor SRD
 
-Single source of truth for Longor runtime architecture and contracts.
-Operational runbook details live in `README.md`.
+Architecture and runtime contracts. Operational setup: `README.md`.
 
 ## Goal
 
-Longor is a thin software layer that lets an LLM break a long-horizon robot
-task into short steps a VLA can execute.
-
-Hypothesis (next milestones): Longor beats a bare VLA on long-horizon tasks.
-The hypothesis is platform-agnostic; benches and checkpoints are how we test it.
-
-This is intentionally not an AST system.
+Thin LLM planner + VLA executor layer for long-horizon sim tasks. Not an AST
+system.
 
 ## Milestones
 
-- **M1 — DONE.** Bare π0-FAST solves VLABench `select_fruit` at least once.
-- **M2 — DONE.** Longor solves one fixed, held-out Track-1 `select_fruit`
-episode.
-- **M3 — ACTIVE.** Establish bare-VLA and Longor success rates on ten fixed
-`cook_dishes` episodes.
+- **M1 — DONE.** Upstream-only RoboCasa / GR00T N1.6 primitive suitability
+  gate (Colab `colab/run_robocasa_primitive_gate.ipynb`). No Longor
+  planner/executor/`VLAClient`. Artifacts on Drive, not in repo.
+- **M2 — ACTIVE.** Longor OpenDrawer on RoboCasa (`OpenDrawer_PandaOmron_Env`)
+  with GR00T N1.6-3B via existing HTTP VLA contract. Colab launcher:
+  `colab/run_longor_task.ipynb` → `examples/run_longor_task.py`.
+- **M3 — not formalized.** Longer-horizon RoboCasa or alternate sim targets are
+  deferred until M2 gate evidence is stable; no committed M3 contract yet.
 
+**M1 pass:** ≥7/10 successes in upstream `rollout.log` (`GATE_PASS` in
+`verdict.txt`). Reference run: checkpoint `nvidia/GR00T-N1.6-3B`, embodiment
+`ROBOCASA_PANDA_OMRON`, env `robocasa_panda_omron/OpenDrawer_PandaOmron_Env`,
+10×720 steps, 8 actions/call, upstream server `127.0.0.1:5555`. Observed **8/10**
+(external verdict path).
 
+**M2 boundary:** Same Longor stack as VLABench (`Runner` → planner → executor
+→ `VLAClient` → `SimEnv`). GR00T adapter in `services/groot_service.py` bridges
+HTTP `:8765` to upstream ZMQ `:5555`. RoboCasa wire keys/dims live in
+`src/envs/robocasa_env.py` (pinned n1d6 PandaOmron processor order). Skill
+`open_drawer`; VLA prompt `Open the drawer` until verified against pinned
+upstream. Subtask completion uses documented sim drawer oracle (report as
+"given a subtask-completion oracle"). No retuning between policy output and
+`env.step()`. Validation: `validation/run_robocasa_m2_gate.py` — Stage A raw
+OpenDrawer ≥7/10; Stage B one `Runner` episode; live stages need Linux +
+`SIM_ENV = "robocasa"` in `src/config.py` and `VLA_POLICY=groot` in `.env`.
+Gate artifacts under `validation/artifacts/robocasa_m2_gate/` (gitignored).
 
-### Notes about success-rate evaluation
+VLAbench + π0-FAST remains in tree as alternate stack (`SIM_ENV = "vlabench"`
+in `src/config.py`, `VLA_POLICY=pi0fast` in `.env`).
 
-M1 baseline protocol: `select_fruit`; the first `BASELINE_EPISODES` (= 10)
-configs from the installed VLABench package's
-`configs/evaluation/tracks/track_1_in_distribution.json`; deterministic
-`episode_config` entries (`random_init=False`, `run_mode=eval`); native
-`env.task_description` on every `/predict`; raw `VLAClient` loop (no `Runner`,
-planner, or executor); full returned chunks with `VLA_ACTIONS_PER_CHUNK = 5`;
-stop on `env.success()` or `MAX_EPISODE_STEPS`; report aggregate success rate.
-Working verdict is `success_rate > 0.30` (at least 4/10). This is a
-cost-bounded subset of the upstream 50-episode protocol.
+## Historical findings (legacy experiments)
 
-### M3 evaluation protocol
-
-M3 evaluates `cook_dishes` on examples 0–9 from
-`VLABench/vlm_evaluation_v1.0`, revision
-`b432f0c69ec0731935ff49a916d460936a000624`, under
-`Complex/cook_dishes/example{N}/env_config/env_config.json`. Exact payloads
-and canonical SHA-256 hashes are frozen in
-`src/envs/cook_dishes_evaluation_episodes.json`.
-
-Both arms run those same ten configurations with `random_init=False` and
-`run_mode=eval`, capped at `MAX_EPISODE_STEPS`: bare π0-FAST receives the
-native task instruction; Longor receives its planner-produced sequence of
-existing `transfer` prompts. Report successes/10, success rate, and
-Longor-minus-bare rate. The task template is out of distribution for the
-primitive π0-FAST checkpoint, while each low-level transfer uses its trained
-pick/place behavior. Report Longor results as "given a subtask-completion
-oracle."
-
-### Historical findings
-
-- Bare `VLABench/pi0-fast-ft-primitive-10task-deltachunk` achieved **6/10** on
-the first ten held-out `select_fruit` Track-1 episodes, using native
-instructions and VLABench SHA `cf588fe60c0c7282174fe979f5913170cfe69017`.
+- Bare `VLABench/pi0-fast-primitive-10task-deltachunk` achieved **6/10** on
+  held-out `select_fruit` Track-1 episodes.
+- Longor on VLABench `cook_dishes` (10 fixed episodes) achieved **0/10**;
+  failure split: **6/10** physical stalls and **4/10** oracle-grounding mismatch.
 - `lerobot/smolvla_vlabench` achieved **0/8** full-horizon `select_fruit`
-episodes before the campaign was OOM-killed; it cannot support a diagnostic
-Longor comparison.
-- In the previous LIBERO scene, `pi05_libero` mostly ignored subtask language:
-when asked to grab tomato sauce first, it still approached alphabet soup.
-
-
-
-### Current
-
-`pi0fast` / VLABench is the active low-level policy pair.
+  before OOM termination.
+- Provenance for these historical results is external Colab artifacts (not
+  fully auditable from committed repo files).
 
 ## Architecture
 
-Source layout is flat modules under `src/`, with the exception of `src/envs/`.
-Dependencies flow downward only:
+Flat modules under `src/`, sim backends under `src/envs/` only. Dependency order:
 
-`config -> vla_client / envs.sim_env -> plan -> skills -> executor -> planner -> runner`
+`config → vla_client / envs.sim_env → plan → skills → executor → planner → runner`
 
-Module responsibilities:
+- `config.py`: cross-module defaults and `.env` switches only (no task identity,
+  no backend wire schemas).
+- `SimEnv.__new__(task, task_idx=0)`: lazy-imports configured backend; no method
+  forwarding on the facade.
+- VLA integration in `executor.py` (one path). `Runner` owns STOP and final
+  verdict; `Executor` does not.
+- `observe()` → `(images, state)` with JPEG tuple + float list; planner uses
+  `images[0]`.
+- Missing backend API: hard stop with `'not supported for this env'`.
+- No `*args`/`**kwargs` in `src/**` or `services/**`.
 
-- `config.py`: user-selectable runtime composition and cross-module defaults,
-plus `.env` switches. No task identity here.
-- `.env`: where user-defined runtime switches and secrets live. `src/config.py`
-is the only runtime reader of environment variables. `.env` must match
-`.env.example`. Adding or changing an env var requires explicit SRD-level
-approval.
-- `envs/sim_env.py`: `SimEnv` factory. `__new__(task: str, task_idx: int = 0)`
-lazy-imports the configured VLABench backend and returns that instance (no
-method forwarding). `task_idx` selects the deterministic held-out Track-1
-episode configuration for VLABench primitives, or the frozen M3 configuration
-for `cook_dishes`; it defaults to the first config.
-- `vla_client.py`: HTTP client for the VLA policy service (backend-agnostic).
-- `plan.py`: step-array / STOP parsing.
-- `skills.py`: static skill catalog text for planner prompting.
-- `executor.py`: linear step executor; owns VLA-to-env control loop.
-- `planner.py`: LLM planner that emits step arrays or STOP.
-- `runner.py`: composition root; observe → plan → execute, then replan up
-to `MAX_REPLANS` after skill abort or subtask timeout.
-`Runner(task: str, task_idx: int = 0)` forwards those args to `SimEnv`.
+## Plan and skills
 
-Non-negotiable boundaries:
+Planner JSON: step array or `{"stop":"<reason>"}`.
 
-- VLA-to-environment integration lives in `executor.py` in one visible path.
-- No hidden retuning layer between policy output and `env.step()` (no remap,
-rescale, sign flips, success rewriting). Transfer stall/drop abort is a
-sim-GT termination check, not an action rewrite.
-- User-selectable runtime composition and cross-module defaults live in
-`config.py`. Backend-specific implementation constants stay in their owning
-modules.
-- Runtime signatures in `src/**` and `services/**` name every parameter; no
-`*args` / `**kwargs`.
-- `Executor` does **not** decide global task success and does **not** evaluate
-planner STOP payloads.
-- `Runner` handles planner STOP and computes final run verdict.
+Skills:
 
+- `open_drawer` — RoboCasa slice (no extra fields).
+- `transfer(object_name, target_name)` — VLABench; VLA string
+  `Put the <object> into the <target>`.
 
+## VLA service contract
 
-## Plan and Skill Contract
+Launch: `python services/run_vla_server.py` (`config.VLA_POLICY` selects module).
 
+- `GET /health` → `{"status":"ok","model":"<id>"}`; optional int `action_dim`.
+- `POST /predict` multipart: JPEG `images` (order = `observe()`), `task` string,
+  `state` JSON float array → `{"actions": [[…], …]}`.
+- Services cap chunk length at `config.VLA_ACTIONS_PER_CHUNK`.
+- **Raw action guarantee:** validate shape and finiteness only; no rescale/remap.
+  `vla_client` infers vector length from the first action in a chunk and requires
+  all vectors in the chunk to match.
+- Backend-specific camera/state asserts → HTTP 400; no silent padding.
 
+`src/vla_client.py` stays backend-agnostic. Contract changes recorded here first.
 
-### Planner output
-
-Planner output must be one of:
-
-1. Executable steps (NL object/target names from the scene snapshot and goal):
-  ```json
-   [
-     {"skill":"transfer","object_name":"banana","target_name":"plate_seen"}
-   ]
-  ```
-2. STOP sentinel:
-  ```json
-   {"stop":"<reason>"}
-  ```
-
-
-
-### Skill set
-
-Runtime skills are:
-
-- `transfer(object_name, target_name)`
-
-For π0-FAST/VLABench, `transfer` maps exactly to
-`Put the <object_name> into the <target_name>`. Do not add skills until a task
-or selected M3 suite requires them. M3 `cook_dishes` requires no new skill:
-the planner emits one `transfer` step per recipe ingredient.
-
-M2 uses `Runner("select_fruit", task_idx)`, where `task_idx` selects one
-held-out `select_fruit` configuration from Track 1.
-
-## VLA Service Contract
-
-One HTTP policy transport, with each service module specific to one simulator
-and checkpoint. Launch via `python services/run_vla_server.py`. The launcher
-selects the module exclusively from `config.VLA_POLICY`; it has no policy CLI
-argument.
-
-Backend modules expose the same wire contract:
-
-- `GET /health` -> `{"status":"ok","model":"<id>"}`
-- `POST /predict` (multipart):
-  - `images`: one or more JPEG parts, field name `images`, order matches
-  `observe()` cameras
-  - `task` (string)
-  - `state` (JSON array of floats; length is the env's)
-  - response: `{"actions": [[7 floats], ...]}`
-  - **Raw action guarantee:** services and `vla_client` validate shape and
-  finiteness only. They must never clip, rescale, or otherwise modify a valid
-  7-D vector. SmolVLA outputs (including roll targets near π radians) pass
-  through unchanged to `env.step()`.
-  - `actions` length is capped by `config.VLA_ACTIONS_PER_CHUNK` on the
-  **service** before the response is returned. Clients must execute the full
-  returned chunk and must not trim it again.
-
-Each service asserts the camera count and state length its checkpoint needs
-(HTTP 400 on mismatch). No silent padding/dropping:
-
-- `smolvla` / `lerobot/smolvla_vlabench`: 3 images, 7-D state. Observation keys
-`observation.images.camera1|camera2|camera3` (front, second, wrist).
-- `pi0fast` / `VLABench/pi0-fast-primitive-10task-deltachunk`: VLABench-only.
-Its service must assert the upstream checkpoint's documented camera/state
-schema. OpenPI's native inference output transform converts its generated
-delta chunk to absolute EEF actions before `infer()` returns. Longor sends
-those 7-D actions unchanged through the service/client/executor path.
-`src/envs/vlabench_env.py` applies only simulator-native conversion when
-stepping the env: camera remap to the policy's documented 3-view order and
-gripper thresholding (`>= 0.1` open, else closed) to Franka finger controls.
-
-> **Verified 2026-08-28:** `lerobot/smolvla_vlabench` checkpoint metadata
-> declares a 6-D state, but its loaded normalizer has 7-D state statistics and
-> fails on a 6-D input. This is upstream metadata inconsistency, not an
-> environment/service dimension mismatch. Preserve the documented 7-D VLABench
-> state; never drop its gripper component based on that metadata.
-
-Backend selection is a `config.py` concern, not a client concern:
-`src/vla_client.py` stays backend-agnostic.
-
-Contract changes must be recorded here before implementation changes.
+**SmolVLA note:** checkpoint metadata may say 6-D state; loaded normalizer
+expects 7-D VLABench state — do not drop gripper dim.

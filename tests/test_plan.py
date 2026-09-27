@@ -37,6 +37,16 @@ def test_reject_invalid_step() -> None:
         parse_planner_payload([{"object_name": "x"}])
 
 
+def test_parse_open_drawer_step() -> None:
+    plan = parse_planner_payload([{"skill": "open_drawer"}])
+    assert plan == [{"skill": "open_drawer"}]
+
+
+def test_reject_open_drawer_with_transfer_fields() -> None:
+    with pytest.raises(ValueError, match="must not include transfer fields"):
+        parse_planner_payload([{"skill": "open_drawer", "object_name": "drawer"}])
+
+
 def test_reject_non_transfer_skill() -> None:
     with pytest.raises(ValueError, match="unsupported skill"):
         parse_planner_payload([{"skill": "grab", "object_name": "x"}])

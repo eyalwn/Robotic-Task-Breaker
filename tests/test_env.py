@@ -18,6 +18,16 @@ def test_sim_env_vlabench_default_backend(monkeypatch: pytest.MonkeyPatch) -> No
     mock_vlabench.from_evaluation_episode_index.assert_called_once_with("select_fruit", 0)
     assert result == "vlabench-instance"
 
+def test_sim_env_robocasa_backend(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(config, "SIM_ENV", "robocasa")
+    mock_robocasa = MagicMock()
+    mock_robocasa.from_task.return_value = "robocasa-instance"
+    with patch("envs.robocasa_env.RoboCasaEnv", mock_robocasa):
+        result = SimEnv("open_drawer", 0)
+    mock_robocasa.from_task.assert_called_once_with("open_drawer", 0)
+    assert result == "robocasa-instance"
+
+
 def test_sim_env_unknown_sim_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(config, "SIM_ENV", "isaac")
     with pytest.raises(AssertionError, match="not supported for this env"):

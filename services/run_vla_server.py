@@ -1,4 +1,4 @@
-"""Launch the VLA HTTP server for pi0fast or smolvla."""
+"""Launch the VLA HTTP server for pi0fast, smolvla, or groot."""
 from __future__ import annotations
 
 import runpy
@@ -10,6 +10,7 @@ import config
 _SERVICE_FILES = {
     "pi0fast": "pi0fast_service.py",
     "smolvla": "smolvla_service.py",
+    "groot": "groot_service.py",
 }
 _SUPPORTED_POLICIES = tuple(_SERVICE_FILES)
 
@@ -50,6 +51,16 @@ def main() -> None:
             )
             print(
                 "    pip install -r deps/requirements-vla-pi0fast-linux.txt && pip install -e .",
+                file=sys.stderr,
+            )
+        elif policy == "groot":
+            print(
+                "error: Isaac-GR00T upstream client or HTTP deps not importable.",
+                file=sys.stderr,
+            )
+            print(
+                "  Linux + NVIDIA: install Isaac-GR00T n1d6 and start upstream "
+                "run_gr00t_server.py on port 5555.",
                 file=sys.stderr,
             )
         else:

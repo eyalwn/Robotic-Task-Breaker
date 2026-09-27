@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 _SKILL_CATALOG = """\
+  open_drawer() -> None
+    Open the kitchen drawer using the native RoboCasa VLA policy instruction.
+
   transfer(object_name: str, target_name: str) -> None
     Move a named object into a named target receptacle using the VLA policy.
     :param object_name: Object name from the scene snapshot or goal

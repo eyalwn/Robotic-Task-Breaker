@@ -120,9 +120,11 @@ class Executor:
     def _build_vla_task(self, step: dict[str, str]) -> str:
         """Build the VLA task string for one step."""
         skill = step["skill"]
-        object_name = step['object_name']
-        target_name = step['target_name']
+        if skill == "open_drawer":
+            return "Open the drawer"
         if skill == "transfer":
+            object_name = step["object_name"]
+            target_name = step["target_name"]
             return f"Put the {object_name} into the {target_name}"
         raise KeyError(f"unsupported skill: {skill!r}")
 
@@ -145,10 +147,11 @@ class Executor:
                 if is_done:
                     return
                 self._enforce_max_steps_budget(step, skill_steps)
-                distances = self._env.transfer_distances(step)
-                logger.debug("steps=%d, distances=%s, check_subtask=%s",
-                    skill_steps, distances, is_done)
-                tracker = self._abort_if_stuck(step, tracker, distances)
+                if step["skill"] == "transfer":
+                    distances = self._env.transfer_distances(step)
+                    logger.debug("steps=%d, distances=%s, check_subtask=%s",
+                        skill_steps,distances,is_done)
+                    tracker = self._abort_if_stuck(step, tracker, distances)
     
     def _enforce_max_steps_budget(self, step, skill_steps):
         """Raise SkillTimeout / EpisodeTimeout if either MAX_SKILL_STEPS / 

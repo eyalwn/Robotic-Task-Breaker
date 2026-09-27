@@ -38,7 +38,7 @@ class FakeEnv:
 
     def check_subtask(self, step: dict[str, str]) -> bool:
         skill = step["skill"]
-        if skill != "transfer":
+        if skill not in ("transfer", "open_drawer"):
             raise KeyError(f"unsupported skill: {skill!r}")
         key = (skill, frozenset(step.items()))
         if key in self._subtask_after:

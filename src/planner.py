@@ -20,6 +20,7 @@ PLAN FORMAT (JSON):
   [<step>, ...]   OR   {"stop":"<reason>"}
 
 Each step is a flat object with a required "skill" field plus skill args:
+  {"skill":"open_drawer"}
   {"skill":"transfer","object_name":"...","target_name":"..."}
 
 Rules:
