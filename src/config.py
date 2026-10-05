@@ -9,7 +9,6 @@ would come too late to affect them.
 """
 from __future__ import annotations
 
-import ast
 import os
 
 from dotenv import find_dotenv, load_dotenv
@@ -20,8 +19,6 @@ load_dotenv(find_dotenv())
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").strip() or "INFO"
 # Full-horizon action cap for all VLA evaluation episodes.
 MAX_EPISODE_STEPS = 720
-# Independent episodes per raw-policy baseline campaign.
-BASELINE_EPISODES = 10
 
 # --- video ------------------------------------------------------------------
 SAVE_VIDEO = os.environ.get("SAVE_VIDEO") == "1"
@@ -29,35 +26,23 @@ VIDEO_PATH = os.environ.get("VIDEO_PATH", "run.mp4")
 VIDEO_FPS = int(os.environ.get("VIDEO_FPS", "10"))
 
 # --- sim environment -------------------------------------------------------
-SIM_ENV = "robocasa"  # "robocasa" | "vlabench"
+SIM_ENV = "robocasa"  # "robocasa"
 
 # --- Planner ---------------------------------------------------------------
 LLM_MODEL = os.environ.get("LLM_MODEL", "gpt-4.1-mini").strip()
 MAX_PLAN_RETRIES = int(os.environ.get("MAX_PLAN_RETRIES", "3"))
-# Extra observe→plan→execute cycles after skill abort or subtask timeout.
+# Extra observe→plan→execute cycles after subtask timeout.
 MAX_REPLANS = 2
 
 # --- Executor --------------------------------------------------------------
 # Per-skill step cap (guard against a failing subtask; success path ends earlier).
-# Includes `open` timeout for RoboCasa M2.
-MAX_SKILL_STEPS = ast.literal_eval(
-    os.environ.get(
-        "MAX_SKILL_STEPS",
-        '{"transfer": 250, "open": 720}',
-    )
-)
-
-# Transfer GT abort (sim-oracle): stall patience, hold/drop distances, progress eps.
-SKILL_STALL_STEPS = 20
-TRANSFER_HOLD_DISTANCE = 0.12
-TRANSFER_DROP_DISTANCE = 0.25
-TRANSFER_PROGRESS_EPS = 0.01
+MAX_SKILL_STEPS = {"open": 720}
 
 # --- VLA server ------------------------------------------------------------
 # VLA backend selection (launcher default)
-VLA_POLICY = os.environ.get("VLA_POLICY", "groot")  # "groot" | "pi0fast" | "smolvla"
-# Max actions returned per /predict response (enforced by the VLA service).
-VLA_ACTIONS_PER_CHUNK = int(os.environ.get("VLA_ACTIONS_PER_CHUNK", "5"))
+VLA_POLICY = os.environ.get("VLA_POLICY", "groot")  # "groot"
+# Actions per /predict response (GR00T N1.6 default chunk size; service enforces cap).
+VLA_ACTIONS_PER_CHUNK = int(os.environ.get("VLA_ACTIONS_PER_CHUNK", "8"))
 VLA_PORT = 8765
 VLA_URL = f"http://127.0.0.1:{VLA_PORT}"
 VLA_TIMEOUT = int(os.environ.get("VLA_TIMEOUT", "60"))

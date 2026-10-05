@@ -15,10 +15,10 @@ alwaysApply: true
 - `src/envs/sim_env.py` is a thin facade.
   `SimEnv.__init__(self, task: str, task_idx: int = 0)` lazy-imports the
   configured backend into `self._env` and forwards the public env methods
-  (`observe`, `step`, `success`, `check_subtask`, `calc_distances`, `close`,
+  (`observe`, `step`, `success`, `check_subtask`, `close`,
   plus the `steps` and `task_description` properties). It does not import a
-  backend at module level. For VLABench, `task_idx` selects a deterministic
-  evaluation episode.
+  backend at module level. `task_idx` selects a deterministic evaluation
+  episode.
 - Dependencies point strictly downward in this order; no module may import one
   above it: `config` -> `vla_client` / `envs.sim_env` -> `plan` -> `skills` ->
   `executor` -> `planner` -> `runner`.
@@ -28,11 +28,10 @@ alwaysApply: true
   requires a mapped acceptance criterion in `SRD.md`.
   Task identity is constructor args, not config constants.
 - Files under `src/` except `src/envs/` must not mention VLA backend names
-  (`pi05`, `smolvla`, checkpoint ids). `config.VLA_POLICY` is the exception;
+  (`groot`, checkpoint ids). `config.VLA_POLICY` is the exception;
   only `services/` consume it.
 - Type hints in `src/` outside `src/envs/` use `SimEnv`. Backend class names
-  (`RoboCasaEnv`, `VLABenchEnv`) stay inside `src/envs/`. `VLABenchEnv` is
-  stale and must not be used as a hint.
+  (`RoboCasaEnv`) stay inside `src/envs/`.
   Exactly one type per hint: no `X | Y`, no `Optional[X]`.
 - **The VLA-to-environment integration lives in `src/executor.py`**, in one
   visible method. Do not move it behind a skill class, a tool factory, a

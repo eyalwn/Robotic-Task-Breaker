@@ -176,7 +176,7 @@ def test_predict_preserves_actions() -> None:
 
 def test_predict_preserves_pi_range_orientation() -> None:
 
-    """Roll near π is valid for VLABench EEF actions and must not be modified."""
+    """Roll near π in a 7-D action vector must not be modified by the client."""
 
     client = VLAClient("http://127.0.0.1:8765", timeout=5.0)
 

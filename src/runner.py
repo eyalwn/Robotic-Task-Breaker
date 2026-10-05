@@ -50,8 +50,6 @@ class Runner:
                 status = "execution_error"
                 if execution_sum.reason == StopReason.SUBTASK_TIMEOUT:
                     error = execution_sum.error or "subtask step cap exceeded"
-                elif execution_sum.reason == StopReason.SKILL_ABORT:
-                    error = execution_sum.error or "skill aborted"
                 elif execution_sum.reason == StopReason.EPISODE_TIMEOUT:
                     error = execution_sum.error or "episode step cap exceeded"
                     break

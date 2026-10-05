@@ -1,4 +1,4 @@
-"""Thin facade over the configured sim backend."""
+"""Thin facade over the RoboCasa sim backend."""
 from __future__ import annotations
 
 import config
@@ -10,11 +10,7 @@ class SimEnv:
     def __init__(self, task: str, task_idx: int = 0) -> None:
         """Build that backend and store it on ``self._env``."""
         sim = config.SIM_ENV
-        if sim == "vlabench":
-            from envs.vlabench_env import VLABenchEnv
-
-            self._env = VLABenchEnv.from_evaluation_episode_index(task, task_idx)
-        elif sim == "robocasa":
+        if sim == "robocasa":
             from envs.robocasa_env import RoboCasaEnv
 
             self._env = RoboCasaEnv.from_task(task, task_idx)
@@ -46,10 +42,6 @@ class SimEnv:
     def check_subtask(self, step: dict[str, str]) -> bool:
         """Return the backend subtask-completion check for ``step``."""
         return self._env.check_subtask(step)
-
-    def calc_distances(self, origin_name: str, target_name: str) -> float:
-        """Return the backend origin-to-target distance in metres."""
-        return self._env.calc_distances(origin_name, target_name)
 
     def close(self) -> None:
         """Release the backend."""

@@ -1,4 +1,0 @@
-=== rollout start ===
-Running 10 episodes...
-results: [True, True, False, True, True, True, False, True, True, True]
-=== rollout finished 2026-03-01T12:00:00Z ===

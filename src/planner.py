@@ -7,7 +7,10 @@ import logging
 import re
 from typing import Any
 
-import langchain_openai  # noqa: F401  # before sim EGL; else camera obs corrupt (SRD.md)
+# Import before the sim creates its EGL/MuJoCo context. A first-time httpx/openai
+# import after that context exists corrupts RoboCasa camera frames (static/black).
+# Keep this eager; do not lazy-import langchain_openai from planning helpers.
+import langchain_openai  # noqa: F401
 
 from langchain.chat_models import init_chat_model
 from langchain_core.messages import HumanMessage, SystemMessage
@@ -23,18 +26,15 @@ PLAN FORMAT (JSON):
 
 Each step is a flat object with a required "skill" field plus skill args:
   {"skill":"open","target_name":"right drawer"}
-  {"skill":"transfer","object_name":"...","target_name":"..."}
 
 Rules:
 - Only call skills from the catalog.
-- Use a single transfer step when one transfer completes the goal.
 - Name objects from the scene snapshot and natural-language goal, not sim ground-truth IDs.
 - Emit valid JSON.
 
 Example:
 [
-  {"skill":"open","target_name":"right drawer"},
-  {"skill":"transfer","object_name":"alphabet soup","target_name":"basket"}
+  {"skill":"open","target_name":"right drawer"}
 ]\
 """
 

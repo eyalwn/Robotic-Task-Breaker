@@ -192,21 +192,10 @@ def test_runner_subtask_timeout_from_executor(monkeypatch: pytest.MonkeyPatch) -
     assert executor.run.call_count == n
 
 
-def test_runner_skill_abort_from_executor(monkeypatch: pytest.MonkeyPatch) -> None:
-    n = config.MAX_REPLANS + 1
-    runner, planner, executor = _runner_with_stub_executor(
-        [ExecutionSum(reason=StopReason.SKILL_ABORT, error="transfer dropped object")] * n,
-        monkeypatch,
-    )
-    assert runner.run() is False
-    assert planner.plan_calls == n
-    assert executor.run.call_count == n
-
-
-def test_runner_replans_after_skill_abort(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_runner_replans_after_subtask_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
     runner, planner, executor = _runner_with_stub_executor(
         [
-            ExecutionSum(reason=StopReason.SKILL_ABORT, error="transfer dropped object"),
+            ExecutionSum(reason=StopReason.SUBTASK_TIMEOUT, error="open exceeded 2 steps"),
             ExecutionSum(reason=StopReason.PLAN_DONE),
         ],
         monkeypatch,

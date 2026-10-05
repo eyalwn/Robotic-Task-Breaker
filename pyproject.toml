@@ -16,6 +16,3 @@ packages = ["envs"]
 
 [tool.pytest.ini_options]
 pythonpath = ["src", "services"]
-markers = [
-    "integration: live-server and live planner LLM tests (run with pytest -m integration)",
-]

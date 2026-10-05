@@ -11,9 +11,8 @@ from plan import get_stop_reason, is_stop_plan, parse_planner_payload
 
 VALID_PLAN = [
     {
-        "skill": "transfer",
-        "object_name": "cube",
-        "target_name": "basket",
+        "skill": "open",
+        "target_name": "right drawer",
     },
 ]
 
@@ -75,13 +74,13 @@ def test_strip_code_fences() -> None:
 def test_extract_json_from_fenced_output() -> None:
     raw = f"```json\n{json.dumps(VALID_PLAN)}\n```"
     parsed = json.loads(_extract_json(raw))
-    assert parsed[0]["skill"] == "transfer"
+    assert parsed[0]["skill"] == "open"
 
 
 def test_extract_json_with_trailing_prose() -> None:
-    raw = f"{json.dumps(VALID_PLAN)}\n\nNote: use transfer."
+    raw = f"{json.dumps(VALID_PLAN)}\n\nNote: open drawer."
     parsed = json.loads(_extract_json(raw))
-    assert parsed[0]["object_name"] == "cube"
+    assert parsed[0]["target_name"] == "right drawer"
 
 
 def test_extract_json_brace_balanced_with_string_braces() -> None:
@@ -178,7 +177,7 @@ def test_planner_goal_used_as_is(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_planner_system_prompt_is_minimal(monkeypatch: pytest.MonkeyPatch) -> None:
     spy = _SpyLLM([_Response(json.dumps(VALID_PLAN))])
     monkeypatch.setattr("planner.init_chat_model", lambda _model: spy)
-    catalog = "transfer(object_name, target_name)"
+    catalog = "open(target_name: str) -> None"
     planner = LLMPlanner("pick cube", catalog)
     planner.plan(SNAPSHOT)
     system_content = spy.calls[0][0].content
@@ -191,8 +190,7 @@ def test_planner_system_prompt_is_minimal(monkeypatch: pytest.MonkeyPatch) -> No
     assert "Emit valid JSON." in system_content
     assert "Use the scene snapshot as the initial world state" in system_content
     assert "Otherwise emit a step array that achieves the goal." in system_content
-    assert "single transfer step" in system_content
-    assert "transfer(object_name" in system_content
+    assert "transfer" not in system_content
     assert '"kind"' not in system_content
     assert '"goal"' not in system_content
 

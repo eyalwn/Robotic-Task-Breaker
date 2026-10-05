@@ -10,8 +10,8 @@ import config
 from run_vla_server import _SERVICE_FILES, main
 
 
-def test_supported_policy_table_includes_groot() -> None:
-    assert set(_SERVICE_FILES) == {"pi0fast", "smolvla", "groot"}
+def test_supported_policy_table_is_groot_only() -> None:
+    assert _SERVICE_FILES == {"groot": "groot_service.py"}
 
 
 def test_default_policy_is_groot_from_config() -> None:
@@ -20,17 +20,6 @@ def test_default_policy_is_groot_from_config() -> None:
         main()
     target = (
         Path(__file__).resolve().parent.parent / "services" / _SERVICE_FILES["groot"]
-    )
-    mock_run.assert_called_once_with(str(target), run_name="__main__")
-
-
-def test_policy_smolvla_accepted() -> None:
-    with patch.object(config, "VLA_POLICY", "smolvla"), patch(
-        "run_vla_server.runpy.run_path"
-    ) as mock_run:
-        main()
-    target = (
-        Path(__file__).resolve().parent.parent / "services" / _SERVICE_FILES["smolvla"]
     )
     mock_run.assert_called_once_with(str(target), run_name="__main__")
 

@@ -151,7 +151,7 @@ def _load_upstream_client():
     except ImportError as exc:
         raise ImportError(
             "Isaac-GR00T is not installed. Run the M2 GR00T server stack on Linux "
-            "and install upstream gr00t in .vla-venv."
+            "and install upstream gr00t in the VLA Python environment."
         ) from exc
     client = PolicyClient(
         host=GROOT_UPSTREAM_HOST,
