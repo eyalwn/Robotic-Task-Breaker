@@ -13,7 +13,8 @@ simulator/checkpoint pair only to test that claim.
 ## Milestones
 
 - **M1 — DONE.** Upstream-only RoboCasa / GR00T N1.6 OpenDrawer gate
-  (`colab/run_robocasa_primitive_gate.ipynb`): pass threshold = >=7/10 episodes;
+  (`colab/run_robocasa_primitive_gate.ipynb` ->
+  `validation/run_robocasa_primitive_gate.py`): pass threshold = >=7/10 episodes;
   observed 8/10 (10 episodes, 720-step cap, 8 actions/call). Artifacts are
   external (Drive), not committed.
 - **M2 — DONE.** Longor OpenDrawer on RoboCasa with GR00T N1.6-3B through the

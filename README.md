@@ -14,8 +14,9 @@ Simulation runs on Colab (L4 verified).
   `open_drawer` episode (`examples/run_longor_task.py`), and writes `run.mp4` and
   logs to Drive. Colab Secrets: `GITHUB_TOKEN`, `OPENAI_API_KEY` (optional
   `HF_TOKEN`).
-- `colab/run_robocasa_primitive_gate.ipynb` — M1 upstream-only gate (no Longor
-  planner/executor).
+- `colab/run_robocasa_primitive_gate.ipynb` — M1 upstream-only gate launcher
+  (no Longor planner/executor); orchestration and verdict logic live in
+  `validation/run_robocasa_primitive_gate.py`.
 
 ## Local development (Windows OK, no sim)
 
