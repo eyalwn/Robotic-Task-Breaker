@@ -1,4 +1,4 @@
-"""VLABench simulation backend (default sim).
+"""STALE / unsupported VLABench simulation backend.
 
 Observation and action layout match VLABench primitive policies: 7-D state
 ``[pos_robot(3), euler_xyz(3), gripper]``, plus policy views derived from the
@@ -225,6 +225,9 @@ class VLABenchEnv:
         episode_config: dict[str, object],
     ) -> None:
         """Initialize the wrapped VLABench environment."""
+        raise NotImplementedError(
+            "VLABench backend is stale / not supported; see SRD.md"
+        )
         load_env = _import_vlabench()
         h, w = _RENDER_RESOLUTION
         kwargs: dict[str, object] = {
@@ -372,32 +375,29 @@ class VLABenchEnv:
             return bool(contain_fn(obj_pos, self._env.physics))
         raise KeyError(f"unsupported skill: {skill!r}")
 
-    def transfer_distances(self, step: dict[str, str]) -> tuple[float, float]:
-        """Return (EEF→object, object→target) metres from sim GT."""
-        if step["skill"] != "transfer":
-            raise KeyError(f"unsupported skill: {step['skill']!r}")
+    def calc_distances(self, origin_name: str, target_name: str) -> float:
+        """Return origin-to-target distance in metres from sim ground truth."""
         physics = self._env.physics
-        obj_pos = np.asarray(
-            self._resolve_entity(step["object_name"]).get_xpos(physics),
-            dtype=np.float64,
-        )
         target_pos = np.asarray(
-            self._resolve_entity(step["target_name"]).get_xpos(physics),
+            self._resolve_entity(target_name).get_xpos(physics),
             dtype=np.float64,
         )
-        obs = self._env.get_observation(require_pcd=False)
-        if "ee_state" not in obs:
-            raise RuntimeError("VLABench observation missing 'ee_state'")
-        raw = np.asarray(obs["ee_state"], dtype=np.float64).ravel()
-        if raw.size < 3:
-            raise RuntimeError(
-                f"VLABench ee_state too short for EEF xyz: got {raw.size}"
+        if origin_name == "EEF":
+            obs = self._env.get_observation(require_pcd=False)
+            if "ee_state" not in obs:
+                raise RuntimeError("VLABench observation missing 'ee_state'")
+            raw = np.asarray(obs["ee_state"], dtype=np.float64).ravel()
+            if raw.size < 3:
+                raise RuntimeError(
+                    f"VLABench ee_state too short for EEF xyz: got {raw.size}"
+                )
+            origin_pos = raw[:3]
+        else:
+            origin_pos = np.asarray(
+                self._resolve_entity(origin_name).get_xpos(physics),
+                dtype=np.float64,
             )
-        eef = raw[:3]
-        return (
-            float(np.linalg.norm(eef - obj_pos)),
-            float(np.linalg.norm(obj_pos - target_pos)),
-        )
+        return float(np.linalg.norm(origin_pos - target_pos))
 
     def _record(self) -> None:
         if not config.SAVE_VIDEO:

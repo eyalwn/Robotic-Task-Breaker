@@ -6,16 +6,17 @@ import logging
 import sys
 
 import config
-from envs.robocasa_env import RoboCasaEnv
+from envs.sim_env import SimEnv
 from utils import configure_logging
 from vla_client import VLAClient
 
 logger = logging.getLogger(__name__)
 
 _OPEN_DRAWER = "open_drawer"
+_OPEN_SKILL = "open"
 
 
-def run_episode(env: RoboCasaEnv, vla: VLAClient, max_steps: int) -> bool:
+def run_episode(env: SimEnv, vla: VLAClient, max_steps: int) -> bool:
     """Run one OpenDrawer episode through the Longor VLA HTTP client."""
     while env.steps < max_steps:
         if env.success():
@@ -38,7 +39,7 @@ def main() -> int:
     parser.add_argument(
         "--max-steps",
         type=int,
-        default=config.MAX_SKILL_STEPS[_OPEN_DRAWER],
+        default=config.MAX_SKILL_STEPS[_OPEN_SKILL],
     )
     args = parser.parse_args()
     configure_logging()
@@ -54,7 +55,7 @@ def main() -> int:
     successes = 0
     try:
         for episode_idx in range(args.episodes):
-            env = RoboCasaEnv.from_task(_OPEN_DRAWER, 0)
+            env = SimEnv(_OPEN_DRAWER, 0)
             try:
                 logger.info(
                     "robocasa raw episode %s/%s instruction=%r",

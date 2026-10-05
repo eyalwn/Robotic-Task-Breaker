@@ -58,7 +58,7 @@ def test_predict_multipart_request_shape() -> None:
 
     actions = [[0.1, 0.2, 0.3, 0.4, 0.5, 0.6, -1.0]]
 
-    images = (b"main-jpeg", b"wrist-jpeg")
+    images = (b"main-png", b"wrist-png")
 
     with patch(
 
@@ -82,9 +82,9 @@ def test_predict_multipart_request_shape() -> None:
 
     assert kwargs["files"] == [
 
-        ("images", ("cam0.jpg", b"main-jpeg", "image/jpeg")),
+        ("images", ("cam0.png", b"main-png", "image/png")),
 
-        ("images", ("cam1.jpg", b"wrist-jpeg", "image/jpeg")),
+        ("images", ("cam1.png", b"wrist-png", "image/png")),
 
     ]
 

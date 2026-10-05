@@ -21,9 +21,18 @@ _PROJECT_LOGGER_NAMES = (
     "__main__",
 )
 _QUIET_LOGGER_NAMES = (
-    "absl",  # dm_control IK "Failed to converge" during VLABench stepping
+    "absl",
+    "robosuite_logs",
 )
 _DEFAULT_FORMAT = "%(levelname)s [%(name)s] %(message)s"
+
+
+def _pin_quiet_logger(name: str) -> None:
+    """Hold this logger at ERROR. Robosuite sets ``robosuite_logs`` back to INFO on import."""
+    logger = logging.getLogger(name)
+    set_level = logging.Logger.setLevel.__get__(logger, logging.Logger)
+    set_level(logging.ERROR)
+    logger.setLevel = lambda level: set_level(logging.ERROR)
 
 
 def configure_logging(
@@ -62,4 +71,4 @@ def configure_logging(
     for name in _PROJECT_LOGGER_NAMES + extra_logger_names:
         logging.getLogger(name).setLevel(level)
     for name in _QUIET_LOGGER_NAMES:
-        logging.getLogger(name).setLevel(logging.ERROR)
+        _pin_quiet_logger(name)

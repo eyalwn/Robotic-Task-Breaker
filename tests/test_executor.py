@@ -250,26 +250,16 @@ def test_transfer_subtask_success_after_steps() -> None:
     assert len(env.step_calls) == 2
 
 
-def test_open_drawer_task_string_and_skips_transfer_abort() -> None:
-    step = {"skill": "open_drawer"}
+def test_open_task_string_preserves_target_detail() -> None:
+    step = {"skill": "open", "target_name": "right drawer"}
     env = FakeEnv(
-        subtask_after={("open_drawer", frozenset(step.items())): 1},
+        subtask_after={("open", frozenset(step.items())): 1},
         distances=(1.0, 1.0),
     )
     vla = FakeVLA(actions=[[0.0] * 12])
     executor = build_executor(env=env, vla=vla)
     run_plan(executor, [step])
-    assert vla.calls[0][2] == "Open the drawer"
-    assert len(env.step_calls) == 1
-
-
-def test_open_drawer_check_subtask_completes_skill() -> None:
-    step = {"skill": "open_drawer"}
-    env = FakeEnv(subtask_satisfied={("open_drawer", frozenset(step.items())): True})
-    vla = FakeVLA(actions=[[0.0] * 12])
-    executor = build_executor(env=env, vla=vla)
-    result = run_plan(executor, [step])
-    assert result.reason == StopReason.PLAN_DONE
+    assert vla.calls[0][2] == "open the right drawer"
     assert len(env.step_calls) == 1
 
 
@@ -350,57 +340,25 @@ def test_env_step_done_reports_plan_done() -> None:
 _TRANSFER = {"skill": "transfer", "object_name": "cube", "target_name": "basket"}
 
 
-def test_approach_stall_raises() -> None:
+def test_transfer_stall_raises() -> None:
     executor = build_executor()
-    tracker = (False, math.inf, 0)
+    tracker = (math.inf, 0)
     for _ in range(config.SKILL_STALL_STEPS):
-        tracker = executor._abort_if_stuck(_TRANSFER, tracker, (1.0, 1.0))
-    with pytest.raises(SkillAbort, match="approaching object"):
-        executor._abort_if_stuck(_TRANSFER, tracker, (1.0, 1.0))
-
-
-def test_place_stall_after_hold_raises() -> None:
-    executor = build_executor()
-    tracker = executor._abort_if_stuck(
-        _TRANSFER, (False, math.inf, 0), (0.05, 0.9)
-    )
-    assert tracker[0] is True
-    for _ in range(config.SKILL_STALL_STEPS - 1):
-        tracker = executor._abort_if_stuck(_TRANSFER, tracker, (0.05, 0.9))
+        tracker = executor._abort_if_stuck(_TRANSFER, tracker, 1.0)
     with pytest.raises(SkillAbort, match="moving to target"):
-        executor._abort_if_stuck(_TRANSFER, tracker, (0.05, 0.9))
+        executor._abort_if_stuck(_TRANSFER, tracker, 1.0)
 
 
-def test_drop_after_hold_raises() -> None:
+def test_improving_transfer_distance_does_not_stall() -> None:
     executor = build_executor()
-    tracker = executor._abort_if_stuck(
-        _TRANSFER, (False, math.inf, 0), (0.05, 0.9)
-    )
-    dropped = (config.TRANSFER_DROP_DISTANCE + 0.01, 0.9)
-    with pytest.raises(SkillAbort, match="dropped"):
-        executor._abort_if_stuck(_TRANSFER, tracker, dropped)
-
-
-def test_improving_approach_does_not_stall() -> None:
-    executor = build_executor()
-    tracker = (False, math.inf, 0)
+    tracker = (math.inf, 0)
     for dist in (1.0, 0.8, 0.6, 0.4):
-        tracker = executor._abort_if_stuck(_TRANSFER, tracker, (dist, 1.0))
-    assert tracker == (False, 0.4, 0)
+        tracker = executor._abort_if_stuck(_TRANSFER, tracker, dist)
+    assert tracker == (0.4, 0)
 
 
-def test_approach_stall_run_is_skill_abort() -> None:
+def test_transfer_stall_run_is_skill_abort() -> None:
     env = FakeEnv()
-    executor = build_executor(env=env, vla=FakeVLA(actions=[[0.0] * 7]))
-    with patch("config.MAX_SKILL_STEPS", {"transfer": 250}):
-        result = run_plan(executor, make_plan([_TRANSFER]))
-    assert result.reason == StopReason.SKILL_ABORT
-    assert "approaching object" in result.error
-    assert len(env.step_calls) == config.SKILL_STALL_STEPS + 1
-
-
-def test_place_stall_run_is_skill_abort() -> None:
-    env = FakeEnv(distances=(0.05, 0.8))
     executor = build_executor(env=env, vla=FakeVLA(actions=[[0.0] * 7]))
     with patch("config.MAX_SKILL_STEPS", {"transfer": 250}):
         result = run_plan(executor, make_plan([_TRANSFER]))
@@ -409,19 +367,13 @@ def test_place_stall_run_is_skill_abort() -> None:
     assert len(env.step_calls) == config.SKILL_STALL_STEPS + 1
 
 
-def test_drop_run_is_skill_abort() -> None:
-    class _DropEnv(FakeEnv):
-        def transfer_distances(self, step: dict[str, str]) -> tuple[float, float]:
-            if self._steps <= 1:
-                return (0.05, 0.8)
-            return (config.TRANSFER_DROP_DISTANCE + 0.05, 0.8)
-
-    env = _DropEnv()
+def test_transfer_progress_run_does_not_abort() -> None:
+    env = FakeEnv(distances=(0.05, 0.8))
     executor = build_executor(env=env, vla=FakeVLA(actions=[[0.0] * 7]))
-    result = run_plan(executor, make_plan([_TRANSFER]))
-    assert result.reason == StopReason.SKILL_ABORT
-    assert "dropped" in result.error
-    assert len(env.step_calls) == 2
+    with patch("config.MAX_SKILL_STEPS", {"transfer": 3}):
+        result = run_plan(executor, make_plan([_TRANSFER]))
+    assert result.reason == StopReason.SUBTASK_TIMEOUT
+    assert "exceeded 3 steps" in result.error
 
 
 def test_subtask_timeout_includes_abort_error() -> None:

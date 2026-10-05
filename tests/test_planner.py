@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import sys
 
 import pytest
 
@@ -19,6 +20,13 @@ VALID_PLAN = [
 STOP_PLAN = {"stop": "goal achieved"}
 
 SNAPSHOT = b"img"
+
+
+def test_planner_import_loads_langchain_openai() -> None:
+    pytest.importorskip("langchain_openai")
+    import planner  # noqa: F401
+
+    assert "langchain_openai" in sys.modules
 
 
 class _Response:
@@ -137,6 +145,24 @@ def test_planner_strips_markdown_fences(monkeypatch: pytest.MonkeyPatch) -> None
     planner = LLMPlanner("pick cube", "catalog")
     result = planner.plan(SNAPSHOT)
     assert result == parse_planner_payload(VALID_PLAN)
+
+
+def test_planner_snapshot_image_url_is_png_base64(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    spy = _SpyLLM([_Response(json.dumps(VALID_PLAN))])
+    monkeypatch.setattr("planner.init_chat_model", lambda _model: spy)
+    planner = LLMPlanner("pick cube", "catalog")
+    planner.plan(SNAPSHOT)
+    human_content = spy.calls[0][-1].content
+    assert isinstance(human_content, list)
+    image_part = next(
+        part
+        for part in human_content
+        if isinstance(part, dict) and part.get("type") == "image_url"
+    )
+    url = image_part["image_url"]["url"]
+    assert url.startswith("data:image/png;base64,")
 
 
 def test_planner_goal_used_as_is(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -1,7 +1,7 @@
 """
 GR00T N1.6 HTTP adapter: Longor /predict contract to upstream ZeroMQ policy server.
 
-Bridges multipart JPEG + flat state to ``Gr00tSimPolicyWrapper`` flat keys on
+Bridges multipart PNG + flat state to ``Gr00tSimPolicyWrapper`` flat keys on
 ``127.0.0.1:5555``. Validates camera/state/action shape and finiteness only.
 """
 
@@ -51,7 +51,7 @@ _upstream = None
 
 
 def decode_image(raw_bytes: bytes) -> np.ndarray:
-    """Decode one JPEG to uint8 RGB at the RoboCasa 256² visual contract."""
+    """Decode one PNG (or other PIL image) to uint8 RGB at the RoboCasa 256² contract."""
     img = Image.open(io.BytesIO(raw_bytes)).convert("RGB")
     img = img.resize((_IMAGE_SIZE, _IMAGE_SIZE), Image.LANCZOS)
     return np.array(img, dtype=np.uint8)

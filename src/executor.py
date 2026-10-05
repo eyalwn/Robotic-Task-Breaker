@@ -3,18 +3,15 @@ from __future__ import annotations
 
 import logging
 import math
-from typing import TYPE_CHECKING
 
 import config
+from envs.sim_env import SimEnv
 from plan import Plan
 from vla_client import VLAClient
 
-if TYPE_CHECKING:
-    from envs.vlabench_env import VLABenchEnv
-
 logger = logging.getLogger(__name__)
 
-_Tracker = tuple[bool, float, int]
+_Tracker = tuple[float, int]
 
 
 class StopReason:
@@ -72,7 +69,7 @@ def _advance_progress(
 class Executor:
     """Executes a linear step list against the environment and VLA policy."""
 
-    def __init__(self, env: VLABenchEnv) -> None:
+    def __init__(self, env: SimEnv) -> None:
         self._env = env
         self._vla = VLAClient()
 
@@ -120,8 +117,8 @@ class Executor:
     def _build_vla_task(self, step: dict[str, str]) -> str:
         """Build the VLA task string for one step."""
         skill = step["skill"]
-        if skill == "open_drawer":
-            return "Open the drawer"
+        if skill == "open":
+            return f"open the {step['target_name']}"
         if skill == "transfer":
             object_name = step["object_name"]
             target_name = step["target_name"]
@@ -136,7 +133,7 @@ class Executor:
         prompt = self._build_vla_task(step)
         logger.debug("full skill prompt: %s", prompt)
         skill_steps = 0
-        tracker: _Tracker = (False, math.inf, 0)
+        tracker: _Tracker = (math.inf, 0)
         while True:
             images, state = self._env.observe()
             actions_chunk = self._vla.predict(images, state, prompt)
@@ -147,16 +144,19 @@ class Executor:
                 if is_done:
                     return
                 self._enforce_max_steps_budget(step, skill_steps)
-                if step["skill"] == "transfer":
-                    distances = self._env.transfer_distances(step)
+                skill = step["skill"]
+                if skill in ("open", "transfer"):
+                    target_name = step["target_name"]
+                    distances = self._env.calc_distances("EEF", target_name)
                     logger.debug("steps=%d, distances=%s, check_subtask=%s",
                         skill_steps,distances,is_done)
                     tracker = self._abort_if_stuck(step, tracker, distances)
-    
+
     def _enforce_max_steps_budget(self, step, skill_steps):
-        """Raise SkillTimeout / EpisodeTimeout if either MAX_SKILL_STEPS / 
+        """Raise SkillTimeout / EpisodeTimeout if either MAX_SKILL_STEPS /
             MAX_EPISODE_STEPS was exceeded."""
-        max_skill_steps = config.MAX_SKILL_STEPS[step["skill"]]
+        skill_key = step["skill"]
+        max_skill_steps = config.MAX_SKILL_STEPS[skill_key]
         if skill_steps >= max_skill_steps:
             raise SkillTimeout(
                 f"{step['skill']} exceeded {max_skill_steps} steps")
@@ -168,25 +168,12 @@ class Executor:
         self,
         step: dict[str, str],
         tracker: _Tracker,
-        distances: tuple[float, float],
+        distance: float,
     ) -> _Tracker:
-        """Raise SkillAbort if transfer GT progress stalled or the object dropped."""
+        """Raise SkillAbort if transfer GT progress to target stalls."""
         if step["skill"] != "transfer":
             return tracker
-        eef_obj, obj_tgt = distances
-        if not math.isfinite(eef_obj) or not math.isfinite(obj_tgt):
-            raise RuntimeError("non-finite transfer distances")
-        held, best, stall = tracker
-        if not held:
-            if eef_obj <= config.TRANSFER_HOLD_DISTANCE:
-                return True, obj_tgt, 0
-            best, stall = _advance_progress(
-                best, stall, eef_obj, "approaching object"
-            )
-            return False, best, stall
-        if eef_obj > config.TRANSFER_DROP_DISTANCE:
-            raise SkillAbort("transfer dropped object")
-        best, stall = _advance_progress(
-            best, stall, obj_tgt, "moving to target"
-        )
-        return True, best, stall
+        if not math.isfinite(distance):
+            raise RuntimeError("non-finite transfer distance")
+        best, stall = tracker
+        return _advance_progress(best, stall, distance, "moving to target")

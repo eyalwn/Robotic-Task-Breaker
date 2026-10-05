@@ -1,26 +1,56 @@
-"""Sim environment factory for the configured backend."""
+"""Thin facade over the configured sim backend."""
 from __future__ import annotations
-
-from typing import TYPE_CHECKING
 
 import config
 
-if TYPE_CHECKING:
-    from envs.vlabench_env import VLABenchEnv
-
 
 class SimEnv:
-    """Factory that returns a sim backend instance for `config.SIM_ENV`."""
+    """Forwards the public env API to the backend selected by ``config.SIM_ENV``."""
 
-    def __new__(cls, task: str, task_idx: int = 0) -> VLABenchEnv:
-        """Create the configured sim backend for the given task."""
+    def __init__(self, task: str, task_idx: int = 0) -> None:
+        """Build that backend and store it on ``self._env``."""
         sim = config.SIM_ENV
         if sim == "vlabench":
             from envs.vlabench_env import VLABenchEnv
 
-            return VLABenchEnv.from_evaluation_episode_index(task, task_idx)
-        if sim == "robocasa":
+            self._env = VLABenchEnv.from_evaluation_episode_index(task, task_idx)
+        elif sim == "robocasa":
             from envs.robocasa_env import RoboCasaEnv
 
-            return RoboCasaEnv.from_task(task, task_idx)
-        raise AssertionError(f"{sim!r} not supported for this env")
+            self._env = RoboCasaEnv.from_task(task, task_idx)
+        else:
+            raise AssertionError(f"{sim!r} not supported for this env")
+
+    @property
+    def steps(self) -> int:
+        """Episode step count from the backend."""
+        return self._env.steps
+
+    @property
+    def task_description(self) -> str:
+        """Language instruction for this episode."""
+        return self._env.task_description
+
+    def observe(self) -> tuple[tuple[bytes, bytes, bytes], list[float]]:
+        """Return ``(images, state)`` from the backend."""
+        return self._env.observe()
+
+    def step(self, action: list[float]) -> bool:
+        """Forward one action to the backend."""
+        return self._env.step(action)
+
+    def success(self) -> bool:
+        """Return the backend goal-success flag."""
+        return self._env.success()
+
+    def check_subtask(self, step: dict[str, str]) -> bool:
+        """Return the backend subtask-completion check for ``step``."""
+        return self._env.check_subtask(step)
+
+    def calc_distances(self, origin_name: str, target_name: str) -> float:
+        """Return the backend origin-to-target distance in metres."""
+        return self._env.calc_distances(origin_name, target_name)
+
+    def close(self) -> None:
+        """Release the backend."""
+        self._env.close()

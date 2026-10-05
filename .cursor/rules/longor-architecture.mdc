@@ -12,11 +12,13 @@ alwaysApply: true
   backends only**. Do not add `core/`, `sim/`, `vla/`, or `robots/`. Do not add
   an ABC, `Backend` protocol, or plugin registry: one env and one VLA per
   process, selected by `config.py`.
-- `src/envs/sim_env.py` is a factory facade
-  (`SimEnv.__new__(task: str, task_idx: int = 0)` lazy-imports the configured
-  backend and returns that instance). It does not forward methods. It does not
-  import a backend at module level. For VLAbench, `task_idx` selects a
-  deterministic Track-1 episode configuration.
+- `src/envs/sim_env.py` is a thin facade.
+  `SimEnv.__init__(self, task: str, task_idx: int = 0)` lazy-imports the
+  configured backend into `self._env` and forwards the public env methods
+  (`observe`, `step`, `success`, `check_subtask`, `calc_distances`, `close`,
+  plus the `steps` and `task_description` properties). It does not import a
+  backend at module level. For VLABench, `task_idx` selects a deterministic
+  evaluation episode.
 - Dependencies point strictly downward in this order; no module may import one
   above it: `config` -> `vla_client` / `envs.sim_env` -> `plan` -> `skills` ->
   `executor` -> `planner` -> `runner`.
@@ -28,8 +30,9 @@ alwaysApply: true
 - Files under `src/` except `src/envs/` must not mention VLA backend names
   (`pi05`, `smolvla`, checkpoint ids). `config.VLA_POLICY` is the exception;
   only `services/` consume it.
-- Sim class names (`VLABenchEnv`) may appear in `src/` only as type hints (IDE
-  jump-to-definition). Default annotation is `VLABenchEnv`.
+- Type hints in `src/` outside `src/envs/` use `SimEnv`. Backend class names
+  (`RoboCasaEnv`, `VLABenchEnv`) stay inside `src/envs/`. `VLABenchEnv` is
+  stale and must not be used as a hint.
   Exactly one type per hint: no `X | Y`, no `Optional[X]`.
 - **The VLA-to-environment integration lives in `src/executor.py`**, in one
   visible method. Do not move it behind a skill class, a tool factory, a
@@ -39,7 +42,7 @@ alwaysApply: true
   scaling, proximity or stall heuristics, and no rewriting a failed result into
   a success. The action is applied as-is. Sim-native obs/action conversion
   belongs in `src/envs/*_env.py`.
-- `observe()` returns `(images, state)` where `images` is a tuple of JPEG
+- `observe()` returns `(images, state)` where `images` is a tuple of lossless PNG
   bytes (length is backend-defined). Executor sends that tuple to the VLA
   client; planner snapshot is `images[0]`.
 - Action selection and object naming must stay perception-first: the planner

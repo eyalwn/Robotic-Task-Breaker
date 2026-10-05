@@ -38,17 +38,41 @@ class FakeEnv:
 
     def check_subtask(self, step: dict[str, str]) -> bool:
         skill = step["skill"]
-        if skill not in ("transfer", "open_drawer"):
+        if skill not in ("transfer", "open"):
             raise KeyError(f"unsupported skill: {skill!r}")
         key = (skill, frozenset(step.items()))
         if key in self._subtask_after:
             return self._steps >= self._subtask_after[key]
         return bool(self._subtask_satisfied.get(key, False))
 
-    def transfer_distances(self, step: dict[str, str]) -> tuple[float, float]:
-        if step["skill"] != "transfer":
-            raise KeyError(f"unsupported skill: {step['skill']!r}")
-        return self._distances
+    def calc_distances(self, origin_name: str, target_name: str) -> float:
+        if isinstance(self._distances, tuple):
+            obj_d, tgt_d = self._distances
+            if origin_name == "EEF":
+                if target_name in self._object_distance_names:
+                    return obj_d
+                return tgt_d
+            if origin_name in self._object_distance_names:
+                return tgt_d
+            raise KeyError(f"unsupported origin: {origin_name!r}")
+        if origin_name != "EEF":
+            raise KeyError(f"unsupported origin: {origin_name!r}")
+        return float(self._distances)
+
+    @property
+    def _object_distance_names(self) -> frozenset[str]:
+        return frozenset(
+            {
+                "cube",
+                "cube_1",
+                "a",
+                "b",
+                "c",
+                "banana",
+                "alphabet_soup_1",
+                "cream_cheese_1",
+            }
+        )
 
 
 class FakeVLA:

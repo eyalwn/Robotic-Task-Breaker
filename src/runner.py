@@ -1,7 +1,7 @@
 """Wire and run planner-executor for one task."""
 
 import logging
-from typing import TYPE_CHECKING, Literal
+from typing import Literal
 
 import config
 from envs.sim_env import SimEnv
@@ -9,9 +9,6 @@ from executor import Executor, StopReason
 from plan import get_stop_reason, is_stop_plan
 from planner import LLMPlanner
 from skills import skill_catalog
-
-if TYPE_CHECKING:
-    from envs.vlabench_env import VLABenchEnv
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +20,7 @@ class Runner:
 
     def __init__(self, task: str, task_idx: int = 0) -> None:
         """Wire env, planner, and executor for one task."""
-        self._env: VLABenchEnv = SimEnv(task, task_idx)
+        self._env = SimEnv(task, task_idx)
         self._goal = self._env.task_description
         try:
             self._planner = LLMPlanner(self._goal, skill_catalog())

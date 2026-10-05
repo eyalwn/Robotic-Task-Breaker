@@ -1,6 +1,6 @@
 """HTTP client for the VLA policy service (``services/run_vla_server.py``).
 
-Wire contract: ``POST /predict`` with multipart JPEG frames plus a JSON-encoded
+Wire contract: ``POST /predict`` with multipart PNG frames plus a JSON-encoded
 state, answered with ``{"actions": [[...], ...]}``. Action vectors must be
 finite; every vector in a chunk shares the same length (inferred from the first).
 """
@@ -52,8 +52,8 @@ class VLAClient:
                 f"{self._url}/predict",
                 timeout=self._timeout,
                 files=[
-                    ("images", (f"cam{i}.jpg", jpeg, "image/jpeg"))
-                    for i, jpeg in enumerate(images)
+                    ("images", (f"cam{i}.png", png, "image/png"))
+                    for i, png in enumerate(images)
                 ],
                 data={"task": task, "state": json.dumps(state)},
             )

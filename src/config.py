@@ -19,7 +19,7 @@ load_dotenv(find_dotenv())
 # --- App level -------------------------------------------------------------
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").strip() or "INFO"
 # Full-horizon action cap for all VLA evaluation episodes.
-MAX_EPISODE_STEPS = 600
+MAX_EPISODE_STEPS = 720
 # Independent episodes per raw-policy baseline campaign.
 BASELINE_EPISODES = 10
 
@@ -39,11 +39,11 @@ MAX_REPLANS = 2
 
 # --- Executor --------------------------------------------------------------
 # Per-skill step cap (guard against a failing subtask; success path ends earlier).
-# Includes `open_drawer` timeout for RoboCasa M2.
+# Includes `open` timeout for RoboCasa M2.
 MAX_SKILL_STEPS = ast.literal_eval(
     os.environ.get(
         "MAX_SKILL_STEPS",
-        '{"transfer": 250, "open_drawer": 720}',
+        '{"transfer": 250, "open": 720}',
     )
 )
 

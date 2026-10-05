@@ -20,6 +20,7 @@ from groot_service import (
     GROOT_LANGUAGE_KEY,
     actions_to_wire_format,
     build_groot_observation,
+    decode_image,
     groot_action_dict_to_chunk,
     parse_state_field,
     truncate_action_chunk,
@@ -35,6 +36,19 @@ def _jpeg_bytes() -> bytes:
     buf = io.BytesIO()
     img.save(buf, format="JPEG")
     return buf.getvalue()
+
+
+def _png_bytes() -> bytes:
+    img = Image.new("RGB", (256, 256), color=(10, 20, 30))
+    buf = io.BytesIO()
+    img.save(buf, format="PNG")
+    return buf.getvalue()
+
+
+def test_decode_image_accepts_png_bytes() -> None:
+    arr = decode_image(_png_bytes())
+    assert arr.shape == (256, 256, 3)
+    assert arr.dtype == np.uint8
 
 
 def test_parse_state_rejects_wrong_length() -> None:

@@ -7,6 +7,8 @@ import logging
 import re
 from typing import Any
 
+import langchain_openai  # noqa: F401  # before sim EGL; else camera obs corrupt (SRD.md)
+
 from langchain.chat_models import init_chat_model
 from langchain_core.messages import HumanMessage, SystemMessage
 
@@ -20,7 +22,7 @@ PLAN FORMAT (JSON):
   [<step>, ...]   OR   {"stop":"<reason>"}
 
 Each step is a flat object with a required "skill" field plus skill args:
-  {"skill":"open_drawer"}
+  {"skill":"open","target_name":"right drawer"}
   {"skill":"transfer","object_name":"...","target_name":"..."}
 
 Rules:
@@ -31,6 +33,7 @@ Rules:
 
 Example:
 [
+  {"skill":"open","target_name":"right drawer"},
   {"skill":"transfer","object_name":"alphabet soup","target_name":"basket"}
 ]\
 """
@@ -82,7 +85,7 @@ class LLMPlanner:
             {"type": "text", "text": task_text},
             {
                 "type": "image_url",
-                "image_url": {"url": f"data:image/jpeg;base64,{image_b64}"},
+                "image_url": {"url": f"data:image/png;base64,{image_b64}"},
             },
         ]
         messages: list[Any] = [
