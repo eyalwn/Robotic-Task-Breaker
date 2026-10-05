@@ -36,6 +36,7 @@ def test_policy_groot_accepted() -> None:
 
 
 def test_unknown_policy_exits_nonzero() -> None:
-    with patch.object(config, "VLA_POLICY", "octo"), pytest.raises(SystemExit) as exc:
+    with patch.object(config, "VLA_POLICY", "octo"), pytest.raises(
+        SystemExit) as exc:
         main()
     assert exc.value.code == 1

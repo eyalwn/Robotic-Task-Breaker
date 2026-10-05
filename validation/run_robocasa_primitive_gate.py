@@ -122,7 +122,10 @@ def _wait_for_readiness(
     port_ready_streak = 0
     while time.monotonic() < deadline:
         if proc.poll() is not None:
-            return False, f"policy server exited before readiness (exit={proc.returncode})", port_ready_streak
+            reason = (
+                "policy server exited before readiness "
+                f"(exit={proc.returncode})")
+            return False, reason, port_ready_streak
 
         log_text = server_log_path.read_text(encoding="utf-8", errors="replace")
         log_ready = READINESS_LOG_MARKER in log_text
@@ -145,11 +148,14 @@ def _wait_for_readiness(
 
         time.sleep(poll_s)
 
+    marker_seen = READINESS_LOG_MARKER in server_log_path.read_text(
+        encoding="utf-8", errors="replace")
     return (
         False,
         (
             f"readiness timeout after {timeout_s}s: "
-            f"log_marker_seen={READINESS_LOG_MARKER in server_log_path.read_text(encoding='utf-8', errors='replace')}; "
+            "log_marker_seen="
+            f"{marker_seen}; "
             f"port_open={_port_accepts_loopback(policy_port)}; "
             f"port_ready_streak={port_ready_streak}"
         ),
@@ -204,7 +210,8 @@ def _run_rollout(
         return int(proc.returncode)
 
 
-def _parse_rollout_result(log_text: str, expected_episodes: int) -> tuple[int, int, str]:
+def _parse_rollout_result(
+    log_text: str, expected_episodes: int) -> tuple[int, int, str]:
     episode_hits = re.findall(
         r"episode\s*\d+.*?\bsuccess\b\s*[:=]\s*(true|false|1|0)",
         log_text,
@@ -233,7 +240,10 @@ def _parse_rollout_result(log_text: str, expected_episodes: int) -> tuple[int, i
         successes = int(round(rate * expected_episodes))
         return successes, expected_episodes, "summary success_rate pattern"
 
-    return 0, expected_episodes, "no parseable success summary; treated as 0 successes"
+    return (
+        0,
+        expected_episodes,
+        "no parseable success summary; treated as 0 successes")
 
 
 def _build_verdict(
@@ -258,7 +268,8 @@ def _build_verdict(
     )
 
 
-def _collect_artifacts(artifact_dir: Path, rollout_log_path: Path, server_log_path: Path) -> None:
+def _collect_artifacts(
+    artifact_dir: Path, rollout_log_path: Path, server_log_path: Path) -> None:
     upstream_outputs = artifact_dir / "upstream_outputs"
     upstream_outputs.mkdir(parents=True, exist_ok=True)
 
@@ -271,7 +282,8 @@ def _collect_artifacts(artifact_dir: Path, rollout_log_path: Path, server_log_pa
     if video_match:
         video_src = Path(video_match.group(1))
         if video_src.is_dir():
-            shutil.copytree(video_src, upstream_outputs / "videos", dirs_exist_ok=True)
+            shutil.copytree(
+                video_src, upstream_outputs / "videos", dirs_exist_ok=True)
 
 
 def _stop_server(proc: subprocess.Popen[bytes]) -> None:
@@ -334,7 +346,8 @@ def main() -> int:
             "elapsed_s": round(time.monotonic() - started, 2),
             "server_pid": proc.pid,
         }
-        readiness_path.write_text(json.dumps(readiness, indent=2) + "\n", encoding="utf-8")
+        readiness_path.write_text(
+            json.dumps(readiness, indent=2) + "\n", encoding="utf-8")
         print(json.dumps(readiness, indent=2))
 
         if not ready:
@@ -377,7 +390,8 @@ def main() -> int:
             "rollout_exit_code": verdict.rollout_exit_code,
             "artifact_dir": str(artifact_dir),
         }
-        verdict_json_path.write_text(json.dumps(verdict_json, indent=2) + "\n", encoding="utf-8")
+        verdict_json_path.write_text(
+            json.dumps(verdict_json, indent=2) + "\n", encoding="utf-8")
         verdict_txt = (
             f"{'PASS' if verdict.passed else 'FAIL'} "
             f"successes={verdict.successes}/{verdict.total} "

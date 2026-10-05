@@ -23,7 +23,8 @@ class VLAError(Exception):
 class VLAClient:
     """HTTP client for the VLA policy service."""
 
-    def __init__(self, url: str = config.VLA_URL, timeout: float = config.VLA_TIMEOUT):
+    def __init__(
+        self, url: str = config.VLA_URL, timeout: float = config.VLA_TIMEOUT) -> None:
         self._url = url.rstrip("/")
         self._timeout = timeout
 
@@ -86,7 +87,8 @@ class VLAClient:
     @staticmethod
     def _parse_action(action: object, idx: int) -> list[float]:
         if not isinstance(action, list) or not action:
-            raise VLAError(f"action {idx} must be a non-empty float list, got {action!r}")
+            raise VLAError(
+                f"action {idx} must be a non-empty float list, got {action!r}")
         try:
             values = [float(v) for v in action]
         except (TypeError, ValueError) as exc:

@@ -28,7 +28,10 @@ _DEFAULT_FORMAT = "%(levelname)s [%(name)s] %(message)s"
 
 
 def _pin_quiet_logger(name: str) -> None:
-    """Hold this logger at ERROR. Robosuite sets ``robosuite_logs`` back to INFO on import."""
+    """Hold this logger at ERROR.
+
+    Robosuite sets ``robosuite_logs`` back to INFO on import.
+    """
     logger = logging.getLogger(name)
     set_level = logging.Logger.setLevel.__get__(logger, logging.Logger)
     set_level(logging.ERROR)

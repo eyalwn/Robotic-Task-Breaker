@@ -34,7 +34,8 @@ class _StubPlanner:
     def fail_on_plan_call(self, call_number: int) -> None:
         self._plan_fail_on_call = call_number
 
-    def stop_on_plan_call(self, call_number: int, reason: str = "goal achieved") -> None:
+    def stop_on_plan_call(
+        self, call_number: int, reason: str = "goal achieved") -> None:
         self._stop_on_call = call_number
         self._stop_reason = reason
 
@@ -113,8 +114,7 @@ def _runner_with_stub_executor(
 
 
 def test_runner_uses_env_task_description_for_planner(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+    monkeypatch: pytest.MonkeyPatch) -> None:
     runner, planner, _ = _runner_with_stub_executor(
         [ExecutionSum(reason=StopReason.PLAN_DONE)],
         monkeypatch,
@@ -157,7 +157,8 @@ def test_runner_plan_done_success(monkeypatch: pytest.MonkeyPatch) -> None:
     assert executor.run.call_count == 1
 
 
-def test_runner_run_calls_success_before_close(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_runner_run_calls_success_before_close(
+    monkeypatch: pytest.MonkeyPatch) -> None:
     runner, _, _ = _runner_with_stub_executor(
         [ExecutionSum(reason=StopReason.PLAN_DONE)],
         monkeypatch,
@@ -181,7 +182,8 @@ def test_runner_planner_stop(monkeypatch: pytest.MonkeyPatch) -> None:
     assert executor.run.call_count == 0
 
 
-def test_runner_subtask_timeout_from_executor(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_runner_subtask_timeout_from_executor(
+    monkeypatch: pytest.MonkeyPatch) -> None:
     n = config.MAX_REPLANS + 1
     runner, planner, executor = _runner_with_stub_executor(
         [ExecutionSum(reason=StopReason.SUBTASK_TIMEOUT)] * n,
@@ -192,11 +194,15 @@ def test_runner_subtask_timeout_from_executor(monkeypatch: pytest.MonkeyPatch) -
     assert executor.run.call_count == n
 
 
-def test_runner_replans_after_subtask_timeout(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_runner_replans_after_subtask_timeout(
+    monkeypatch: pytest.MonkeyPatch) -> None:
     runner, planner, executor = _runner_with_stub_executor(
         [
-            ExecutionSum(reason=StopReason.SUBTASK_TIMEOUT, error="open exceeded 2 steps"),
-            ExecutionSum(reason=StopReason.PLAN_DONE),
+            ExecutionSum(
+                reason=StopReason.SUBTASK_TIMEOUT,
+                error="open exceeded 2 steps"),
+            ExecutionSum(
+                reason=StopReason.PLAN_DONE),
         ],
         monkeypatch,
     )
@@ -205,7 +211,8 @@ def test_runner_replans_after_subtask_timeout(monkeypatch: pytest.MonkeyPatch) -
     assert executor.run.call_count == 2
 
 
-def test_runner_episode_timeout_does_not_replan(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_runner_episode_timeout_does_not_replan(
+    monkeypatch: pytest.MonkeyPatch) -> None:
     runner, planner, executor = _runner_with_stub_executor(
         [
             ExecutionSum(
@@ -220,7 +227,8 @@ def test_runner_episode_timeout_does_not_replan(monkeypatch: pytest.MonkeyPatch)
     assert executor.run.call_count == 1
 
 
-def test_runner_execution_error_does_not_replan(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_runner_execution_error_does_not_replan(
+    monkeypatch: pytest.MonkeyPatch) -> None:
     runner, planner, executor = _runner_with_stub_executor(
         [ExecutionSum(reason=StopReason.EXECUTION_ERROR, error="boom")],
         monkeypatch,

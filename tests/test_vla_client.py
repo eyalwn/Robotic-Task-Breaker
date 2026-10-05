@@ -40,7 +40,8 @@ def test_health_get_request() -> None:
 
     client = VLAClient("http://127.0.0.1:8765", timeout=5.0)
 
-    with patch("vla_client.requests.get", return_value=_ok_response({"ok": True})) as mock_get:
+    with patch("vla_client.requests.get",
+               return_value=_ok_response({"ok": True})) as mock_get:
 
         result = client.health()
 

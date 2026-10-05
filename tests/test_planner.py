@@ -90,7 +90,8 @@ def test_extract_json_brace_balanced_with_string_braces() -> None:
 
 
 def test_planner_success(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("planner.init_chat_model", lambda _model: _mock_llm(VALID_PLAN))
+    monkeypatch.setattr(
+        "planner.init_chat_model", lambda _model: _mock_llm(VALID_PLAN))
     planner = LLMPlanner("pick cube", "catalog")
     result = planner.plan(SNAPSHOT)
     assert result == parse_planner_payload(VALID_PLAN)
@@ -147,8 +148,7 @@ def test_planner_strips_markdown_fences(monkeypatch: pytest.MonkeyPatch) -> None
 
 
 def test_planner_snapshot_image_url_is_png_base64(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+    monkeypatch: pytest.MonkeyPatch) -> None:
     spy = _SpyLLM([_Response(json.dumps(VALID_PLAN))])
     monkeypatch.setattr("planner.init_chat_model", lambda _model: spy)
     planner = LLMPlanner("pick cube", "catalog")
@@ -188,7 +188,8 @@ def test_planner_system_prompt_is_minimal(monkeypatch: pytest.MonkeyPatch) -> No
     assert "Only call skills from the catalog." in system_content
     assert "Name objects from the scene snapshot" in system_content
     assert "Emit valid JSON." in system_content
-    assert "Use the scene snapshot as the initial world state" in system_content
+    assert (
+        "Use the scene snapshot as the initial world state" in system_content)
     assert "Otherwise emit a step array that achieves the goal." in system_content
     assert "transfer" not in system_content
     assert '"kind"' not in system_content
@@ -210,7 +211,9 @@ def test_planner_init_llm_once(monkeypatch: pytest.MonkeyPatch) -> None:
     assert init_calls == 1
 
 
-def test_planner_stop_sentinel_on_initial_call(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_planner_stop_sentinel_on_initial_call(
+    monkeypatch: pytest.MonkeyPatch) -> None:
+    # Keep this compact while staying under the workspace's 85-column style cap.
     monkeypatch.setattr(
         "planner.init_chat_model",
         lambda _model: _LLM([_Response(json.dumps(STOP_PLAN))]),

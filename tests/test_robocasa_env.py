@@ -91,9 +91,7 @@ def test_check_subtask_open_uses_drawer_oracle() -> None:
 
 
 def test_record_uses_policy_camera_frame_and_cv2_writer(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path,
-) -> None:
+    monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
     raw_frame = np.arange(4 * 6 * 3, dtype=np.uint8).reshape(4, 6, 3)
 
     written: list[np.ndarray] = []
@@ -113,7 +111,8 @@ def test_record_uses_policy_camera_frame_and_cv2_writer(
 
     writer = _Writer()
 
-    def _video_writer(path: str, fourcc: str, fps: int, size: tuple[int, int]) -> _Writer:
+    def _video_writer(
+        path: str, fourcc: str, fps: int, size: tuple[int, int]) -> _Writer:
         writer_init["path"] = path
         writer_init["fourcc"] = fourcc
         writer_init["fps"] = fps
@@ -158,7 +157,9 @@ def test_init_env_gym_make_uses_enable_render() -> None:
     mock_gym.make.return_value = mock_env
     with patch.object(robocasa_env, "_import_robocasa_gym", return_value=mock_gym):
         with patch.object(
-            robocasa_env, "_task_description_from_reset_obs", return_value="Open drawer"
+            robocasa_env,
+            "_task_description_from_reset_obs",
+            return_value="Open drawer",
         ):
             with patch.object(RoboCasaEnv, "_record"):
                 env = RoboCasaEnv.__new__(RoboCasaEnv)
@@ -182,7 +183,9 @@ class _FakeGymStepEnv:
     def __init__(self) -> None:
         self.step_obs = {"from_step": True}
 
-    def step(self, native: dict[str, np.ndarray]) -> tuple[object, float, bool, bool, dict]:
+    def step(
+        self, native: dict[str, np.ndarray]
+    ) -> tuple[object, float, bool, bool, dict]:
         return self.step_obs, 0.0, False, False, {}
 
 
@@ -194,6 +197,7 @@ def test_step_stores_obs_returned_by_gym_step() -> None:
     robocasa._steps = 0
     robocasa._writer = None
     with patch.object(RoboCasaEnv, "_record"):
-        done = robocasa.step([0.0] * robocasa_env.expected_action_dim())
+        done = robocasa.step(
+            [0.0] * robocasa_env.expected_action_dim())
     assert done is False
     assert robocasa._last_obs is fake.step_obs

@@ -15,7 +15,7 @@ alwaysApply: true
 - Never stage, commit, or push unless the user explicitly asks in the current message.
 - Follow `SRD.md` as the contract source; when implementation conflicts with SRD,
   stop and resolve explicitly before proceeding.
-- Follow PEP 8 for Python edits.
+- Follow PEP 8 except the 79-column limit; use 85. A statement that fits in 85 stays on one line. Past 85, use as few lines as possible and keep the closing `)`, `]`, or `}` on the last content line. Pack arguments together; one per line only when one argument does not fit beside another.
 
 ## Debug containment protocol (strict)
 

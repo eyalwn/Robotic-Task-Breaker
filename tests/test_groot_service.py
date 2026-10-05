@@ -66,7 +66,8 @@ def test_parse_state_rejects_non_finite() -> None:
 def test_unflatten_state_roundtrip_via_build_observation() -> None:
     flat = [float(i) for i in range(expected_state_dim())]
     side = np.zeros((256, 256, 3), dtype=np.uint8)
-    obs = build_groot_observation(side, side, side, "Open the drawer", np.asarray(flat))
+    obs = build_groot_observation(
+        side, side, side, "Open the drawer", np.asarray(flat))
     assert GROOT_LANGUAGE_KEY in obs
     assert obs[GROOT_LANGUAGE_KEY] == ("Open the drawer",)
     for key in STATE_KEYS:
@@ -79,7 +80,8 @@ def test_groot_action_dict_to_chunk_and_wire() -> None:
     horizon = 2
     action_dict = {}
     for key, width in zip(ACTION_KEYS, ACTION_DIMS):
-        data = np.arange(horizon * width, dtype=np.float32).reshape(1, horizon, width)
+        data = np.arange(
+            horizon * width, dtype=np.float32).reshape(1, horizon, width)
         action_dict[f"action.{key}"] = data
     chunk = groot_action_dict_to_chunk(action_dict)
     assert chunk.shape == (horizon, expected_action_dim())

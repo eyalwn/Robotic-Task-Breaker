@@ -16,7 +16,8 @@ def test_parse_open_step_array() -> None:
 
 def test_reject_wrapped_steps() -> None:
     with pytest.raises(ValueError, match="plan must be"):
-        parse_planner_payload({"steps": [{"skill": "open", "target_name": "drawer"}]})
+        parse_planner_payload(
+            {"steps": [{"skill": "open", "target_name": "drawer"}]})
 
 
 def test_reject_missing_steps_and_stop() -> None:

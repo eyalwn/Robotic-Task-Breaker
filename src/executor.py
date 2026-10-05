@@ -31,13 +31,7 @@ class EpisodeTimeout(Exception):
 class ExecutionSum:
     """Payload returned when plan execution pauses or finishes."""
 
-    def __init__(
-        self,
-        *,
-        reason: str,
-        steps: int = 0,
-        error: str = "",
-    ) -> None:
+    def __init__(self, *, reason: str, steps: int = 0, error: str = "") -> None:
         self.reason = reason
         self.steps = steps
         self.error = error

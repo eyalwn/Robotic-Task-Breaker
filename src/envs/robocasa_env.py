@@ -79,7 +79,8 @@ def flatten_state(groups: dict[str, list[float]]) -> list[float]:
         if chunk is None:
             raise ValueError(f"missing state group {key!r}")
         if len(chunk) != width:
-            raise ValueError(f"state group {key!r} expected {width} floats, got {len(chunk)}")
+            raise ValueError(
+                f"state group {key!r} expected {width} floats, got {len(chunk)}")
         out.extend(float(v) for v in chunk)
     return out
 
@@ -120,7 +121,8 @@ def flatten_action_timestep(groups: dict[str, list[float]]) -> list[float]:
         if chunk is None:
             raise ValueError(f"missing action group {key!r}")
         if len(chunk) != width:
-            raise ValueError(f"action group {key!r} expected {width} floats, got {len(chunk)}")
+            raise ValueError(
+                f"action group {key!r} expected {width} floats, got {len(chunk)}")
         out.extend(float(v) for v in chunk)
     return out
 
@@ -201,7 +203,10 @@ class RoboCasaEnv:
 
     @classmethod
     def from_task(cls, task: str, task_idx: int = 0) -> "RoboCasaEnv":
-        """Build one OpenDrawer episode (``task_idx`` reserved for future eval sets)."""
+        """Build one OpenDrawer episode.
+
+        ``task_idx`` is reserved for future eval sets.
+        """
         if task_idx != 0:
             raise RuntimeError(
                 "RoboCasa OpenDrawer vertical slice supports task_idx=0 only"
@@ -254,10 +259,12 @@ class RoboCasaEnv:
         elif arr.ndim == 4:
             arr = arr[0]
         if arr.ndim != 3 or arr.shape[-1] != 3:
-            raise RuntimeError(f"unexpected camera shape for {flat_key}: {arr.shape}")
+            raise RuntimeError(
+                f"unexpected camera shape for {flat_key}: {arr.shape}")
         return np.ascontiguousarray(arr, dtype=np.uint8)
 
-    def _state_groups_from_obs(self, obs: dict[str, object]) -> dict[str, list[float]]:
+    def _state_groups_from_obs(
+        self, obs: dict[str, object]) -> dict[str, list[float]]:
         groups: dict[str, list[float]] = {}
         for key, width in zip(STATE_KEYS, STATE_DIMS):
             flat_key = f"state.{key}"

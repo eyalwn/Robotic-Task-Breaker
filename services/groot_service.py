@@ -51,7 +51,7 @@ _upstream = None
 
 
 def decode_image(raw_bytes: bytes) -> np.ndarray:
-    """Decode one PNG (or other PIL image) to uint8 RGB at the RoboCasa 256² contract."""
+    """Decode one PNG (or other PIL image) to uint8 RGB at the RoboCasa contract."""
     img = Image.open(io.BytesIO(raw_bytes)).convert("RGB")
     img = img.resize((_IMAGE_SIZE, _IMAGE_SIZE), Image.LANCZOS)
     return np.array(img, dtype=np.uint8)
@@ -127,9 +127,11 @@ def groot_action_dict_to_chunk(action_dict: dict[str, np.ndarray]) -> np.ndarray
             raise ValueError(f"missing upstream action key {parsed_key!r}")
         arr = np.asarray(action_dict[parsed_key], dtype=np.float32)
         if arr.ndim != 3:
-            raise ValueError(f"{parsed_key} must have shape (B, T, D), got {arr.shape}")
+            raise ValueError(
+                f"{parsed_key} must have shape (B, T, D), got {arr.shape}")
         if arr.shape[0] != 1:
-            raise ValueError(f"{parsed_key} batch size must be 1, got {arr.shape[0]}")
+            raise ValueError(
+                f"{parsed_key} batch size must be 1, got {arr.shape[0]}")
         if arr.shape[2] != width:
             raise ValueError(f"{parsed_key} dim must be {width}, got {arr.shape[2]}")
         if horizon is None:

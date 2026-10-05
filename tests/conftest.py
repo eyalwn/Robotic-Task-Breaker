@@ -19,7 +19,8 @@ class FakeEnv:
     ) -> None:
         self._steps = steps
         self.step_calls: list[list[float]] = []
-        self._subtask_satisfied = {} if subtask_satisfied is None else subtask_satisfied
+        self._subtask_satisfied = (
+            {} if subtask_satisfied is None else subtask_satisfied)
         self._subtask_after = {} if subtask_after is None else subtask_after
 
     @property
@@ -66,11 +67,7 @@ def fake_env() -> FakeEnv:
     return FakeEnv()
 
 
-def build_executor(
-    *,
-    env=None,
-    vla=None,
-) -> Executor:
+def build_executor(*, env=None, vla=None) -> Executor:
     env = env or FakeEnv()
     vla = vla or FakeVLA()
     executor = Executor(env=env)  # type: ignore[arg-type]

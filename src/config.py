@@ -41,7 +41,8 @@ MAX_SKILL_STEPS = {"open": 720}
 # --- VLA server ------------------------------------------------------------
 # VLA backend selection (launcher default)
 VLA_POLICY = os.environ.get("VLA_POLICY", "groot")  # "groot"
-# Actions per /predict response (GR00T N1.6 default chunk size; service enforces cap).
+# Actions per /predict response (GR00T N1.6 default chunk size; service enforces
+# cap).
 VLA_ACTIONS_PER_CHUNK = int(os.environ.get("VLA_ACTIONS_PER_CHUNK", "8"))
 VLA_PORT = 8765
 VLA_URL = f"http://127.0.0.1:{VLA_PORT}"

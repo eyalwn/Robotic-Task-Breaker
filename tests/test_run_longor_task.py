@@ -1,4 +1,4 @@
-"""Hermetic tests for examples/run_longor_task.py Colab entrypoint contract."""
+"""Hermetic tests for the examples/run_longor_task.py Colab entrypoint contract."""
 from __future__ import annotations
 
 import runpy
@@ -14,7 +14,8 @@ _SCRIPT_ARGV = [str(_SCRIPT), "--task-idx", "3"]
 
 
 def _run_script(*, success: bool) -> int:
-    with patch("runner.Runner") as runner_cls, patch.object(sys, "argv", _SCRIPT_ARGV):
+    with patch("runner.Runner") as runner_cls, patch.object(
+        sys, "argv", _SCRIPT_ARGV):
         runner_cls.return_value.run.return_value = success
         with pytest.raises(SystemExit) as exc:
             runpy.run_path(str(_SCRIPT), run_name="__main__")
@@ -28,7 +29,8 @@ def test_run_longor_task_pass_exits_zero(capsys: pytest.CaptureFixture[str]) -> 
     assert "PASS task='open_drawer' task_idx=3 success=True" in out
 
 
-def test_run_longor_task_fail_exits_nonzero(capsys: pytest.CaptureFixture[str]) -> None:
+def test_run_longor_task_fail_exits_nonzero(
+    capsys: pytest.CaptureFixture[str]) -> None:
     code = _run_script(success=False)
     assert code == 1
     out = capsys.readouterr().out
@@ -36,7 +38,8 @@ def test_run_longor_task_fail_exits_nonzero(capsys: pytest.CaptureFixture[str]) 
 
 
 def test_run_longor_task_forwards_task_idx() -> None:
-    with patch("runner.Runner") as runner_cls, patch.object(sys, "argv", _SCRIPT_ARGV):
+    with patch("runner.Runner") as runner_cls, patch.object(
+        sys, "argv", _SCRIPT_ARGV):
         runner_cls.return_value.run.return_value = True
         with pytest.raises(SystemExit):
             runpy.run_path(str(_SCRIPT), run_name="__main__")
@@ -44,11 +47,10 @@ def test_run_longor_task_forwards_task_idx() -> None:
 
 
 def test_run_longor_task_construction_error_prints_fail_and_exits_nonzero(
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    with patch("runner.Runner", side_effect=RuntimeError("bad task_idx")), patch.object(
-        sys, "argv", _SCRIPT_ARGV
-    ):
+    capsys: pytest.CaptureFixture[str]) -> None:
+    with patch(
+        "runner.Runner", side_effect=RuntimeError("bad task_idx")
+    ), patch.object(sys, "argv", _SCRIPT_ARGV):
         with pytest.raises(SystemExit) as exc:
             runpy.run_path(str(_SCRIPT), run_name="__main__")
     assert exc.value.code == 1

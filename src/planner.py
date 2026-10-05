@@ -29,7 +29,8 @@ Each step is a flat object with a required "skill" field plus skill args:
 
 Rules:
 - Only call skills from the catalog.
-- Name objects from the scene snapshot and natural-language goal, not sim ground-truth IDs.
+- Name objects from the scene snapshot and natural-language goal, not sim
+  ground-truth IDs.
 - Emit valid JSON.
 
 Example:
@@ -94,7 +95,8 @@ class LLMPlanner:
         ]
 
         for attempt in range(self._max_plan_retries):
-            logger.info("planning attempt: %d/%d", attempt + 1, self._max_plan_retries)
+            logger.info(
+                "planning attempt: %d/%d", attempt + 1, self._max_plan_retries)
             response = self._llm.invoke(messages)
             if response.usage_metadata:
                 logger.debug("LLMPlanner usage: %s", response.usage_metadata)
