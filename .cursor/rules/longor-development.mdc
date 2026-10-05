@@ -13,16 +13,16 @@ alwaysApply: true
 - In orchestration paths, prefer one top-level `try` and avoid nested `try` blocks unless different exception classes require different handling.
 - If requirements are unclear, stop at the first decision point and ask a targeted question. Do not guess.
 - Never stage, commit, or push unless the user explicitly asks in the current message.
-- Follow the `SRD.md` architecture contracts, module layout, and VLA service contract. If a change needs a contract change, stop and propose it first.
+- Follow `SRD.md` as the contract source; when implementation conflicts with SRD,
+  stop and resolve explicitly before proceeding.
 - Follow PEP 8 for Python edits.
 
 ## Debug containment protocol (strict)
 
 - When debugging, default to **small, reversible passes**. Per pass: touch at most 2 source files under `src/**` or `services/**` and keep diffs under ~200 changed LOC. Executing an approved `SRD.md` phase is not debugging and is not subject to this budget.
 - If the expected change exceeds that budget, stop and get user approval first with: hypothesis, file list, and rollback plan.
-- Do not embed experiment harnesses into production modules. Do not recreate a `validation/` directory.
+- Put milestone validation and experiment orchestration in validation/; keep production runtime modules free of experiment-only code. Colab notebooks are launchers only, with orchestration and verdict logic in Python scripts.
 - Delete temporary debug instrumentation once the root cause is confirmed. Do not leave it behind a flag.
-- `src/config.py` is the only place defaults live. A new constant is fine; adding or changing an env var needs a mapped `SRD.md` acceptance criterion.
 - For Colab validation, notebooks are launchers only; orchestration and verdict logic live in Python scripts.
 
 ## Structural defaults (apply globally)
