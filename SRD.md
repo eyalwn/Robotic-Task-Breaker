@@ -20,8 +20,28 @@ simulator/checkpoint pair only to test that claim.
 - **M2 — DONE.** Longor OpenDrawer on RoboCasa with GR00T N1.6-3B through the
   HTTP VLA contract (`colab/run_longor_task.ipynb` -> `examples/run_longor_task.py`):
   succeeded in one `Runner` episode. Report as "given a subtask-completion oracle."
-- **M3 — PLANNED.** Formalize a bare-VLA vs Longor success-rate comparison on a
-  harder long-horizon suite.
+- **M3 — PLANNED.** Long-horizon capability gate: select a small RoboCasa suite
+  requiring at least two independently verifiable skills; extend the environment,
+  skill catalog, planner schema, and VLA prompt mapping only for its primitives;
+  then run a matched bare-VLA primitive gate for every required primitive.
+  The gate uses the planned comparison's model, observation/action contract,
+  action chunking, episode cap, and task/seed distribution. A primitive that is
+  not viable makes a Longor comparison result uninterpretable as a planning result.
+- **M4 — PLANNED.** Paired Longor-vs-bare-VLA pilot on the M3 suite. Retain
+  per-episode artifacts and assign every failure to exactly one category:
+  policy/primitive, planner plan, plan-to-skill grounding, subtask
+  transition/oracle, or infrastructure. Use the pilot to freeze the M5 suite,
+  budgets, replanning policy, sample size, and decision rule; do not claim a
+  win or loss from it.
+- **M5 — PLANNED.** Formal Longor-vs-bare-VLA comparison. Freeze code, model
+  checkpoint, prompts, task IDs/seeds, action chunking, compute limits, and
+  stop/timeout policy before execution. Both arms use the same VLA server,
+  observation adapter, action representation, horizons, and seeds; the bare
+  arm receives original task language while Longor receives generated primitive
+  prompts. Report per-episode paired outcomes, success rates with uncertainty,
+  and simulation-ground-truth use for subtask checks. The predeclared decision
+  rule requires the lower confidence bound of Longor's absolute success-rate
+  lift across the suite to be positive.
 
 ## Runtime architecture contract
 
