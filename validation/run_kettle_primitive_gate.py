@@ -51,9 +51,9 @@ def _body_xy(sim_env, obj) -> tuple[float, float]:
     return float(pos[0]), float(pos[1])
 
 
-def _site_xy(sim_env, site_info: dict) -> tuple[float, float]:
-    name = site_info["name"]
-    pos = sim_env.sim.data.get_site_xpos(name)
+def _site_xy(sim_env, site) -> tuple[float, float]:
+    """XY of a burner site. RoboCasa stores these as XML elements, not dicts."""
+    pos = sim_env.sim.data.get_site_xpos(site.get("name"))
     return float(pos[0]), float(pos[1])
 
 
