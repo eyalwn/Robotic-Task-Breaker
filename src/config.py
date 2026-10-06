@@ -17,8 +17,6 @@ load_dotenv(find_dotenv())
 
 # --- App level -------------------------------------------------------------
 LOG_LEVEL = os.environ.get("LOG_LEVEL", "INFO").strip() or "INFO"
-# Full-horizon action cap for all VLA evaluation episodes.
-MAX_EPISODE_STEPS = 720
 
 # --- video ------------------------------------------------------------------
 SAVE_VIDEO = os.environ.get("SAVE_VIDEO") == "1"
@@ -36,7 +34,7 @@ MAX_REPLANS = 2
 
 # --- Executor --------------------------------------------------------------
 # Per-skill step cap (guard against a failing subtask; success path ends earlier).
-MAX_SKILL_STEPS = {"open": 720}
+MAX_SKILL_STEPS = {"open": 720, "place": 900, "turn_on": 400}
 
 # --- VLA server ------------------------------------------------------------
 # VLA backend selection (launcher default)

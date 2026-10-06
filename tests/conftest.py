@@ -16,8 +16,10 @@ class FakeEnv:
         subtask_satisfied=None,
         subtask_after=None,
         steps: int = 0,
+        horizon: int = 720,
     ) -> None:
         self._steps = steps
+        self._horizon = horizon
         self.step_calls: list[list[float]] = []
         self._subtask_satisfied = (
             {} if subtask_satisfied is None else subtask_satisfied)
@@ -26,6 +28,10 @@ class FakeEnv:
     @property
     def steps(self) -> int:
         return self._steps
+
+    @property
+    def horizon(self) -> int:
+        return self._horizon
 
     def observe(self) -> tuple[tuple[bytes, bytes], list[float]]:
         return (b"main-image", b"wrist-image"), [0.0] * 8
@@ -37,7 +43,7 @@ class FakeEnv:
 
     def check_subtask(self, step: dict[str, str]) -> bool:
         skill = step["skill"]
-        if skill != "open":
+        if skill not in ("open", "place", "turn_on"):
             raise KeyError(f"unsupported skill: {skill!r}")
         key = (skill, frozenset(step.items()))
         if key in self._subtask_after:

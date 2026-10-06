@@ -25,17 +25,28 @@ PLAN FORMAT (JSON):
   [<step>, ...]   OR   {"stop":"<reason>"}
 
 Each step is a flat object with a required "skill" field plus skill args:
-  {"skill":"open","target_name":"right drawer"}
+  {"skill":"open","object_name":"right drawer"}
+  {"skill":"place","object_name":"...","source_name":"...","destination_name":"..."}
+  {"skill":"turn_on","target_name":"..."}
 
 Rules:
 - Only call skills from the catalog.
 - Name objects from the scene snapshot and natural-language goal, not sim
   ground-truth IDs.
+- Be specific whenever a name could match more than one object (e.g. "rear right
+  burner of the stove", "left drawer"). Use the identical phrase for the same
+  object across steps.
 - Emit valid JSON.
 
-Example:
+Example (open drawer):
 [
-  {"skill":"open","target_name":"right drawer"}
+  {"skill":"open","object_name":"right drawer"}
+]
+
+Example (kettle boiling):
+[
+  {"skill":"place","object_name":"kettle","source_name":"counter","destination_name":"rear right burner of the stove"},
+  {"skill":"turn_on","target_name":"rear right burner of the stove"}
 ]\
 """
 

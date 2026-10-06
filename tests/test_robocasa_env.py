@@ -10,12 +10,46 @@ import pytest
 
 from envs import robocasa_env
 from envs.robocasa_env import (
+    KETTLE_BOILING_GYM_ENV_ID,
+    KETTLE_BOILING_TASK,
+    OPEN_DRAWER_GYM_ENV_ID,
+    OPEN_DRAWER_TASK,
     STATE_DIMS,
     STATE_KEYS,
-    OPEN_DRAWER_GYM_ENV_ID,
     RoboCasaEnv,
+    _resolve_gym_env_id,
     _task_description_from_reset_obs,
+    burner_phrase_to_key,
 )
+
+
+def test_burner_phrase_to_key_parses_stove_phrase() -> None:
+    keys = ("front_left", "front_right", "rear_left", "rear_right")
+    assert burner_phrase_to_key(
+        "rear right burner of the stove", keys) == "rear_right"
+
+
+def test_burner_phrase_to_key_unknown_lists_valid_keys() -> None:
+    keys = ("rear_right", "front_left")
+    with pytest.raises(KeyError, match="valid keys: front_left, rear_right"):
+        burner_phrase_to_key("front right burner of the stove", keys)
+
+
+def test_resolve_gym_env_id_kettle_boiling() -> None:
+    assert _resolve_gym_env_id(KETTLE_BOILING_TASK) == KETTLE_BOILING_GYM_ENV_ID
+
+
+def test_resolve_gym_env_id_unknown_task() -> None:
+    with pytest.raises(RuntimeError, match="supports tasks"):
+        _resolve_gym_env_id("unknown_task")
+
+
+def test_horizon_by_task() -> None:
+    env = RoboCasaEnv.__new__(RoboCasaEnv)
+    env._task = OPEN_DRAWER_TASK
+    assert env.horizon == 720
+    env._task = KETTLE_BOILING_TASK
+    assert env.horizon == 1500
 
 
 def test_task_description_from_reset_obs_reads_string() -> None:
@@ -65,6 +99,7 @@ class _OpenDrawerTask:
 def _robocasa_with_kitchen(opened: bool) -> tuple[RoboCasaEnv, _OpenDrawerTask]:
     task = _OpenDrawerTask(opened)
     robocasa = RoboCasaEnv.__new__(RoboCasaEnv)
+    robocasa._task = OPEN_DRAWER_TASK
     robocasa._env = SimpleNamespace(unwrapped=_GrootUnwrapped(task))
     return robocasa, task
 
@@ -84,10 +119,152 @@ def test_drawer_oracle_raises_when_check_success_missing() -> None:
 
 def test_check_subtask_open_uses_drawer_oracle() -> None:
     robocasa, task = _robocasa_with_kitchen(False)
-    step = {"skill": "open", "target_name": "right drawer"}
+    step = {"skill": "open", "object_name": "right drawer"}
     assert robocasa.check_subtask(step) is False
     task.opened = True
     assert robocasa.check_subtask(step) is True
+
+
+_BURNER_PHRASE = "rear right burner of the stove"
+_BURNER_SITES_OK = {"rear_right": {"name": "rear_right_site"}}
+_KETTLE_PLACE_STEP = {
+    "skill": "place",
+    "object_name": "kettle",
+    "source_name": "counter",
+    "destination_name": _BURNER_PHRASE,
+}
+_KETTLE_TURN_STEP = {"skill": "turn_on", "target_name": _BURNER_PHRASE}
+
+
+def _patch_fake_object_utils(
+    monkeypatch: pytest.MonkeyPatch, *, contact: bool, gripper_far: bool
+) -> None:
+    ou = SimpleNamespace(
+        check_obj_fixture_contact=lambda _sim, _obj, _fix: contact,
+        gripper_obj_far=lambda _sim: gripper_far,
+    )
+    utils = SimpleNamespace(object_utils=ou)
+    monkeypatch.setitem(sys.modules, "robocasa", SimpleNamespace(utils=utils))
+    monkeypatch.setitem(sys.modules, "robocasa.utils", utils)
+    monkeypatch.setitem(sys.modules, "robocasa.utils.object_utils", ou)
+
+
+def _kettle_kitchen(
+    *,
+    burner_sites: dict,
+    kettle_xy: tuple[float, float] = (0.0, 0.0),
+    site_xy: tuple[float, float] = (0.0, 0.0),
+    knobs: dict[str, float] | None = None,
+) -> SimpleNamespace:
+    if knobs is None:
+        knobs = {"rear_right": 1.0}
+    body_xpos = np.zeros((1, 3), dtype=np.float64)
+    body_xpos[0, 0:2] = kettle_xy
+    site_pos = np.zeros(3, dtype=np.float64)
+    site_pos[0:2] = site_xy
+
+    sim_data = SimpleNamespace(
+        body_xpos=body_xpos,
+        get_site_xpos=lambda _name: site_pos,
+    )
+
+    return SimpleNamespace(
+        stove=SimpleNamespace(
+            burner_sites=burner_sites,
+            get_knobs_state=lambda env=None: knobs,
+        ),
+        objects={"obj": SimpleNamespace(name="kettle_obj")},
+        obj_body_id={"kettle_obj": 0},
+        sim=SimpleNamespace(data=sim_data),
+    )
+
+
+def _kettle_robocasa(kitchen: SimpleNamespace) -> RoboCasaEnv:
+    robocasa = RoboCasaEnv.__new__(RoboCasaEnv)
+    robocasa._task = KETTLE_BOILING_TASK
+    robocasa._env = SimpleNamespace(unwrapped=_GrootUnwrapped(kitchen))
+    return robocasa
+
+
+def test_kettle_place_oracle_true_when_all_conditions_met(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_fake_object_utils(monkeypatch, contact=True, gripper_far=True)
+    rc = _kettle_robocasa(_kettle_kitchen(burner_sites=_BURNER_SITES_OK))
+    assert rc._kettle_place_oracle(_KETTLE_PLACE_STEP) is True
+
+
+def test_kettle_place_oracle_false_without_fixture_contact(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_fake_object_utils(monkeypatch, contact=False, gripper_far=True)
+    rc = _kettle_robocasa(_kettle_kitchen(burner_sites=_BURNER_SITES_OK))
+    assert rc._kettle_place_oracle(_KETTLE_PLACE_STEP) is False
+
+
+def test_kettle_place_oracle_false_when_kettle_too_far_from_burner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_fake_object_utils(monkeypatch, contact=True, gripper_far=True)
+    kitchen = _kettle_kitchen(
+        burner_sites=_BURNER_SITES_OK,
+        kettle_xy=(0.0, 0.0),
+        site_xy=(1.0, 0.0),
+    )
+    rc = _kettle_robocasa(kitchen)
+    assert rc._kettle_place_oracle(_KETTLE_PLACE_STEP) is False
+
+
+def test_kettle_place_oracle_false_when_gripper_not_far(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_fake_object_utils(monkeypatch, contact=True, gripper_far=False)
+    rc = _kettle_robocasa(_kettle_kitchen(burner_sites=_BURNER_SITES_OK))
+    assert rc._kettle_place_oracle(_KETTLE_PLACE_STEP) is False
+
+
+def test_kettle_place_oracle_false_when_burner_site_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_fake_object_utils(monkeypatch, contact=True, gripper_far=True)
+    kitchen = _kettle_kitchen(burner_sites={"rear_right": None})
+    rc = _kettle_robocasa(kitchen)
+    assert rc._kettle_place_oracle(_KETTLE_PLACE_STEP) is False
+
+
+def test_kettle_place_oracle_bad_burner_phrase_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_fake_object_utils(monkeypatch, contact=True, gripper_far=True)
+    rc = _kettle_robocasa(_kettle_kitchen(burner_sites=_BURNER_SITES_OK))
+    step = {**_KETTLE_PLACE_STEP, "destination_name": "left drawer"}
+    with pytest.raises(ValueError, match="burner phrase"):
+        rc._kettle_place_oracle(step)
+
+
+def test_kettle_turn_on_oracle_true_when_knob_in_range() -> None:
+    rc = _kettle_robocasa(_kettle_kitchen(burner_sites=_BURNER_SITES_OK))
+    assert rc._kettle_turn_on_oracle(_KETTLE_TURN_STEP) is True
+
+
+def test_kettle_turn_on_oracle_false_when_knob_at_zero() -> None:
+    kitchen = _kettle_kitchen(
+        burner_sites=_BURNER_SITES_OK, knobs={"rear_right": 0.0})
+    rc = _kettle_robocasa(kitchen)
+    assert rc._kettle_turn_on_oracle(_KETTLE_TURN_STEP) is False
+
+
+def test_kettle_turn_on_oracle_bad_burner_phrase_raises() -> None:
+    rc = _kettle_robocasa(_kettle_kitchen(burner_sites=_BURNER_SITES_OK))
+    step = {"skill": "turn_on", "target_name": "left drawer"}
+    with pytest.raises(ValueError, match="burner phrase"):
+        rc._kettle_turn_on_oracle(step)
+
+
+def test_kettle_check_subtask_open_raises_key_error() -> None:
+    rc = _kettle_robocasa(_kettle_kitchen(burner_sites=_BURNER_SITES_OK))
+    with pytest.raises(KeyError, match="unsupported skill"):
+        rc.check_subtask({"skill": "open", "object_name": "right drawer"})
 
 
 def test_record_uses_policy_camera_frame_and_cv2_writer(

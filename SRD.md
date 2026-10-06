@@ -27,6 +27,13 @@ simulator/checkpoint pair only to test that claim.
   The gate uses the planned comparison's model, observation/action contract,
   action chunking, episode cap, and task/seed distribution. A primitive that is
   not viable makes a Longor comparison result uninterpretable as a planning result.
+  Suite: RoboCasa `KettleBoiling` (`robocasa_panda_omron/KettleBoiling_PandaOmron_Env`,
+  horizon 1500; kettle onto a stove burner, then burner on). Feasibility probe
+  confirmed the env runs through the GR00T PandaOmron wrapper with the same
+  observation contract as OpenDrawer. Bare-VLA baseline (GR00T N1.6-3B, 10
+  episodes, 1500-step cap, 8 actions/call): **0/10**. Primitive viability is
+  gated inside the KettleBoiling scene (fixed two-step plan, no LLM, per-stage
+  conditional success), not via atomic-env rates.
 - **M4 — PLANNED.** Paired Longor-vs-bare-VLA pilot on the M3 suite. Retain
   per-episode artifacts and assign every failure to exactly one category:
   policy/primitive, planner plan, plan-to-skill grounding, subtask
@@ -41,7 +48,10 @@ simulator/checkpoint pair only to test that claim.
   prompts. Report per-episode paired outcomes, success rates with uncertainty,
   and simulation-ground-truth use for subtask checks. The predeclared decision
   rule requires the lower confidence bound of Longor's absolute success-rate
-  lift across the suite to be positive.
+  lift across the suite to be positive. Pairing requires reproducible scenes:
+  `reset(seed=...)` through the GR00T wrapper was verified NOT reproducible
+  (same seed -> different frames); resolve (seed hook vs unpaired comparison)
+  before M4 freezes the protocol.
 
 ## Runtime architecture contract
 
@@ -58,9 +68,9 @@ Contract points:
   defaults owner.
 - `SimEnv(task, task_idx=0)` lazy-imports the backend into `self._env` and
   forwards `observe`, `step`, `success`, `check_subtask`, `close`, plus
-  `steps` and `task_description`.
-- Current backend slice: `src/envs/robocasa_env.py` supports `task="open_drawer"`
-  and `task_idx=0` only.
+  `steps`, `horizon`, and `task_description`.
+- Current backend slice: `src/envs/robocasa_env.py` supports
+  `task in {"open_drawer", "kettle_boiling"}` and `task_idx=0` only.
 - `observe()` returns `(images, state)` where `images` is a tuple of lossless
   PNG bytes and `state` is a float list. For RoboCasa today: 3 images.
 - VLA integration lives in `src/executor.py`; actions from `vla_client` are
@@ -75,12 +85,36 @@ Contract points:
 
 Planner output must be valid JSON in one of two shapes:
 
-- Step array: `[{"skill":"open","target_name":"..."}]`
+- Step array: `[{"skill":"open","object_name":"..."}]`
 - STOP sentinel: `{"stop":"<reason>"}`
+
+`open` and `place` take `object_name`. `turn_on` takes `target_name` for the
+control to activate. The planner decides all names before execution (one plan
+from the initial snapshot) and must be specific whenever a name could match
+more than one object (burner position, left/right drawer); the same object is
+named identically across steps.
 
 Runtime skill surface:
 
-- `open(target_name)` -> VLA task prompt `open the <target_name>`.
+- `open(object_name)` -> VLA task prompt `open the <object_name>`.
+- `place(object_name, source_name, destination_name)` -> VLA task prompt
+  `pick the <object_name> from the <source_name> and place it on the
+  <destination_name>` (GR00T PnP training language, verified from the upstream
+  atomic envs; training destinations are containers like "pan"/"cabinet", so
+  a burner destination is out-of-distribution). Pick and place are one skill:
+  the checkpoint was trained on monolithic prompts only; a split is revisited
+  in M4 with grasp-diagnostic evidence.
+- `turn_on(target_name)` -> VLA task prompt `turn on the <target_name>`, with
+  `target_name` in GR00T TurnOn language, e.g. `rear right burner of the stove`
+  (use the same burner phrase as the preceding `place` destination).
+
+Subtask oracles (`check_subtask`, sim ground truth, disclosed in claims):
+`place` = object in contact with the destination fixture, within the
+destination site radius, gripper far from the object; `turn_on` = the named
+control's state is on.
+
+Episode step cap comes from the backend (`env.horizon`: 720 for OpenDrawer, 1500
+for KettleBoiling), not from a global config constant.
 
 ## VLA service contract
 

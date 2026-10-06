@@ -6,6 +6,12 @@ from typing import TypeAlias
 Step: TypeAlias = dict[str, str]
 Plan: TypeAlias = list[Step]
 
+_SKILL_ARG_KEYS: dict[str, tuple[str, ...]] = {
+    "open": ("object_name",),
+    "place": ("object_name", "source_name", "destination_name"),
+    "turn_on": ("target_name",),
+}
+
 
 def is_stop_plan(data: object) -> bool:
     """Return True if data is a sentinel STOP plan."""
@@ -35,7 +41,7 @@ def parse_planner_payload(data: object) -> object:
     raise ValueError("plan must be a step array or include 'stop'")
 
 
-def _parse_step(step: dict) -> Step:
+def _parse_step(step: object) -> Step:
     """Validate a flat step dict with string values."""
     if not isinstance(step, dict):
         raise ValueError("each step must be an object")
@@ -43,11 +49,19 @@ def _parse_step(step: dict) -> Step:
     if not isinstance(skill, str) or not skill.strip():
         raise ValueError("each step requires a non-empty 'skill'")
     skill_name = skill.strip()
-    if skill_name == "open":
-        if step.get("object_name"):
-            raise ValueError("open step must not include object_name")
-        target_name = step.get("target_name")
-        if not isinstance(target_name, str) or not target_name.strip():
-            raise ValueError("open step requires non-empty 'target_name'")
-        return {"skill": "open", "target_name": target_name.strip()}
-    raise ValueError(f"unsupported skill: {skill_name!r}")
+    arg_keys = _SKILL_ARG_KEYS.get(skill_name)
+    if arg_keys is None:
+        raise ValueError(f"unsupported skill: {skill_name!r}")
+    allowed = frozenset({"skill", *arg_keys})
+    extra = set(step.keys()) - allowed
+    if extra:
+        names = ", ".join(sorted(str(k) for k in extra))
+        raise ValueError(f"{skill_name} step has unexpected keys: {names}")
+    out: Step = {"skill": skill_name}
+    for key in arg_keys:
+        value = step.get(key)
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(
+                f"{skill_name} step requires non-empty {key!r}")
+        out[key] = value.strip()
+    return out

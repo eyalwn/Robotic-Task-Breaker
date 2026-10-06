@@ -12,7 +12,7 @@ from plan import get_stop_reason, is_stop_plan, parse_planner_payload
 VALID_PLAN = [
     {
         "skill": "open",
-        "target_name": "right drawer",
+        "object_name": "right drawer",
     },
 ]
 
@@ -80,7 +80,7 @@ def test_extract_json_from_fenced_output() -> None:
 def test_extract_json_with_trailing_prose() -> None:
     raw = f"{json.dumps(VALID_PLAN)}\n\nNote: open drawer."
     parsed = json.loads(_extract_json(raw))
-    assert parsed[0]["target_name"] == "right drawer"
+    assert parsed[0]["object_name"] == "right drawer"
 
 
 def test_extract_json_brace_balanced_with_string_braces() -> None:
@@ -177,7 +177,7 @@ def test_planner_goal_used_as_is(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_planner_system_prompt_is_minimal(monkeypatch: pytest.MonkeyPatch) -> None:
     spy = _SpyLLM([_Response(json.dumps(VALID_PLAN))])
     monkeypatch.setattr("planner.init_chat_model", lambda _model: spy)
-    catalog = "open(target_name: str) -> None"
+    catalog = "open(object_name: str) -> None"
     planner = LLMPlanner("pick cube", catalog)
     planner.plan(SNAPSHOT)
     system_content = spy.calls[0][0].content
@@ -188,6 +188,8 @@ def test_planner_system_prompt_is_minimal(monkeypatch: pytest.MonkeyPatch) -> No
     assert "Only call skills from the catalog." in system_content
     assert "Name objects from the scene snapshot" in system_content
     assert "Emit valid JSON." in system_content
+    assert "rear right burner of the stove" in system_content
+    assert "identical phrase" in system_content
     assert (
         "Use the scene snapshot as the initial world state" in system_content)
     assert "Otherwise emit a step array that achieves the goal." in system_content

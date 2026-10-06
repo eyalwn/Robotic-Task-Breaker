@@ -28,8 +28,8 @@ def _step_key(skill: str, **fields: str) -> tuple[str, frozenset]:
 
 
 def test_steps_execute_in_order() -> None:
-    step_a = {"skill": "open", "target_name": "left drawer"}
-    step_b = {"skill": "open", "target_name": "right drawer"}
+    step_a = {"skill": "open", "object_name": "left drawer"}
+    step_b = {"skill": "open", "object_name": "right drawer"}
     env = FakeEnv(
         subtask_after={
             ("open", frozenset(step_a.items())): 1,
@@ -49,16 +49,16 @@ def test_steps_execute_in_order() -> None:
 def test_runs_all_steps_without_early_stop() -> None:
     env = FakeEnv(
         subtask_satisfied={
-            _step_key("open", target_name="left drawer"): True,
-            _step_key("open", target_name="right drawer"): True,
+            _step_key("open", object_name="left drawer"): True,
+            _step_key("open", object_name="right drawer"): True,
         }
     )
     vla = FakeVLA(actions=[[0.0] * 7])
     executor = build_executor(env=env, vla=vla)
     plan = make_plan(
         [
-            {"skill": "open", "target_name": "left drawer"},
-            {"skill": "open", "target_name": "right drawer"},
+            {"skill": "open", "object_name": "left drawer"},
+            {"skill": "open", "object_name": "right drawer"},
         ]
     )
     result = run_plan(executor, plan)
@@ -71,7 +71,7 @@ def test_subtask_timeout_returns_summary() -> None:
     env = FakeEnv()
     vla = FakeVLA(actions=[[0.0] * 7])
     executor = build_executor(env=env, vla=vla)
-    plan = make_plan([{"skill": "open", "target_name": "drawer"}])
+    plan = make_plan([{"skill": "open", "object_name": "drawer"}])
     with patch("config.MAX_SKILL_STEPS", {"open": 2}):
         result = run_plan(executor, plan)
     assert result.reason == StopReason.SUBTASK_TIMEOUT
@@ -79,12 +79,11 @@ def test_subtask_timeout_returns_summary() -> None:
 
 
 def test_episode_timeout_returns_summary() -> None:
-    env = FakeEnv()
+    env = FakeEnv(horizon=2)
     vla = FakeVLA(actions=[[0.0] * 7])
     executor = build_executor(env=env, vla=vla)
-    plan = make_plan([{"skill": "open", "target_name": "drawer"}])
-    with patch("config.MAX_EPISODE_STEPS", 2):
-        result = run_plan(executor, plan)
+    plan = make_plan([{"skill": "open", "object_name": "drawer"}])
+    result = run_plan(executor, plan)
     assert result.reason == StopReason.EPISODE_TIMEOUT
     assert result.error == "episode hits maximum steps-budget: 2 steps"
     assert len(env.step_calls) == 2
@@ -92,11 +91,11 @@ def test_episode_timeout_returns_summary() -> None:
 
 def test_open_subtask_success_immediate() -> None:
     env = FakeEnv(
-        subtask_satisfied={_step_key("open", target_name="right drawer"): True}
+        subtask_satisfied={_step_key("open", object_name="right drawer"): True}
     )
     vla = FakeVLA()
     executor = build_executor(env=env, vla=vla)
-    plan = make_plan([{"skill": "open", "target_name": "right drawer"}])
+    plan = make_plan([{"skill": "open", "object_name": "right drawer"}])
     result = run_plan(executor, plan)
     assert result.reason == StopReason.PLAN_DONE
     assert len(vla.calls) == 1
@@ -105,11 +104,11 @@ def test_open_subtask_success_immediate() -> None:
 
 def test_open_calls_vla_and_succeeds() -> None:
     env = FakeEnv(
-        subtask_after={_step_key("open", target_name="right drawer"): 2}
+        subtask_after={_step_key("open", object_name="right drawer"): 2}
     )
     vla = FakeVLA(actions=[[0.0] * 7, [0.1] * 7])
     executor = build_executor(env=env, vla=vla)
-    plan = make_plan([{"skill": "open", "target_name": "right drawer"}])
+    plan = make_plan([{"skill": "open", "object_name": "right drawer"}])
     result = run_plan(executor, plan)
     assert result.reason == StopReason.PLAN_DONE
     assert len(vla.calls) == 1
@@ -122,7 +121,7 @@ def test_skill_timeout_contract() -> None:
     env = FakeEnv()
     vla = FakeVLA(actions=[[0.0] * 7])
     executor = build_executor(env=env, vla=vla)
-    step = {"skill": "open", "target_name": "drawer"}
+    step = {"skill": "open", "object_name": "drawer"}
     with patch("config.MAX_SKILL_STEPS", {"open": 3}):
         with pytest.raises(SkillTimeout, match="exceeded 3 steps"):
             executor._run_step(step)
@@ -131,32 +130,72 @@ def test_skill_timeout_contract() -> None:
 
 def test_episode_timeout_contract() -> None:
     """Skills without subtask success time out at the episode cap."""
-    env = FakeEnv()
+    env = FakeEnv(horizon=2)
     vla = FakeVLA(actions=[[0.0] * 7])
     executor = build_executor(env=env, vla=vla)
-    step = {"skill": "open", "target_name": "drawer"}
-    with patch("config.MAX_EPISODE_STEPS", 2):
-        with pytest.raises(
-            EpisodeTimeout, match="episode hits maximum steps-budget: 2 steps"
-        ):
-            executor._run_step(step)
+    step = {"skill": "open", "object_name": "drawer"}
+    with pytest.raises(
+        EpisodeTimeout, match="episode hits maximum steps-budget: 2 steps"
+    ):
+        executor._run_step(step)
     assert len(env.step_calls) == 2
+
+
+def test_place_and_turn_on_vla_prompts() -> None:
+    executor = build_executor(env=FakeEnv(), vla=FakeVLA())
+    place = {
+        "skill": "place",
+        "object_name": "kettle",
+        "source_name": "counter",
+        "destination_name": "rear right burner of the stove",
+    }
+    turn = {
+        "skill": "turn_on",
+        "target_name": "rear right burner of the stove",
+    }
+    assert executor._build_vla_task(place) == (
+        "pick the kettle from the counter and place it on the "
+        "rear right burner of the stove"
+    )
+    assert executor._build_vla_task(turn) == (
+        "turn on the rear right burner of the stove"
+    )
+
+
+def test_episode_cap_uses_env_horizon() -> None:
+    plan = make_plan([{"skill": "open", "object_name": "drawer"}])
+    env = FakeEnv(horizon=2)
+    executor = build_executor(env=env, vla=FakeVLA(actions=[[0.0] * 7]))
+    with patch("config.MAX_SKILL_STEPS", {"open": 100}):
+        result = run_plan(executor, plan)
+    assert result.reason == StopReason.EPISODE_TIMEOUT
+    assert len(env.step_calls) == 2
+
+    env_ok = FakeEnv(
+        horizon=2,
+        subtask_after={_step_key("open", object_name="drawer"): 1},
+    )
+    executor_ok = build_executor(env=env_ok, vla=FakeVLA(actions=[[0.0] * 7]))
+    with patch("config.MAX_SKILL_STEPS", {"open": 100}):
+        result_ok = run_plan(executor_ok, plan)
+    assert result_ok.reason == StopReason.PLAN_DONE
+    assert len(env_ok.step_calls) == 1
 
 
 def test_skill_done_when_subtask_already_satisfied() -> None:
     env = FakeEnv(
-        subtask_satisfied={_step_key("open", target_name="drawer"): True}
+        subtask_satisfied={_step_key("open", object_name="drawer"): True}
     )
     vla = FakeVLA()
     executor = build_executor(env=env, vla=vla)
-    step = {"skill": "open", "target_name": "drawer"}
+    step = {"skill": "open", "object_name": "drawer"}
     executor._run_step(step)
     assert len(vla.calls) == 1
     assert len(env.step_calls) == 1
 
 
-def test_open_task_string_preserves_target_detail() -> None:
-    step = {"skill": "open", "target_name": "right drawer"}
+def test_open_task_string_preserves_object_name_detail() -> None:
+    step = {"skill": "open", "object_name": "right drawer"}
     env = FakeEnv(subtask_after={("open", frozenset(step.items())): 1})
     vla = FakeVLA(actions=[[0.0] * 12])
     executor = build_executor(env=env, vla=vla)
@@ -171,7 +210,7 @@ def test_unknown_skill_raises() -> None:
     executor = build_executor(env=env, vla=vla)
     result = run_plan(
         executor,
-        [{"skill": "close", "target_name": "drawer"}],
+        [{"skill": "close", "object_name": "drawer"}],
     )
     assert result.reason == StopReason.EXECUTION_ERROR
 
@@ -183,7 +222,7 @@ def test_executes_full_returned_chunk() -> None:
     env = FakeEnv()
     vla = FakeVLA(actions=actions)
     executor = build_executor(env=env, vla=vla)
-    step = {"skill": "open", "target_name": "drawer"}
+    step = {"skill": "open", "object_name": "drawer"}
     with patch("config.MAX_SKILL_STEPS", {"open": chunk_size}):
         with pytest.raises(SkillTimeout, match="exceeded"):
             executor._run_step(step)
@@ -200,7 +239,7 @@ def test_env_step_done_mid_chunk_stops_remaining_actions() -> None:
     env = FakeEnvStepDone(done_after=done_after)
     vla = FakeVLA(actions=actions)
     executor = build_executor(env=env, vla=vla)
-    step = {"skill": "open", "target_name": "drawer"}
+    step = {"skill": "open", "object_name": "drawer"}
     with patch("config.MAX_SKILL_STEPS", {"open": chunk_size}):
         executor._run_step(step)
     assert len(vla.calls) == 1
@@ -213,7 +252,7 @@ def test_env_step_done_reports_plan_done() -> None:
     env = FakeEnvStepDone(done_after=1)
     vla = FakeVLA(actions=[[0.0] * 7, [0.1] * 7, [0.2] * 7])
     executor = build_executor(env=env, vla=vla)
-    plan = make_plan([{"skill": "open", "target_name": "drawer"}])
+    plan = make_plan([{"skill": "open", "object_name": "drawer"}])
     result = run_plan(executor, plan)
     assert result.reason == StopReason.PLAN_DONE
     assert len(env.step_calls) == 1
@@ -225,7 +264,7 @@ def test_subtask_timeout_includes_error() -> None:
     with patch("config.MAX_SKILL_STEPS", {"open": 2}):
         result = run_plan(
             executor,
-            make_plan([{"skill": "open", "target_name": "drawer"}]),
+            make_plan([{"skill": "open", "object_name": "drawer"}]),
         )
     assert result.reason == StopReason.SUBTASK_TIMEOUT
     assert "exceeded 2 steps" in result.error

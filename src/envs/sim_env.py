@@ -23,6 +23,11 @@ class SimEnv:
         return self._env.steps
 
     @property
+    def horizon(self) -> int:
+        """Episode step cap from the backend."""
+        return self._env.horizon
+
+    @property
     def task_description(self) -> str:
         """Language instruction for this episode."""
         return self._env.task_description

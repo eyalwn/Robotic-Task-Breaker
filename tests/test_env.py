@@ -24,6 +24,7 @@ def test_sim_env_forwards_public_api(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(config, "SIM_ENV", "robocasa")
     backend = MagicMock()
     backend.steps = 4
+    backend.horizon = 720
     backend.task_description = "open the drawer"
     backend.observe.return_value = ((b"png",), [1.0])
     backend.step.return_value = False
@@ -31,10 +32,11 @@ def test_sim_env_forwards_public_api(monkeypatch: pytest.MonkeyPatch) -> None:
     backend.check_subtask.return_value = True
     mock_robocasa = MagicMock()
     mock_robocasa.from_task.return_value = backend
-    step = {"skill": "open", "target_name": "drawer"}
+    step = {"skill": "open", "object_name": "drawer"}
     with patch("envs.robocasa_env.RoboCasaEnv", mock_robocasa):
         env = SimEnv("open_drawer", 0)
     assert env.steps == 4
+    assert env.horizon == 720
     assert env.task_description == "open the drawer"
     assert env.observe() == ((b"png",), [1.0])
     assert env.step([0.0]) is False
@@ -46,6 +48,17 @@ def test_sim_env_forwards_public_api(monkeypatch: pytest.MonkeyPatch) -> None:
     backend.check_subtask.assert_called_once_with(step)
     backend.success.assert_called_once_with()
     backend.close.assert_called_once_with()
+
+
+def test_sim_env_forwards_horizon(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(config, "SIM_ENV", "robocasa")
+    backend = MagicMock()
+    backend.horizon = 1500
+    mock_robocasa = MagicMock()
+    mock_robocasa.from_task.return_value = backend
+    with patch("envs.robocasa_env.RoboCasaEnv", mock_robocasa):
+        env = SimEnv("kettle_boiling", 0)
+    assert env.horizon == 1500
 
 
 def test_sim_env_unknown_sim_raises(monkeypatch: pytest.MonkeyPatch) -> None:

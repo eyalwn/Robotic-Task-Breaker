@@ -82,7 +82,15 @@ class Executor:
         """Build the VLA task string for one step."""
         skill = step["skill"]
         if skill == "open":
-            return f"open the {step['target_name']}"
+            return f"open the {step['object_name']}"
+        if skill == "place":
+            obj = step["object_name"]
+            src = step["source_name"]
+            dest = step["destination_name"]
+            return (
+                f"pick the {obj} from the {src} and place it on the {dest}")
+        if skill == "turn_on":
+            return f"turn on the {step['target_name']}"
         raise KeyError(f"unsupported skill: {skill!r}")
 
     def _run_step(self, step: dict[str, str]) -> None:
@@ -110,13 +118,12 @@ class Executor:
                 self._enforce_max_steps_budget(step, skill_steps)
 
     def _enforce_max_steps_budget(self, step, skill_steps):
-        """Raise SkillTimeout / EpisodeTimeout if either MAX_SKILL_STEPS /
-            MAX_EPISODE_STEPS was exceeded."""
+        """Raise SkillTimeout / EpisodeTimeout if skill or episode cap exceeded."""
         skill_key = step["skill"]
         max_skill_steps = config.MAX_SKILL_STEPS[skill_key]
         if skill_steps >= max_skill_steps:
             raise SkillTimeout(
                 f"{step['skill']} exceeded {max_skill_steps} steps")
-        elif self._env.steps >= config.MAX_EPISODE_STEPS:
+        elif self._env.steps >= self._env.horizon:
             raise EpisodeTimeout(
                 f"episode hits maximum steps-budget: {self._env.steps} steps")
