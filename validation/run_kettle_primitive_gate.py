@@ -20,6 +20,7 @@ from pathlib import Path
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(_REPO_ROOT / "src"))
 
+import config  # noqa: E402
 from envs.robocasa_env import burner_phrase_to_key  # noqa: E402
 from executor import Executor, StopReason  # noqa: E402
 from envs.sim_env import SimEnv  # noqa: E402
@@ -82,6 +83,20 @@ def _choose_burner_phrase(backend) -> str | None:
     return None
 
 
+def _episode_video_path(ep: int) -> str:
+    """Per-episode video path from config.VIDEO_PATH parent and extension."""
+    base = Path(config.VIDEO_PATH)
+    ext = base.suffix if base.suffix else ".mp4"
+    return str(base.parent / f"run_ep{ep:03d}{ext}")
+
+
+def _video_provenance_marker(ep: int) -> str:
+    """Video path for logs, or an explicit marker when recording is off."""
+    if not config.SAVE_VIDEO:
+        return "video_disabled"
+    return _episode_video_path(ep)
+
+
 def _install_grasp_tracker(backend) -> list[int | str]:
     """Wrap backend.step; return one-element list holding first grasp step."""
     grasp_at: list[int | str] = [None]
@@ -106,15 +121,25 @@ def _install_grasp_tracker(backend) -> list[int | str]:
 
 def _run_episode(
     burner_arg: str,
-) -> tuple[str, str | None, bool, bool, bool, int | str]:
-    """Return status, burner phrase, place_ok, turn_ok, success, grasp_step."""
+) -> tuple[str, str | None, str, str, bool, bool, bool, int | str]:
+    """Return status, burner, place_prompt, task_desc, place/turn/success, grasp."""
     env = SimEnv("kettle_boiling", 0)
+    task_desc = env.task_description
     try:
         backend = env._env
         if burner_arg == "auto":
             phrase = _choose_burner_phrase(backend)
             if phrase is None:
-                return "skipped_no_free_burner", None, False, False, False, "n/a"
+                return (
+                    "skipped_no_free_burner",
+                    None,
+                    "n/a",
+                    task_desc,
+                    False,
+                    False,
+                    False,
+                    "n/a",
+                )
         else:
             phrase = burner_arg
         grasp_at = _install_grasp_tracker(backend)
@@ -126,6 +151,7 @@ def _run_episode(
         }
         turn_step = {"skill": "turn_on", "target_name": phrase}
         executor = Executor(env=env)
+        place_prompt = executor._build_vla_task(place_step)
         place_res = executor.run([place_step])
         place_ok = place_res.reason == StopReason.PLAN_DONE
         turn_ok = False
@@ -134,7 +160,7 @@ def _run_episode(
             turn_ok = turn_res.reason == StopReason.PLAN_DONE
         success = env.success()
         grasp = grasp_at[0] if grasp_at[0] is not None else "unavailable"
-        return "ok", phrase, place_ok, turn_ok, success, grasp
+        return "ok", phrase, place_prompt, task_desc, place_ok, turn_ok, success, grasp
     finally:
         env.close()
 
@@ -142,21 +168,41 @@ def _run_episode(
 def main() -> int:
     args = _parse_args()
     place_ok = turn_on_ok = success_ok = skipped = 0
+    orig_video_path = config.VIDEO_PATH
     for ep in range(args.episodes):
-        status, burner, p_ok, t_ok, s_ok, grasp = _run_episode(args.burner)
+        video_log = _video_provenance_marker(ep)
+        if config.SAVE_VIDEO:
+            config.VIDEO_PATH = _episode_video_path(ep)
+        try:
+            (
+                status,
+                burner,
+                place_prompt,
+                task_desc,
+                p_ok,
+                t_ok,
+                s_ok,
+                grasp,
+            ) = _run_episode(args.burner)
+        finally:
+            config.VIDEO_PATH = orig_video_path
         if status == "skipped_no_free_burner":
             skipped += 1
             print(
-                f"ep={ep} status=skipped_no_free_burner "
-                f"place_ok=False turn_on_ok=False success=False grasp_step=n/a"
+                f"ep={ep} video={video_log!r} task_description={task_desc!r} "
+                f"place_prompt={place_prompt!r} burner=None "
+                f"status=skipped_no_free_burner place_ok=False turn_on_ok=False "
+                f"success=False grasp_step=n/a"
             )
         else:
             place_ok += int(p_ok)
             turn_on_ok += int(t_ok)
             success_ok += int(s_ok)
             print(
-                f"ep={ep} burner={burner!r} place_ok={p_ok} turn_on_ok={t_ok} "
-                f"success={s_ok} grasp_step={grasp}"
+                f"ep={ep} video={video_log!r} task_description={task_desc!r} "
+                f"place_prompt={place_prompt!r} burner={burner!r} "
+                f"place_ok={p_ok} turn_on_ok={t_ok} success={s_ok} "
+                f"grasp_step={grasp}"
             )
     n = args.episodes
     print(
