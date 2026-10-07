@@ -20,27 +20,33 @@ simulator/checkpoint pair only to test that claim.
 - **M2 — DONE.** Longor OpenDrawer on RoboCasa with GR00T N1.6-3B through the
   HTTP VLA contract (`colab/run_longor_task.ipynb` -> `examples/run_longor_task.py`):
   succeeded in one `Runner` episode. Report as "given a subtask-completion oracle."
-- **M3 — PLANNED.** Long-horizon capability gate: select a small RoboCasa suite
-  requiring at least two independently verifiable skills; extend the environment,
-  skill catalog, planner schema, and VLA prompt mapping only for its primitives;
-  then run a matched bare-VLA primitive gate for every required primitive.
-  The gate uses the planned comparison's model, observation/action contract,
-  action chunking, episode cap, and task/seed distribution. A primitive that is
-  not viable makes a Longor comparison result uninterpretable as a planning result.
-  Suite: RoboCasa `KettleBoiling` (`robocasa_panda_omron/KettleBoiling_PandaOmron_Env`,
-  horizon 1500; kettle onto a stove burner, then burner on). Feasibility probe
-  confirmed the env runs through the GR00T PandaOmron wrapper with the same
-  observation contract as OpenDrawer. Bare-VLA baseline (GR00T N1.6-3B, 10
-  episodes, 1500-step cap, 8 actions/call): **0/10**. Primitive viability is
-  gated inside the KettleBoiling scene (fixed two-step plan, no LLM, per-stage
-  conditional success), not via atomic-env rates.
-- **M4 — PLANNED.** Paired Longor-vs-bare-VLA pilot on the M3 suite. Retain
+- **M3 — TERMINATED (current checkpoint path).** Long-horizon capability gate:
+  select a small RoboCasa suite requiring at least two independently verifiable
+  skills; extend environment/skills/planner schema/prompt mapping only for that
+  suite's primitives; then run matched bare-VLA primitive gates for each required
+  primitive. Selection and gates keep the comparison contract fixed: GR00T
+  N1.6-3B, PandaOmron observations/actions, 8 actions/call, backend horizon.
+  A primitive that is not viable makes a Longor comparison result uninterpretable
+  as planning quality.
+  KettleBoiling is rejected for M3 under this contract:
+  `robocasa_panda_omron/KettleBoiling_PandaOmron_Env` feasibility was confirmed,
+  but bare-VLA was **0/10** and in-scene place gating was **0/5** (per-episode
+  video-provenance verified). The screened replacement set is fixed to:
+  `SnackSorting`, `PrepareCoffee`, and `OrganizeCleaningSupplies`.
+  Retention rule: keep only tasks whose PandaOmron wrapper registers with the
+  current observation contract and whose internals expose enough sim state to
+  define stage-specific oracles.
+  Screening artifacts for the three fixed replacements are not present yet
+  (`SnackSorting`, `PrepareCoffee`, `OrganizeCleaningSupplies`), so no
+  replacement suite is retained for this checkpoint contract. This checkpoint
+  path is terminated until a new checkpoint or benchmark path is selected.
+- **M4 — ON HOLD.** Paired Longor-vs-bare-VLA pilot on the M3 suite. Retain
   per-episode artifacts and assign every failure to exactly one category:
   policy/primitive, planner plan, plan-to-skill grounding, subtask
   transition/oracle, or infrastructure. Use the pilot to freeze the M5 suite,
   budgets, replanning policy, sample size, and decision rule; do not claim a
   win or loss from it.
-- **M5 — PLANNED.** Formal Longor-vs-bare-VLA comparison. Freeze code, model
+- **M5 — ON HOLD.** Formal Longor-vs-bare-VLA comparison. Freeze code, model
   checkpoint, prompts, task IDs/seeds, action chunking, compute limits, and
   stop/timeout policy before execution. Both arms use the same VLA server,
   observation adapter, action representation, horizons, and seeds; the bare
@@ -115,6 +121,30 @@ control's state is on.
 
 Episode step cap comes from the backend (`env.horizon`: 720 for OpenDrawer, 1500
 for KettleBoiling), not from a global config constant.
+
+## M3 replacement-suite gate definitions (screening phase)
+
+The following are frozen candidate gate definitions for M3 suite re-selection.
+Each gate is in-scene, fixed-plan, no-LLM, and uses simulator ground truth for
+stage oracles. Primitive viability threshold for screening is **>=7/10 episodes**
+per required primitive (same gate size and threshold family as M1 unless
+explicitly revised before execution).
+
+- `SnackSorting` (`Place the bar in the bowl and close the drawer.`):
+  - stage 1 (place): `bar` in `bowl` receptacle.
+  - stage 2 (close): drawer closed per drawer-task close oracle.
+- `PrepareCoffee`
+  (`Pick mug from cabinet, place under dispenser, press start button.`):
+  - stage 1 (place): mug is in coffee-machine pour placement region.
+  - stage 2 (turn_on): coffee-machine `_turned_on` state is true.
+- `OrganizeCleaningSupplies`
+  (`Open cabinet, place cleaner near sink, close cabinet.`):
+  - stage 1 (open): cabinet open.
+  - stage 2 (place): cleaner on counter and near sink threshold.
+  - stage 3 (close): cabinet closed.
+
+The selected M3 suite must pass required primitives under the fixed contract
+before any end-to-end Longor vs bare-VLA comparison.
 
 ## VLA service contract
 
