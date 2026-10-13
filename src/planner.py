@@ -27,6 +27,8 @@ PLAN FORMAT (JSON):
 Each step is a flat object with a required "skill" field plus skill args:
   {"skill":"open","object_name":"right drawer"}
   {"skill":"place","object_name":"...","source_name":"...","destination_name":"..."}
+  {"skill":"put_in","object_name":"...","source_name":"...","container_name":"..."}
+  {"skill":"close","object_name":"..."}
   {"skill":"turn_on","target_name":"..."}
 
 Rules:
@@ -47,6 +49,12 @@ Example (kettle boiling):
 [
   {"skill":"place","object_name":"kettle","source_name":"counter","destination_name":"rear right burner of the stove"},
   {"skill":"turn_on","target_name":"rear right burner of the stove"}
+]
+
+Example (snack sorting):
+[
+  {"skill":"put_in","object_name":"bar","source_name":"drawer","container_name":"bowl"},
+  {"skill":"close","object_name":"drawer"}
 ]\
 """
 

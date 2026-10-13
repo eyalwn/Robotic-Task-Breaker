@@ -188,6 +188,8 @@ def test_planner_system_prompt_is_minimal(monkeypatch: pytest.MonkeyPatch) -> No
     assert "Only call skills from the catalog." in system_content
     assert "Name objects from the scene snapshot" in system_content
     assert "Emit valid JSON." in system_content
+    assert '{"skill":"put_in"' in system_content
+    assert '{"skill":"close"' in system_content
     assert "rear right burner of the stove" in system_content
     assert "identical phrase" in system_content
     assert (

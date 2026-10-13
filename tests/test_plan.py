@@ -16,6 +16,13 @@ TURN_ON_STEP = {
     "skill": "turn_on",
     "target_name": "rear right burner of the stove",
 }
+PUT_IN_STEP = {
+    "skill": "put_in",
+    "object_name": "bar",
+    "source_name": "drawer",
+    "container_name": "bowl",
+}
+CLOSE_STEP = {"skill": "close", "object_name": "drawer"}
 
 
 def test_parse_open_step_array() -> None:
@@ -92,6 +99,44 @@ def test_reject_place_extra_key() -> None:
 def test_parse_turn_on_step() -> None:
     plan = parse_planner_payload([TURN_ON_STEP])
     assert plan == [TURN_ON_STEP]
+
+
+def test_parse_put_in_step() -> None:
+    plan = parse_planner_payload([PUT_IN_STEP])
+    assert plan == [PUT_IN_STEP]
+
+
+def test_reject_put_in_missing_arg() -> None:
+    with pytest.raises(ValueError, match="requires non-empty 'container_name'"):
+        parse_planner_payload(
+            [{
+                "skill": "put_in",
+                "object_name": "bar",
+                "source_name": "drawer",
+            }]
+        )
+
+
+def test_reject_put_in_extra_key() -> None:
+    with pytest.raises(ValueError, match="unexpected keys"):
+        parse_planner_payload([{**PUT_IN_STEP, "destination_name": "bowl"}])
+
+
+def test_parse_close_step() -> None:
+    plan = parse_planner_payload([CLOSE_STEP])
+    assert plan == [CLOSE_STEP]
+
+
+def test_reject_close_missing_object_name() -> None:
+    with pytest.raises(ValueError, match="requires non-empty 'object_name'"):
+        parse_planner_payload([{"skill": "close"}])
+
+
+def test_reject_close_extra_key() -> None:
+    with pytest.raises(ValueError, match="unexpected keys"):
+        parse_planner_payload(
+            [{"skill": "close", "object_name": "drawer", "source_name": "x"}]
+        )
 
 
 def test_reject_turn_on_missing_target_name() -> None:

@@ -9,6 +9,8 @@ Plan: TypeAlias = list[Step]
 _SKILL_ARG_KEYS: dict[str, tuple[str, ...]] = {
     "open": ("object_name",),
     "place": ("object_name", "source_name", "destination_name"),
+    "put_in": ("object_name", "source_name", "container_name"),
+    "close": ("object_name",),
     "turn_on": ("target_name",),
 }
 

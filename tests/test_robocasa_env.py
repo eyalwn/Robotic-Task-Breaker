@@ -14,6 +14,8 @@ from envs.robocasa_env import (
     KETTLE_BOILING_TASK,
     OPEN_DRAWER_GYM_ENV_ID,
     OPEN_DRAWER_TASK,
+    SNACK_SORTING_GYM_ENV_ID,
+    SNACK_SORTING_TASK,
     STATE_DIMS,
     STATE_KEYS,
     RoboCasaEnv,
@@ -39,6 +41,10 @@ def test_resolve_gym_env_id_kettle_boiling() -> None:
     assert _resolve_gym_env_id(KETTLE_BOILING_TASK) == KETTLE_BOILING_GYM_ENV_ID
 
 
+def test_resolve_gym_env_id_snack_sorting() -> None:
+    assert _resolve_gym_env_id(SNACK_SORTING_TASK) == SNACK_SORTING_GYM_ENV_ID
+
+
 def test_resolve_gym_env_id_unknown_task() -> None:
     with pytest.raises(RuntimeError, match="supports tasks"):
         _resolve_gym_env_id("unknown_task")
@@ -50,6 +56,8 @@ def test_horizon_by_task() -> None:
     assert env.horizon == 720
     env._task = KETTLE_BOILING_TASK
     assert env.horizon == 1500
+    env._task = SNACK_SORTING_TASK
+    assert env.horizon == 1000
 
 
 def test_task_description_from_reset_obs_reads_string() -> None:
@@ -364,6 +372,108 @@ class _FakeGymStepEnv:
         self, native: dict[str, np.ndarray]
     ) -> tuple[object, float, bool, bool, dict]:
         return self.step_obs, 0.0, False, False, {}
+
+
+_SNACK_PUT_IN_STEP = {
+    "skill": "put_in",
+    "object_name": "bar",
+    "source_name": "drawer",
+    "container_name": "bowl",
+}
+_SNACK_CLOSE_STEP = {"skill": "close", "object_name": "drawer"}
+
+
+def _patch_fake_object_utils_receptacle(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    in_receptacle: bool,
+    gripper_far: bool,
+) -> None:
+    ou = SimpleNamespace(
+        check_obj_in_receptacle=lambda _sim, _obj, _recep: in_receptacle,
+        gripper_obj_far=lambda _sim, obj_name=None: gripper_far,
+    )
+    utils = SimpleNamespace(object_utils=ou)
+    monkeypatch.setitem(sys.modules, "robocasa", SimpleNamespace(utils=utils))
+    monkeypatch.setitem(sys.modules, "robocasa.utils", utils)
+    monkeypatch.setitem(sys.modules, "robocasa.utils.object_utils", ou)
+
+
+class _FakeDrawer:
+    def __init__(self, door_state: dict[str, float]) -> None:
+        self._door_state = door_state
+
+    def get_door_state(self, env=None) -> dict[str, float]:
+        del env
+        return dict(self._door_state)
+
+
+def _snack_kitchen(*, door_state: dict[str, float]) -> SimpleNamespace:
+    return SimpleNamespace(drawer=_FakeDrawer(door_state))
+
+
+def _snack_robocasa(kitchen: SimpleNamespace) -> RoboCasaEnv:
+    robocasa = RoboCasaEnv.__new__(RoboCasaEnv)
+    robocasa._task = SNACK_SORTING_TASK
+    robocasa._env = SimpleNamespace(
+        unwrapped=_GrootUnwrapped(kitchen),
+    )
+    return robocasa
+
+
+def test_snack_put_in_oracle_true_when_receptacle_and_gripper_far(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_fake_object_utils_receptacle(
+        monkeypatch, in_receptacle=True, gripper_far=True)
+    rc = _snack_robocasa(_snack_kitchen(door_state={"door": 1.0}))
+    assert rc._snack_put_in_oracle(_SNACK_PUT_IN_STEP) is True
+
+
+def test_snack_put_in_oracle_false_when_not_in_receptacle(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_fake_object_utils_receptacle(
+        monkeypatch, in_receptacle=False, gripper_far=True)
+    rc = _snack_robocasa(_snack_kitchen(door_state={"door": 1.0}))
+    assert rc._snack_put_in_oracle(_SNACK_PUT_IN_STEP) is False
+
+
+def test_snack_put_in_oracle_false_when_gripper_not_far(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _patch_fake_object_utils_receptacle(
+        monkeypatch, in_receptacle=True, gripper_far=False)
+    rc = _snack_robocasa(_snack_kitchen(door_state={"door": 1.0}))
+    assert rc._snack_put_in_oracle(_SNACK_PUT_IN_STEP) is False
+
+
+def test_snack_close_oracle_true_when_drawer_joints_closed() -> None:
+    rc = _snack_robocasa(_snack_kitchen(door_state={"door": 0.0}))
+    assert rc._snack_close_oracle(_SNACK_CLOSE_STEP) is True
+
+
+def test_snack_close_oracle_false_when_drawer_open() -> None:
+    rc = _snack_robocasa(_snack_kitchen(door_state={"door": 0.5}))
+    assert rc._snack_close_oracle(_SNACK_CLOSE_STEP) is False
+
+
+def test_snack_close_oracle_raises_when_no_door_state() -> None:
+    rc = _snack_robocasa(_snack_kitchen(door_state={}))
+    with pytest.raises(RuntimeError, match="non-empty door state"):
+        rc._snack_close_oracle(_SNACK_CLOSE_STEP)
+
+
+def test_snack_check_subtask_place_raises_key_error() -> None:
+    rc = _snack_robocasa(_snack_kitchen(door_state={"door": 0.0}))
+    with pytest.raises(KeyError, match="unsupported skill"):
+        rc.check_subtask(_KETTLE_PLACE_STEP)
+
+
+def test_snack_check_subtask_open_raises_key_error() -> None:
+    rc = _snack_robocasa(_snack_kitchen(door_state={"door": 0.0}))
+    with pytest.raises(KeyError, match="unsupported skill"):
+        rc.check_subtask({"skill": "open", "object_name": "drawer"})
 
 
 def test_step_stores_obs_returned_by_gym_step() -> None:

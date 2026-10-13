@@ -34,7 +34,13 @@ MAX_REPLANS = 2
 
 # --- Executor --------------------------------------------------------------
 # Per-skill step cap (guard against a failing subtask; success path ends earlier).
-MAX_SKILL_STEPS = {"open": 720, "place": 900, "turn_on": 400}
+MAX_SKILL_STEPS = {
+    "open": 720,
+    "place": 900,
+    "put_in": 720,
+    "close": 400,
+    "turn_on": 400,
+}
 
 # --- VLA server ------------------------------------------------------------
 # VLA backend selection (launcher default)

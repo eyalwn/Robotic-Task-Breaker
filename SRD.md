@@ -20,33 +20,34 @@ simulator/checkpoint pair only to test that claim.
 - **M2 — DONE.** Longor OpenDrawer on RoboCasa with GR00T N1.6-3B through the
   HTTP VLA contract (`colab/run_longor_task.ipynb` -> `examples/run_longor_task.py`):
   succeeded in one `Runner` episode. Report as "given a subtask-completion oracle."
-- **M3 — TERMINATED (current checkpoint path).** Long-horizon capability gate:
-  select a small RoboCasa suite requiring at least two independently verifiable
-  skills; extend environment/skills/planner schema/prompt mapping only for that
-  suite's primitives; then run matched bare-VLA primitive gates for each required
-  primitive. Selection and gates keep the comparison contract fixed: GR00T
-  N1.6-3B, PandaOmron observations/actions, 8 actions/call, backend horizon.
-  A primitive that is not viable makes a Longor comparison result uninterpretable
-  as planning quality.
-  KettleBoiling is rejected for M3 under this contract:
+- **M3 — IN PROGRESS (SnackSorting primitive gating).** Active candidate:
+  `SnackSorting` (`Place the bar in the bowl and close the drawer.`). Extend
+  environment/skills/planner schema/prompt mapping only for SnackSorting's
+  required primitives (`put_in`, `close`); run matched bare-VLA primitive gates
+  for each required primitive before any end-to-end Longor comparison. Gates
+  keep the comparison contract fixed: GR00T N1.6-3B, PandaOmron
+  observations/actions, 8 actions/call, backend horizon. Primitive viability
+  threshold is **>=7/10 episodes** per required primitive (same gate size and
+  threshold family as M1 unless explicitly revised before execution).
+  KettleBoiling remains rejected for M3 under this contract:
   `robocasa_panda_omron/KettleBoiling_PandaOmron_Env` feasibility was confirmed,
   but bare-VLA was **0/10** and in-scene place gating was **0/5** (per-episode
-  video-provenance verified). The screened replacement set is fixed to:
-  `SnackSorting`, `PrepareCoffee`, and `OrganizeCleaningSupplies`.
-  Retention rule: keep only tasks whose PandaOmron wrapper registers with the
-  current observation contract and whose internals expose enough sim state to
-  define stage-specific oracles.
-  Screening artifacts for the three fixed replacements are not present yet
-  (`SnackSorting`, `PrepareCoffee`, `OrganizeCleaningSupplies`), so no
-  replacement suite is retained for this checkpoint contract. This checkpoint
-  path is terminated until a new checkpoint or benchmark path is selected.
-- **M4 — ON HOLD.** Paired Longor-vs-bare-VLA pilot on the M3 suite. Retain
+  video-provenance verified). Backup candidates if SnackSorting primitives fail:
+  `PrepareCoffee` and `OrganizeCleaningSupplies` (wrapper feasibility confirmed;
+  stage predicates pinned separately).
+  SnackSorting PandaOmron wrapper: registers and resets with the three-camera /
+  53-D state contract; pinned horizon evidence shows `inner_horizon=1000` with
+  `wrapper_spec_max_steps=None` and `wrapper_max_episode_steps=None`.
+  Stage predicates verified from pinned upstream `SnackSorting` source:
+  place stage `OU.check_obj_in_receptacle(env, "bar", "bowl")`; close stage
+  (ManipulateDrawer `behavior="close"`) every drawer joint position `<= 0.05`.
+- **M4 — PLANNED.** Paired Longor-vs-bare-VLA pilot on the M3 suite. Retain
   per-episode artifacts and assign every failure to exactly one category:
   policy/primitive, planner plan, plan-to-skill grounding, subtask
   transition/oracle, or infrastructure. Use the pilot to freeze the M5 suite,
   budgets, replanning policy, sample size, and decision rule; do not claim a
   win or loss from it.
-- **M5 — ON HOLD.** Formal Longor-vs-bare-VLA comparison. Freeze code, model
+- **M5 — PLANNED.** Formal Longor-vs-bare-VLA comparison. Freeze code, model
   checkpoint, prompts, task IDs/seeds, action chunking, compute limits, and
   stop/timeout policy before execution. Both arms use the same VLA server,
   observation adapter, action representation, horizons, and seeds; the bare
@@ -76,7 +77,8 @@ Contract points:
   forwards `observe`, `step`, `success`, `check_subtask`, `close`, plus
   `steps`, `horizon`, and `task_description`.
 - Current backend slice: `src/envs/robocasa_env.py` supports
-  `task in {"open_drawer", "kettle_boiling"}` and `task_idx=0` only.
+  `task in {"open_drawer", "kettle_boiling", "snack_sorting"}` and `task_idx=0`
+  only.
 - `observe()` returns `(images, state)` where `images` is a tuple of lossless
   PNG bytes and `state` is a float list. For RoboCasa today: 3 images.
 - VLA integration lives in `src/executor.py`; actions from `vla_client` are
@@ -94,7 +96,9 @@ Planner output must be valid JSON in one of two shapes:
 - Step array: `[{"skill":"open","object_name":"..."}]`
 - STOP sentinel: `{"stop":"<reason>"}`
 
-`open` and `place` take `object_name`. `turn_on` takes `target_name` for the
+`open` and `close` take `object_name`. `place` takes `object_name`,
+`source_name`, and `destination_name`. `put_in` takes `object_name`,
+`source_name`, and `container_name`. `turn_on` takes `target_name` for the
 control to activate. The planner decides all names before execution (one plan
 from the initial snapshot) and must be specific whenever a name could match
 more than one object (burner position, left/right drawer); the same object is
@@ -110,29 +114,46 @@ Runtime skill surface:
   a burner destination is out-of-distribution). Pick and place are one skill:
   the checkpoint was trained on monolithic prompts only; a split is revisited
   in M4 with grasp-diagnostic evidence.
+- `put_in(object_name, source_name, container_name)` -> VLA task prompt
+  `pick the <object_name> from the <source_name> and place it in the
+  <container_name>` (in-receptacle PnP language for SnackSorting).
+- `close(object_name)` -> VLA task prompt `close the <object_name>`.
 - `turn_on(target_name)` -> VLA task prompt `turn on the <target_name>`, with
   `target_name` in GR00T TurnOn language, e.g. `rear right burner of the stove`
   (use the same burner phrase as the preceding `place` destination).
 
 Subtask oracles (`check_subtask`, sim ground truth, disclosed in claims):
 `place` = object in contact with the destination fixture, within the
-destination site radius, gripper far from the object; `turn_on` = the named
-control's state is on.
+destination site radius, gripper far from the object; `put_in` = object in the
+named receptacle (upstream `check_obj_in_receptacle`) and gripper far from the
+object; `close` = every normalized drawer door joint `<= 0.05`; `turn_on` =
+the named control's state is on.
+
+Per-skill step caps (`config.MAX_SKILL_STEPS`): `open` 720, `place` 900,
+`put_in` 720, `close` 400, `turn_on` 400.
 
 Episode step cap comes from the backend (`env.horizon`: 720 for OpenDrawer, 1500
-for KettleBoiling), not from a global config constant.
+for KettleBoiling, 1000 for SnackSorting), not from a global config constant.
 
-## M3 replacement-suite gate definitions (screening phase)
+## M3 SnackSorting primitive gate (active)
 
-The following are frozen candidate gate definitions for M3 suite re-selection.
-Each gate is in-scene, fixed-plan, no-LLM, and uses simulator ground truth for
-stage oracles. Primitive viability threshold for screening is **>=7/10 episodes**
-per required primitive (same gate size and threshold family as M1 unless
-explicitly revised before execution).
+In-scene fixed plan, no LLM (`validation/run_snack_sorting_primitive_gate.py`):
+step 1 `put_in(bar, drawer, bowl)`; step 2 `close(drawer)` only if step 1
+succeeds. Ten episodes default; per-episode unique video path when
+`SAVE_VIDEO=1`; simulator ground truth for stage oracles. Viability threshold:
+**>=7/10** per required primitive.
 
-- `SnackSorting` (`Place the bar in the bowl and close the drawer.`):
-  - stage 1 (place): `bar` in `bowl` receptacle.
-  - stage 2 (close): drawer closed per drawer-task close oracle.
+- Stage 1 (`put_in`): pinned upstream `SnackSorting` place stage uses
+  `OU.check_obj_in_receptacle(env, "bar", "bowl")` plus gripper far from bar.
+- Stage 2 (`close`): pinned ManipulateDrawer close stage — every drawer joint
+  position `<= 0.05`.
+
+## M3 backup-suite provisional gate definitions
+
+The following remain backup candidates if SnackSorting primitives fail screening.
+Each gate will be in-scene, fixed-plan, no-LLM, and use simulator ground truth
+for stage oracles at the same **>=7/10** threshold.
+
 - `PrepareCoffee`
   (`Pick mug from cabinet, place under dispenser, press start button.`):
   - stage 1 (place): mug is in coffee-machine pour placement region.

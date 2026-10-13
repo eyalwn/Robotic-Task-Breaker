@@ -1,4 +1,6 @@
-"""RoboCasa backend for OpenDrawer and KettleBoiling (linux-only lazy import).
+"""RoboCasa backend for OpenDrawer, KettleBoiling, and SnackSorting.
+
+Linux-only lazy import.
 
 Observation and action layout match GR00T N1.6-3B ``robocasa_panda_omron`` processor
 keys: three 256² RGB views, 53-D flattened state, 12-D flattened actions per step.
@@ -33,14 +35,21 @@ KETTLE_BOILING_TASK = "kettle_boiling"
 KETTLE_BOILING_GYM_ENV_ID = (
     "robocasa_panda_omron/KettleBoiling_PandaOmron_Env"
 )
+SNACK_SORTING_TASK = "snack_sorting"
+SNACK_SORTING_GYM_ENV_ID = (
+    "robocasa_panda_omron/SnackSorting_PandaOmron_Env"
+)
 _TASK_GYM_ENV_IDS = {
     OPEN_DRAWER_TASK: OPEN_DRAWER_GYM_ENV_ID,
     KETTLE_BOILING_TASK: KETTLE_BOILING_GYM_ENV_ID,
+    SNACK_SORTING_TASK: SNACK_SORTING_GYM_ENV_ID,
 }
 _TASK_HORIZONS = {
     OPEN_DRAWER_TASK: 720,
     KETTLE_BOILING_TASK: 1500,
+    SNACK_SORTING_TASK: 1000,
 }
+_DRAWER_CLOSED_JOINT_MAX = 0.05
 _KETTLE_BURNER_XY_RADIUS = 0.15
 _KNOB_ON_ABS_MIN = 0.35
 
@@ -231,7 +240,7 @@ def _task_description_from_reset_obs(reset_obs: object) -> str:
 
 
 class RoboCasaEnv:
-    """One RoboCasa episode (OpenDrawer or KettleBoiling)."""
+    """One RoboCasa episode (OpenDrawer, KettleBoiling, or SnackSorting)."""
 
     @classmethod
     def from_task(cls, task: str, task_idx: int = 0) -> "RoboCasaEnv":
@@ -363,6 +372,8 @@ class RoboCasaEnv:
             return self._drawer_open_oracle()
         if self._task == KETTLE_BOILING_TASK:
             return bool(self._env.unwrapped.env._check_success())
+        if self._task == SNACK_SORTING_TASK:
+            return bool(self._env.unwrapped.env._check_success())
         raise RuntimeError(f"unsupported task {self._task!r}")
 
     def check_subtask(self, step: dict[str, str]) -> bool:
@@ -371,13 +382,22 @@ class RoboCasaEnv:
         if self._task == OPEN_DRAWER_TASK:
             if skill == "open":
                 return self._drawer_open_oracle()
-            raise KeyError(f"unsupported skill: {skill!r}")
+            raise KeyError(
+                f"unsupported skill {skill!r} for task {self._task!r}")
         if self._task == KETTLE_BOILING_TASK:
             if skill == "place":
                 return self._kettle_place_oracle(step)
             if skill == "turn_on":
                 return self._kettle_turn_on_oracle(step)
-            raise KeyError(f"unsupported skill: {skill!r}")
+            raise KeyError(
+                f"unsupported skill {skill!r} for task {self._task!r}")
+        if self._task == SNACK_SORTING_TASK:
+            if skill == "put_in":
+                return self._snack_put_in_oracle(step)
+            if skill == "close":
+                return self._snack_close_oracle(step)
+            raise KeyError(
+                f"unsupported skill {skill!r} for task {self._task!r}")
         raise RuntimeError(f"unsupported task {self._task!r}")
 
     def _sim_env(self):
@@ -434,6 +454,35 @@ class RoboCasaEnv:
         lo = _KNOB_ON_ABS_MIN
         hi = 2 * math.pi - _KNOB_ON_ABS_MIN
         return lo <= abs(angle) <= hi
+
+    def _snack_put_in_oracle(self, step: dict[str, str]) -> bool:
+        """Sim-GT: object in receptacle and gripper far (SnackSorting place stage)."""
+        from robocasa.utils import object_utils as OU
+
+        sim_env = self._sim_env()
+        obj = step["object_name"]
+        recep = step["container_name"]
+        if not OU.check_obj_in_receptacle(sim_env, obj, recep):
+            return False
+        return bool(OU.gripper_obj_far(sim_env, obj_name=obj))
+
+    def _snack_close_oracle(self, step: dict[str, str]) -> bool:
+        """Sim-GT: every drawer door joint closed (ManipulateDrawer close stage)."""
+        del step  # object_name is for VLA grounding only today
+        sim_env = self._sim_env()
+        drawer = getattr(sim_env, "drawer", None)
+        if drawer is None or not hasattr(drawer, "get_door_state"):
+            raise RuntimeError(
+                "SnackSorting sim env missing drawer fixture for close oracle")
+        door_state = drawer.get_door_state(env=sim_env)
+        if not door_state:
+            raise RuntimeError(
+                "SnackSorting drawer close oracle requires non-empty door state"
+            )
+        for joint_p in door_state.values():
+            if joint_p > _DRAWER_CLOSED_JOINT_MAX:
+                return False
+        return True
 
     def _drawer_open_oracle(self) -> bool:
         """Sim-GT: robosuite OpenDrawer ``_check_success`` (drawer >= 95% open)."""

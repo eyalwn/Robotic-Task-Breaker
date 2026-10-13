@@ -204,13 +204,28 @@ def test_open_task_string_preserves_object_name_detail() -> None:
     assert len(env.step_calls) == 1
 
 
+def test_put_in_and_close_vla_prompts() -> None:
+    executor = build_executor(env=FakeEnv(), vla=FakeVLA())
+    put_in = {
+        "skill": "put_in",
+        "object_name": "bar",
+        "source_name": "drawer",
+        "container_name": "bowl",
+    }
+    close = {"skill": "close", "object_name": "drawer"}
+    assert executor._build_vla_task(put_in) == (
+        "pick the bar from the drawer and place it in the bowl"
+    )
+    assert executor._build_vla_task(close) == "close the drawer"
+
+
 def test_unknown_skill_raises() -> None:
     env = FakeEnv()
     vla = FakeVLA()
     executor = build_executor(env=env, vla=vla)
     result = run_plan(
         executor,
-        [{"skill": "close", "object_name": "drawer"}],
+        [{"skill": "grab", "object_name": "drawer"}],
     )
     assert result.reason == StopReason.EXECUTION_ERROR
 

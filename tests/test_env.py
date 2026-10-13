@@ -50,6 +50,16 @@ def test_sim_env_forwards_public_api(monkeypatch: pytest.MonkeyPatch) -> None:
     backend.close.assert_called_once_with()
 
 
+def test_sim_env_snack_sorting_task(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(config, "SIM_ENV", "robocasa")
+    mock_robocasa = MagicMock()
+    mock_robocasa.from_task.return_value = "snack-instance"
+    with patch("envs.robocasa_env.RoboCasaEnv", mock_robocasa):
+        result = SimEnv("snack_sorting", 0)
+    mock_robocasa.from_task.assert_called_once_with("snack_sorting", 0)
+    assert result._env == "snack-instance"
+
+
 def test_sim_env_forwards_horizon(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(config, "SIM_ENV", "robocasa")
     backend = MagicMock()

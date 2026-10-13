@@ -89,6 +89,15 @@ class Executor:
             dest = step["destination_name"]
             return (
                 f"pick the {obj} from the {src} and place it on the {dest}")
+        if skill == "put_in":
+            obj = step["object_name"]
+            src = step["source_name"]
+            container = step["container_name"]
+            return (
+                f"pick the {obj} from the {src} and place it in the {container}"
+            )
+        if skill == "close":
+            return f"close the {step['object_name']}"
         if skill == "turn_on":
             return f"turn on the {step['target_name']}"
         raise KeyError(f"unsupported skill: {skill!r}")
