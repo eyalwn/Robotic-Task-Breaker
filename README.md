@@ -17,6 +17,15 @@ Simulation runs on Colab (L4 verified).
 - `colab/run_robocasa_primitive_gate.ipynb` — M1 upstream-only gate launcher
   (no Longor planner/executor); orchestration and verdict logic live in
   `validation/run_robocasa_primitive_gate.py`.
+- `validation/run_drawer_chain_gate.py` — M3 in-scene drawer-chain gate
+  launcher (fixed `open` -> `close`, no LLM). It emits per-episode
+  `open_ok`/`close_ok`/`success` lines and a final summary to
+  `drawer_chain_gate.log`; with `SAVE_VIDEO=1`, it writes per-episode videos as
+  `run_epNNN.mp4` under `VIDEO_PATH`'s parent directory.
+- `validation/run_m4_pilot.py` — M4 pilot launcher (`bare` and `longor` arms
+  on `open_close_drawer`). It writes per-episode records to
+  `m4_pilot_episodes.jsonl`, arm summaries to `m4_pilot_summary.json`, and
+  per-episode videos as `videos/{arm}_epNNN.mp4` when `SAVE_VIDEO=1`.
 
 ## Local development (Windows OK, no sim)
 

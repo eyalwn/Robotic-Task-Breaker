@@ -20,7 +20,7 @@ simulator/checkpoint pair only to test that claim.
 - **M2 — DONE.** Longor OpenDrawer on RoboCasa with GR00T N1.6-3B through the
   HTTP VLA contract (`colab/run_longor_task.ipynb` -> `examples/run_longor_task.py`):
   succeeded in one `Runner` episode. Report as "given a subtask-completion oracle."
-- **M3 — IN PROGRESS (drawer open->close chain).** Task: OpenDrawer scene,
+- **M3 — DONE (drawer open->close chain).** Task: OpenDrawer scene,
   goal `<reset language>, then close it` (e.g. `open the left drawer, then close
   it`), plan `open(<side> drawer)` -> `close(<side> drawer)`. Selection rule
   (learned from the Kettle/SnackSorting failures): a Longor primitive is
@@ -39,7 +39,15 @@ simulator/checkpoint pair only to test that claim.
   reported as "given a subtask-completion oracle." Episode `success()` =
   drawer closed now AND opened earlier in the episode (latched), because
   OpenDrawer starts closed. This is a chaining/usefulness check on a single
-  task, not the M5 claim.
+  task, not the M5 claim. Observed run artifact
+  `G:\My Drive\Colab\longor_m3_kettle_bare\20261015T094943Z\drawer_chain_gate.log`
+  reports `open_ok=9/10`, `close_ok_given_open=7/9` (77.8%), and
+  `success=7/10`, so gate (1) passes its threshold.
+  Failure handling remains strict: ep4 and ep6 stay failed
+  (`open_ok=True`, `close_ok=False`, `success=False`) and ep8 stays failed
+  (`open_ok=False`, close not attempted). Ep4's video appearance does not
+  override the sim-GT oracle result, and ep8 target/framing ambiguity was not
+  excluded post hoc.
   Rejected under this checkpoint contract (history, code removed):
   `KettleBoiling` bare-VLA 0/10, in-scene place gate 0/5 (stove-burner
   destination wording is out of distribution; the burner phrase triggered the
@@ -57,7 +65,11 @@ simulator/checkpoint pair only to test that claim.
   policy/primitive, planner plan, plan-to-skill grounding, subtask
   transition/oracle, or infrastructure. Use the pilot to freeze the M5 suite,
   budgets, replanning policy, sample size, and decision rule; do not claim a
-  win or loss from it.
+  win or loss from it. Before execution, freeze an episode eligibility and
+  observability rule (including ambiguous/framing edge-cases) and keep it
+  fixed for both arms. Launcher:
+  `validation/run_m4_pilot.py` (artifact outputs:
+  `m4_pilot_episodes.jsonl`, `m4_pilot_summary.json`, and optional videos).
 - **M5 — PLANNED.** Formal Longor-vs-bare-VLA comparison. Freeze code, model
   checkpoint, prompts, task IDs/seeds, action chunking, compute limits, and
   stop/timeout policy before execution. Both arms use the same VLA server,
@@ -125,13 +137,16 @@ Per-skill step caps (`config.MAX_SKILL_STEPS`): `open` 720, `close` 400.
 Episode step cap comes from the backend (`env.horizon`: 720 for `open_drawer`,
 1000 for `open_close_drawer`), not from a global config constant.
 
-## M3 drawer-chain gate (active)
+## M3 drawer-chain gate (completed)
 
 In-scene fixed plan, no LLM (`validation/run_drawer_chain_gate.py`): step 1
 `open(<side> drawer)`; step 2 `close(<side> drawer)` only if step 1 succeeds,
 with `<side>` parsed from the reset language. Ten episodes default;
 per-episode unique video path when `SAVE_VIDEO=1`; simulator ground truth for
 stage oracles. Viability threshold: **>=7/10** per primitive.
+Observed run (artifact
+`G:\My Drive\Colab\longor_m3_kettle_bare\20261015T094943Z\drawer_chain_gate.log`)
+met the gate with `open_ok=9/10`, `close_ok_given_open=7/9`, and `success=7/10`.
 
 ## VLA service contract
 
