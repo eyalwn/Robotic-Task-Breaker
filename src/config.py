@@ -36,10 +36,7 @@ MAX_REPLANS = 2
 # Per-skill step cap (guard against a failing subtask; success path ends earlier).
 MAX_SKILL_STEPS = {
     "open": 720,
-    "place": 900,
-    "put_in": 720,
     "close": 400,
-    "turn_on": 400,
 }
 
 # --- VLA server ------------------------------------------------------------

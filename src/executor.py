@@ -83,23 +83,8 @@ class Executor:
         skill = step["skill"]
         if skill == "open":
             return f"open the {step['object_name']}"
-        if skill == "place":
-            obj = step["object_name"]
-            src = step["source_name"]
-            dest = step["destination_name"]
-            return (
-                f"pick the {obj} from the {src} and place it on the {dest}")
-        if skill == "put_in":
-            obj = step["object_name"]
-            src = step["source_name"]
-            container = step["container_name"]
-            return (
-                f"pick the {obj} from the {src} and place it in the {container}"
-            )
         if skill == "close":
             return f"close the {step['object_name']}"
-        if skill == "turn_on":
-            return f"turn on the {step['target_name']}"
         raise KeyError(f"unsupported skill: {skill!r}")
 
     def _run_step(self, step: dict[str, str]) -> None:

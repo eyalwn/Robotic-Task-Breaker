@@ -10,39 +10,20 @@ import pytest
 
 from envs import robocasa_env
 from envs.robocasa_env import (
-    KETTLE_BOILING_GYM_ENV_ID,
-    KETTLE_BOILING_TASK,
+    OPEN_CLOSE_DRAWER_TASK,
     OPEN_DRAWER_GYM_ENV_ID,
     OPEN_DRAWER_TASK,
-    SNACK_SORTING_GYM_ENV_ID,
-    SNACK_SORTING_TASK,
     STATE_DIMS,
     STATE_KEYS,
     RoboCasaEnv,
+    _OPEN_CLOSE_SUFFIX,
     _resolve_gym_env_id,
     _task_description_from_reset_obs,
-    burner_phrase_to_key,
 )
 
 
-def test_burner_phrase_to_key_parses_stove_phrase() -> None:
-    keys = ("front_left", "front_right", "rear_left", "rear_right")
-    assert burner_phrase_to_key(
-        "rear right burner of the stove", keys) == "rear_right"
-
-
-def test_burner_phrase_to_key_unknown_lists_valid_keys() -> None:
-    keys = ("rear_right", "front_left")
-    with pytest.raises(KeyError, match="valid keys: front_left, rear_right"):
-        burner_phrase_to_key("front right burner of the stove", keys)
-
-
-def test_resolve_gym_env_id_kettle_boiling() -> None:
-    assert _resolve_gym_env_id(KETTLE_BOILING_TASK) == KETTLE_BOILING_GYM_ENV_ID
-
-
-def test_resolve_gym_env_id_snack_sorting() -> None:
-    assert _resolve_gym_env_id(SNACK_SORTING_TASK) == SNACK_SORTING_GYM_ENV_ID
+def test_resolve_gym_env_id_open_close_drawer() -> None:
+    assert _resolve_gym_env_id(OPEN_CLOSE_DRAWER_TASK) == OPEN_DRAWER_GYM_ENV_ID
 
 
 def test_resolve_gym_env_id_unknown_task() -> None:
@@ -54,10 +35,27 @@ def test_horizon_by_task() -> None:
     env = RoboCasaEnv.__new__(RoboCasaEnv)
     env._task = OPEN_DRAWER_TASK
     assert env.horizon == 720
-    env._task = KETTLE_BOILING_TASK
-    assert env.horizon == 1500
-    env._task = SNACK_SORTING_TASK
+    env._task = OPEN_CLOSE_DRAWER_TASK
     assert env.horizon == 1000
+
+
+def test_init_env_open_close_drawer_appends_suffix() -> None:
+    mock_gym = MagicMock()
+    mock_env = MagicMock()
+    mock_env.reset.return_value = ({}, {})
+    mock_gym.make.return_value = mock_env
+    with patch.object(robocasa_env, "_import_robocasa_gym", return_value=mock_gym):
+        with patch.object(
+            robocasa_env,
+            "_task_description_from_reset_obs",
+            return_value="open the left drawer",
+        ):
+            with patch.object(RoboCasaEnv, "_record"):
+                env = RoboCasaEnv.__new__(RoboCasaEnv)
+                env._init_env(OPEN_CLOSE_DRAWER_TASK)
+    assert env.task_description == (
+        f"open the left drawer{_OPEN_CLOSE_SUFFIX}")
+    assert env._drawer_was_opened is False
 
 
 def test_task_description_from_reset_obs_reads_string() -> None:
@@ -104,16 +102,37 @@ class _OpenDrawerTask:
         return self.opened
 
 
-def _robocasa_with_kitchen(opened: bool) -> tuple[RoboCasaEnv, _OpenDrawerTask]:
-    task = _OpenDrawerTask(opened)
+def _robocasa_with_kitchen(
+    task: str,
+    opened: bool,
+    *,
+    door_state: dict[str, float] | None = None,
+) -> tuple[RoboCasaEnv, _OpenDrawerTask]:
+    drawer_task = _OpenDrawerTask(opened)
+    kitchen = drawer_task
+    if door_state is not None:
+        kitchen = SimpleNamespace(
+            _check_success=drawer_task._check_success,
+            drawer=_FakeDrawer(door_state),
+        )
     robocasa = RoboCasaEnv.__new__(RoboCasaEnv)
-    robocasa._task = OPEN_DRAWER_TASK
-    robocasa._env = SimpleNamespace(unwrapped=_GrootUnwrapped(task))
-    return robocasa, task
+    robocasa._task = task
+    robocasa._drawer_was_opened = False
+    robocasa._env = SimpleNamespace(unwrapped=_GrootUnwrapped(kitchen))
+    return robocasa, drawer_task
+
+
+class _FakeDrawer:
+    def __init__(self, door_state: dict[str, float]) -> None:
+        self._door_state = door_state
+
+    def get_door_state(self, env=None) -> dict[str, float]:
+        del env
+        return dict(self._door_state)
 
 
 def test_drawer_oracle_calls_unwrapped_env_check_success() -> None:
-    robocasa, task = _robocasa_with_kitchen(True)
+    robocasa, task = _robocasa_with_kitchen(OPEN_DRAWER_TASK, True)
     assert robocasa._drawer_open_oracle() is True
     assert task._check_success_calls == 1
 
@@ -126,153 +145,108 @@ def test_drawer_oracle_raises_when_check_success_missing() -> None:
 
 
 def test_check_subtask_open_uses_drawer_oracle() -> None:
-    robocasa, task = _robocasa_with_kitchen(False)
+    robocasa, task = _robocasa_with_kitchen(OPEN_DRAWER_TASK, False)
     step = {"skill": "open", "object_name": "right drawer"}
     assert robocasa.check_subtask(step) is False
     task.opened = True
     assert robocasa.check_subtask(step) is True
 
 
-_BURNER_PHRASE = "rear right burner of the stove"
-_BURNER_SITES_OK = {"rear_right": {"name": "rear_right_site"}}
-_KETTLE_PLACE_STEP = {
-    "skill": "place",
-    "object_name": "kettle",
-    "source_name": "counter",
-    "destination_name": _BURNER_PHRASE,
-}
-_KETTLE_TURN_STEP = {"skill": "turn_on", "target_name": _BURNER_PHRASE}
-
-
-def _patch_fake_object_utils(
-    monkeypatch: pytest.MonkeyPatch, *, contact: bool, gripper_far: bool
-) -> None:
-    ou = SimpleNamespace(
-        check_obj_fixture_contact=lambda _sim, _obj, _fix: contact,
-        gripper_obj_far=lambda _sim: gripper_far,
-    )
-    utils = SimpleNamespace(object_utils=ou)
-    monkeypatch.setitem(sys.modules, "robocasa", SimpleNamespace(utils=utils))
-    monkeypatch.setitem(sys.modules, "robocasa.utils", utils)
-    monkeypatch.setitem(sys.modules, "robocasa.utils.object_utils", ou)
-
-
-def _kettle_kitchen(
-    *,
-    burner_sites: dict,
-    kettle_xy: tuple[float, float] = (0.0, 0.0),
-    site_xy: tuple[float, float] = (0.0, 0.0),
-    knobs: dict[str, float] | None = None,
-) -> SimpleNamespace:
-    if knobs is None:
-        knobs = {"rear_right": 1.0}
-    body_xpos = np.zeros((1, 3), dtype=np.float64)
-    body_xpos[0, 0:2] = kettle_xy
-    site_pos = np.zeros(3, dtype=np.float64)
-    site_pos[0:2] = site_xy
-
-    sim_data = SimpleNamespace(
-        body_xpos=body_xpos,
-        get_site_xpos=lambda _name: site_pos,
-    )
-
-    return SimpleNamespace(
-        stove=SimpleNamespace(
-            burner_sites=burner_sites,
-            get_knobs_state=lambda env=None: knobs,
-        ),
-        objects={"obj": SimpleNamespace(name="kettle_obj")},
-        obj_body_id={"kettle_obj": 0},
-        sim=SimpleNamespace(data=sim_data),
-    )
-
-
-def _kettle_robocasa(kitchen: SimpleNamespace) -> RoboCasaEnv:
-    robocasa = RoboCasaEnv.__new__(RoboCasaEnv)
-    robocasa._task = KETTLE_BOILING_TASK
-    robocasa._env = SimpleNamespace(unwrapped=_GrootUnwrapped(kitchen))
-    return robocasa
-
-
-def test_kettle_place_oracle_true_when_all_conditions_met(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _patch_fake_object_utils(monkeypatch, contact=True, gripper_far=True)
-    rc = _kettle_robocasa(_kettle_kitchen(burner_sites=_BURNER_SITES_OK))
-    assert rc._kettle_place_oracle(_KETTLE_PLACE_STEP) is True
-
-
-def test_kettle_place_oracle_false_without_fixture_contact(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _patch_fake_object_utils(monkeypatch, contact=False, gripper_far=True)
-    rc = _kettle_robocasa(_kettle_kitchen(burner_sites=_BURNER_SITES_OK))
-    assert rc._kettle_place_oracle(_KETTLE_PLACE_STEP) is False
-
-
-def test_kettle_place_oracle_false_when_kettle_too_far_from_burner(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _patch_fake_object_utils(monkeypatch, contact=True, gripper_far=True)
-    kitchen = _kettle_kitchen(
-        burner_sites=_BURNER_SITES_OK,
-        kettle_xy=(0.0, 0.0),
-        site_xy=(1.0, 0.0),
-    )
-    rc = _kettle_robocasa(kitchen)
-    assert rc._kettle_place_oracle(_KETTLE_PLACE_STEP) is False
-
-
-def test_kettle_place_oracle_false_when_gripper_not_far(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _patch_fake_object_utils(monkeypatch, contact=True, gripper_far=False)
-    rc = _kettle_robocasa(_kettle_kitchen(burner_sites=_BURNER_SITES_OK))
-    assert rc._kettle_place_oracle(_KETTLE_PLACE_STEP) is False
-
-
-def test_kettle_place_oracle_false_when_burner_site_missing(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _patch_fake_object_utils(monkeypatch, contact=True, gripper_far=True)
-    kitchen = _kettle_kitchen(burner_sites={"rear_right": None})
-    rc = _kettle_robocasa(kitchen)
-    assert rc._kettle_place_oracle(_KETTLE_PLACE_STEP) is False
-
-
-def test_kettle_place_oracle_bad_burner_phrase_raises(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _patch_fake_object_utils(monkeypatch, contact=True, gripper_far=True)
-    rc = _kettle_robocasa(_kettle_kitchen(burner_sites=_BURNER_SITES_OK))
-    step = {**_KETTLE_PLACE_STEP, "destination_name": "left drawer"}
-    with pytest.raises(ValueError, match="burner phrase"):
-        rc._kettle_place_oracle(step)
-
-
-def test_kettle_turn_on_oracle_true_when_knob_in_range() -> None:
-    rc = _kettle_robocasa(_kettle_kitchen(burner_sites=_BURNER_SITES_OK))
-    assert rc._kettle_turn_on_oracle(_KETTLE_TURN_STEP) is True
-
-
-def test_kettle_turn_on_oracle_false_when_knob_at_zero() -> None:
-    kitchen = _kettle_kitchen(
-        burner_sites=_BURNER_SITES_OK, knobs={"rear_right": 0.0})
-    rc = _kettle_robocasa(kitchen)
-    assert rc._kettle_turn_on_oracle(_KETTLE_TURN_STEP) is False
-
-
-def test_kettle_turn_on_oracle_bad_burner_phrase_raises() -> None:
-    rc = _kettle_robocasa(_kettle_kitchen(burner_sites=_BURNER_SITES_OK))
-    step = {"skill": "turn_on", "target_name": "left drawer"}
-    with pytest.raises(ValueError, match="burner phrase"):
-        rc._kettle_turn_on_oracle(step)
-
-
-def test_kettle_check_subtask_open_raises_key_error() -> None:
-    rc = _kettle_robocasa(_kettle_kitchen(burner_sites=_BURNER_SITES_OK))
+def test_check_subtask_close_on_open_drawer_raises_key_error() -> None:
+    robocasa, _task = _robocasa_with_kitchen(
+        OPEN_DRAWER_TASK, False, door_state={"door": 0.0})
     with pytest.raises(KeyError, match="unsupported skill"):
-        rc.check_subtask({"skill": "open", "object_name": "right drawer"})
+        robocasa.check_subtask({"skill": "close", "object_name": "left drawer"})
+
+
+def test_drawer_close_oracle_true_when_joints_closed() -> None:
+    robocasa, _ = _robocasa_with_kitchen(
+        OPEN_CLOSE_DRAWER_TASK, False, door_state={"door": 0.0})
+    assert robocasa._drawer_close_oracle() is True
+
+
+def test_drawer_close_oracle_false_when_joint_above_threshold() -> None:
+    robocasa, _ = _robocasa_with_kitchen(
+        OPEN_CLOSE_DRAWER_TASK, False, door_state={"door": 0.06})
+    assert robocasa._drawer_close_oracle() is False
+
+
+def test_drawer_close_oracle_raises_when_no_door_state() -> None:
+    robocasa, _ = _robocasa_with_kitchen(
+        OPEN_CLOSE_DRAWER_TASK, False, door_state={})
+    with pytest.raises(RuntimeError, match="non-empty door state"):
+        robocasa._drawer_close_oracle()
+
+
+def test_drawer_close_oracle_raises_when_drawer_missing() -> None:
+    robocasa = RoboCasaEnv.__new__(RoboCasaEnv)
+    robocasa._task = OPEN_CLOSE_DRAWER_TASK
+    robocasa._env = SimpleNamespace(
+        unwrapped=_GrootUnwrapped(SimpleNamespace()))
+    with pytest.raises(RuntimeError, match="missing drawer fixture"):
+        robocasa._drawer_close_oracle()
+
+
+def test_check_subtask_close_uses_close_oracle() -> None:
+    robocasa, _ = _robocasa_with_kitchen(
+        OPEN_CLOSE_DRAWER_TASK, True, door_state={"door": 0.0})
+    step = {"skill": "close", "object_name": "left drawer"}
+    assert robocasa.check_subtask(step) is True
+
+
+def test_check_subtask_unsupported_skill_raises_key_error() -> None:
+    robocasa, _ = _robocasa_with_kitchen(OPEN_DRAWER_TASK, False)
+    with pytest.raises(KeyError, match="unsupported skill"):
+        robocasa.check_subtask({"skill": "grab", "object_name": "drawer"})
+
+
+def test_success_open_drawer_uses_open_oracle() -> None:
+    robocasa, task = _robocasa_with_kitchen(OPEN_DRAWER_TASK, False)
+    assert robocasa.success() is False
+    task.opened = True
+    assert robocasa.success() is True
+
+
+def test_success_open_close_closed_never_opened_is_false() -> None:
+    robocasa, _ = _robocasa_with_kitchen(
+        OPEN_CLOSE_DRAWER_TASK, False, door_state={"door": 0.0})
+    assert robocasa._drawer_was_opened is False
+    assert robocasa.success() is False
+
+
+def test_success_open_close_opened_then_closed_is_true() -> None:
+    robocasa, task = _robocasa_with_kitchen(
+        OPEN_CLOSE_DRAWER_TASK, False, door_state={"door": 0.0})
+    robocasa._drawer_was_opened = True
+    task.opened = False
+    assert robocasa.success() is True
+
+
+def test_success_open_close_opened_and_still_open_is_false() -> None:
+    robocasa, task = _robocasa_with_kitchen(
+        OPEN_CLOSE_DRAWER_TASK, True, door_state={"door": 0.5})
+    robocasa._drawer_was_opened = True
+    assert robocasa.success() is False
+
+
+def test_step_latches_drawer_was_opened_for_open_close_task() -> None:
+    robocasa, task = _robocasa_with_kitchen(
+        OPEN_CLOSE_DRAWER_TASK, False, door_state={"door": 1.0})
+    robocasa._steps = 0
+    robocasa._writer = None
+    robocasa._last_obs = {}
+
+    def gym_step(_native):
+        return {}, 0.0, False, False, {}
+
+    robocasa._env.step = gym_step
+    with patch.object(RoboCasaEnv, "_record"):
+        robocasa.step([0.0] * robocasa_env.expected_action_dim())
+    assert robocasa._drawer_was_opened is False
+    task.opened = True
+    with patch.object(RoboCasaEnv, "_record"):
+        robocasa.step([0.0] * robocasa_env.expected_action_dim())
+    assert robocasa._drawer_was_opened is True
 
 
 def test_record_uses_policy_camera_frame_and_cv2_writer(
@@ -374,111 +348,10 @@ class _FakeGymStepEnv:
         return self.step_obs, 0.0, False, False, {}
 
 
-_SNACK_PUT_IN_STEP = {
-    "skill": "put_in",
-    "object_name": "bar",
-    "source_name": "drawer",
-    "container_name": "bowl",
-}
-_SNACK_CLOSE_STEP = {"skill": "close", "object_name": "drawer"}
-
-
-def _patch_fake_object_utils_receptacle(
-    monkeypatch: pytest.MonkeyPatch,
-    *,
-    in_receptacle: bool,
-    gripper_far: bool,
-) -> None:
-    ou = SimpleNamespace(
-        check_obj_in_receptacle=lambda _sim, _obj, _recep: in_receptacle,
-        gripper_obj_far=lambda _sim, obj_name=None: gripper_far,
-    )
-    utils = SimpleNamespace(object_utils=ou)
-    monkeypatch.setitem(sys.modules, "robocasa", SimpleNamespace(utils=utils))
-    monkeypatch.setitem(sys.modules, "robocasa.utils", utils)
-    monkeypatch.setitem(sys.modules, "robocasa.utils.object_utils", ou)
-
-
-class _FakeDrawer:
-    def __init__(self, door_state: dict[str, float]) -> None:
-        self._door_state = door_state
-
-    def get_door_state(self, env=None) -> dict[str, float]:
-        del env
-        return dict(self._door_state)
-
-
-def _snack_kitchen(*, door_state: dict[str, float]) -> SimpleNamespace:
-    return SimpleNamespace(drawer=_FakeDrawer(door_state))
-
-
-def _snack_robocasa(kitchen: SimpleNamespace) -> RoboCasaEnv:
-    robocasa = RoboCasaEnv.__new__(RoboCasaEnv)
-    robocasa._task = SNACK_SORTING_TASK
-    robocasa._env = SimpleNamespace(
-        unwrapped=_GrootUnwrapped(kitchen),
-    )
-    return robocasa
-
-
-def test_snack_put_in_oracle_true_when_receptacle_and_gripper_far(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _patch_fake_object_utils_receptacle(
-        monkeypatch, in_receptacle=True, gripper_far=True)
-    rc = _snack_robocasa(_snack_kitchen(door_state={"door": 1.0}))
-    assert rc._snack_put_in_oracle(_SNACK_PUT_IN_STEP) is True
-
-
-def test_snack_put_in_oracle_false_when_not_in_receptacle(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _patch_fake_object_utils_receptacle(
-        monkeypatch, in_receptacle=False, gripper_far=True)
-    rc = _snack_robocasa(_snack_kitchen(door_state={"door": 1.0}))
-    assert rc._snack_put_in_oracle(_SNACK_PUT_IN_STEP) is False
-
-
-def test_snack_put_in_oracle_false_when_gripper_not_far(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _patch_fake_object_utils_receptacle(
-        monkeypatch, in_receptacle=True, gripper_far=False)
-    rc = _snack_robocasa(_snack_kitchen(door_state={"door": 1.0}))
-    assert rc._snack_put_in_oracle(_SNACK_PUT_IN_STEP) is False
-
-
-def test_snack_close_oracle_true_when_drawer_joints_closed() -> None:
-    rc = _snack_robocasa(_snack_kitchen(door_state={"door": 0.0}))
-    assert rc._snack_close_oracle(_SNACK_CLOSE_STEP) is True
-
-
-def test_snack_close_oracle_false_when_drawer_open() -> None:
-    rc = _snack_robocasa(_snack_kitchen(door_state={"door": 0.5}))
-    assert rc._snack_close_oracle(_SNACK_CLOSE_STEP) is False
-
-
-def test_snack_close_oracle_raises_when_no_door_state() -> None:
-    rc = _snack_robocasa(_snack_kitchen(door_state={}))
-    with pytest.raises(RuntimeError, match="non-empty door state"):
-        rc._snack_close_oracle(_SNACK_CLOSE_STEP)
-
-
-def test_snack_check_subtask_place_raises_key_error() -> None:
-    rc = _snack_robocasa(_snack_kitchen(door_state={"door": 0.0}))
-    with pytest.raises(KeyError, match="unsupported skill"):
-        rc.check_subtask(_KETTLE_PLACE_STEP)
-
-
-def test_snack_check_subtask_open_raises_key_error() -> None:
-    rc = _snack_robocasa(_snack_kitchen(door_state={"door": 0.0}))
-    with pytest.raises(KeyError, match="unsupported skill"):
-        rc.check_subtask({"skill": "open", "object_name": "drawer"})
-
-
 def test_step_stores_obs_returned_by_gym_step() -> None:
     fake = _FakeGymStepEnv()
     robocasa = RoboCasaEnv.__new__(RoboCasaEnv)
+    robocasa._task = OPEN_DRAWER_TASK
     robocasa._env = fake
     robocasa._last_obs = {}
     robocasa._steps = 0

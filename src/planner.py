@@ -26,18 +26,15 @@ PLAN FORMAT (JSON):
 
 Each step is a flat object with a required "skill" field plus skill args:
   {"skill":"open","object_name":"right drawer"}
-  {"skill":"place","object_name":"...","source_name":"...","destination_name":"..."}
-  {"skill":"put_in","object_name":"...","source_name":"...","container_name":"..."}
-  {"skill":"close","object_name":"..."}
-  {"skill":"turn_on","target_name":"..."}
+  {"skill":"close","object_name":"right drawer"}
 
 Rules:
 - Only call skills from the catalog.
 - Name objects from the scene snapshot and natural-language goal, not sim
   ground-truth IDs.
-- Be specific whenever a name could match more than one object (e.g. "rear right
-  burner of the stove", "left drawer"). Use the identical phrase for the same
-  object across steps.
+- Be specific whenever a name could match more than one object (e.g. "left
+  drawer", "right drawer"). Use the identical phrase for the same object
+  across steps.
 - Emit valid JSON.
 
 Example (open drawer):
@@ -45,16 +42,10 @@ Example (open drawer):
   {"skill":"open","object_name":"right drawer"}
 ]
 
-Example (kettle boiling):
+Example (open then close drawer):
 [
-  {"skill":"place","object_name":"kettle","source_name":"counter","destination_name":"rear right burner of the stove"},
-  {"skill":"turn_on","target_name":"rear right burner of the stove"}
-]
-
-Example (snack sorting):
-[
-  {"skill":"put_in","object_name":"bar","source_name":"drawer","container_name":"bowl"},
-  {"skill":"close","object_name":"drawer"}
+  {"skill":"open","object_name":"left drawer"},
+  {"skill":"close","object_name":"left drawer"}
 ]\
 """
 

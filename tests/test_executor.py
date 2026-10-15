@@ -141,25 +141,10 @@ def test_episode_timeout_contract() -> None:
     assert len(env.step_calls) == 2
 
 
-def test_place_and_turn_on_vla_prompts() -> None:
+def test_close_vla_prompt() -> None:
     executor = build_executor(env=FakeEnv(), vla=FakeVLA())
-    place = {
-        "skill": "place",
-        "object_name": "kettle",
-        "source_name": "counter",
-        "destination_name": "rear right burner of the stove",
-    }
-    turn = {
-        "skill": "turn_on",
-        "target_name": "rear right burner of the stove",
-    }
-    assert executor._build_vla_task(place) == (
-        "pick the kettle from the counter and place it on the "
-        "rear right burner of the stove"
-    )
-    assert executor._build_vla_task(turn) == (
-        "turn on the rear right burner of the stove"
-    )
+    close = {"skill": "close", "object_name": "left drawer"}
+    assert executor._build_vla_task(close) == "close the left drawer"
 
 
 def test_episode_cap_uses_env_horizon() -> None:
@@ -202,21 +187,6 @@ def test_open_task_string_preserves_object_name_detail() -> None:
     run_plan(executor, [step])
     assert vla.calls[0][2] == "open the right drawer"
     assert len(env.step_calls) == 1
-
-
-def test_put_in_and_close_vla_prompts() -> None:
-    executor = build_executor(env=FakeEnv(), vla=FakeVLA())
-    put_in = {
-        "skill": "put_in",
-        "object_name": "bar",
-        "source_name": "drawer",
-        "container_name": "bowl",
-    }
-    close = {"skill": "close", "object_name": "drawer"}
-    assert executor._build_vla_task(put_in) == (
-        "pick the bar from the drawer and place it in the bowl"
-    )
-    assert executor._build_vla_task(close) == "close the drawer"
 
 
 def test_unknown_skill_raises() -> None:

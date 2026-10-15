@@ -1,4 +1,4 @@
-"""RoboCasa backend for OpenDrawer, KettleBoiling, and SnackSorting.
+"""RoboCasa backend for OpenDrawer (open and open->close chain tasks).
 
 Linux-only lazy import.
 
@@ -30,28 +30,18 @@ def to_png(rgb: np.ndarray) -> bytes:
 
 
 OPEN_DRAWER_TASK = "open_drawer"
+OPEN_CLOSE_DRAWER_TASK = "open_close_drawer"
 OPEN_DRAWER_GYM_ENV_ID = "robocasa_panda_omron/OpenDrawer_PandaOmron_Env"
-KETTLE_BOILING_TASK = "kettle_boiling"
-KETTLE_BOILING_GYM_ENV_ID = (
-    "robocasa_panda_omron/KettleBoiling_PandaOmron_Env"
-)
-SNACK_SORTING_TASK = "snack_sorting"
-SNACK_SORTING_GYM_ENV_ID = (
-    "robocasa_panda_omron/SnackSorting_PandaOmron_Env"
-)
 _TASK_GYM_ENV_IDS = {
     OPEN_DRAWER_TASK: OPEN_DRAWER_GYM_ENV_ID,
-    KETTLE_BOILING_TASK: KETTLE_BOILING_GYM_ENV_ID,
-    SNACK_SORTING_TASK: SNACK_SORTING_GYM_ENV_ID,
+    OPEN_CLOSE_DRAWER_TASK: OPEN_DRAWER_GYM_ENV_ID,
 }
 _TASK_HORIZONS = {
     OPEN_DRAWER_TASK: 720,
-    KETTLE_BOILING_TASK: 1500,
-    SNACK_SORTING_TASK: 1000,
+    OPEN_CLOSE_DRAWER_TASK: 1000,
 }
 _DRAWER_CLOSED_JOINT_MAX = 0.05
-_KETTLE_BURNER_XY_RADIUS = 0.15
-_KNOB_ON_ABS_MIN = 0.35
+_OPEN_CLOSE_SUFFIX = ", then close it"
 
 CAMERA_KEYS = (
     "res256_image_side_0",
@@ -176,21 +166,6 @@ def _import_robocasa_gym():
     return gym
 
 
-def burner_phrase_to_key(phrase: str, valid_keys: tuple[str, ...]) -> str:
-    """Map a natural-language burner phrase to a stove burner dict key."""
-    text = phrase.strip().lower()
-    if text.endswith(" of the stove"):
-        text = text[: -len(" of the stove")].strip()
-    if text.endswith(" burner"):
-        text = text[: -len(" burner")].strip()
-    key = text.replace(" ", "_")
-    if key not in valid_keys:
-        listed = ", ".join(sorted(valid_keys))
-        raise KeyError(
-            f"unknown burner {phrase!r}; valid keys: {listed}")
-    return key
-
-
 def _resolve_gym_env_id(task: str) -> str:
     """Map a Longor task name to the RoboCasa gym registration id."""
     env_id = _TASK_GYM_ENV_IDS.get(task)
@@ -240,7 +215,7 @@ def _task_description_from_reset_obs(reset_obs: object) -> str:
 
 
 class RoboCasaEnv:
-    """One RoboCasa episode (OpenDrawer, KettleBoiling, or SnackSorting)."""
+    """One RoboCasa OpenDrawer episode (``open_drawer`` or ``open_close_drawer``)."""
 
     @classmethod
     def from_task(cls, task: str, task_idx: int = 0) -> "RoboCasaEnv":
@@ -259,11 +234,16 @@ class RoboCasaEnv:
     def _init_env(self, task: str) -> None:
         env_id = _resolve_gym_env_id(task)
         self._task = task
+        self._drawer_was_opened = False
         gym = _import_robocasa_gym()
         self._env = gym.make(env_id, enable_render=True)
         obs, _info = self._env.reset()
         self._last_obs = obs
-        self.task_description = _task_description_from_reset_obs(obs)
+        reset_desc = _task_description_from_reset_obs(obs)
+        if task == OPEN_CLOSE_DRAWER_TASK:
+            self.task_description = f"{reset_desc}{_OPEN_CLOSE_SUFFIX}"
+        else:
+            self.task_description = reset_desc
         self._steps = 0
         self._writer = None
         self._record()
@@ -342,6 +322,8 @@ class RoboCasaEnv:
         obs, _reward, terminated, truncated, _info = self._env.step(native)
         self._last_obs = obs
         self._steps += 1
+        if self._task == OPEN_CLOSE_DRAWER_TASK and self._drawer_open_oracle():
+            self._drawer_was_opened = True
         self._record()
         return bool(terminated or truncated)
 
@@ -370,115 +352,38 @@ class RoboCasaEnv:
         """Return whether the episode succeeded (sim task oracle)."""
         if self._task == OPEN_DRAWER_TASK:
             return self._drawer_open_oracle()
-        if self._task == KETTLE_BOILING_TASK:
-            return bool(self._env.unwrapped.env._check_success())
-        if self._task == SNACK_SORTING_TASK:
-            return bool(self._env.unwrapped.env._check_success())
+        if self._task == OPEN_CLOSE_DRAWER_TASK:
+            return self._drawer_was_opened and self._drawer_close_oracle()
         raise RuntimeError(f"unsupported task {self._task!r}")
 
     def check_subtask(self, step: dict[str, str]) -> bool:
         """Evaluate structured subtask completion (sim oracle)."""
         skill = step["skill"]
-        if self._task == OPEN_DRAWER_TASK:
-            if skill == "open":
-                return self._drawer_open_oracle()
-            raise KeyError(
-                f"unsupported skill {skill!r} for task {self._task!r}")
-        if self._task == KETTLE_BOILING_TASK:
-            if skill == "place":
-                return self._kettle_place_oracle(step)
-            if skill == "turn_on":
-                return self._kettle_turn_on_oracle(step)
-            raise KeyError(
-                f"unsupported skill {skill!r} for task {self._task!r}")
-        if self._task == SNACK_SORTING_TASK:
-            if skill == "put_in":
-                return self._snack_put_in_oracle(step)
-            if skill == "close":
-                return self._snack_close_oracle(step)
-            raise KeyError(
-                f"unsupported skill {skill!r} for task {self._task!r}")
-        raise RuntimeError(f"unsupported task {self._task!r}")
+        if skill == "open":
+            return self._drawer_open_oracle()
+        if skill == "close":
+            if self._task != OPEN_CLOSE_DRAWER_TASK:
+                raise KeyError(
+                    f"unsupported skill {skill!r} for task {self._task!r}")
+            return self._drawer_close_oracle()
+        raise KeyError(
+            f"unsupported skill {skill!r} for task {self._task!r}")
 
     def _sim_env(self):
         """Return the inner robosuite env (sim ground truth)."""
         return self._env.unwrapped.env
 
-    def _burner_keys(self, sim_env) -> tuple[str, ...]:
-        return tuple(sorted(sim_env.stove.burner_sites.keys()))
-
-    def _resolve_burner_key(self, phrase: str, sim_env) -> str:
-        return burner_phrase_to_key(phrase, self._burner_keys(sim_env))
-
-    def _kettle_place_oracle(self, step: dict[str, str]) -> bool:
-        """Sim-GT: kettle on named burner, gripper clear (mirrors upstream check)."""
-        from robocasa.utils import object_utils as OU
-
-        sim_env = self._sim_env()
-        dest = step["destination_name"]
-        try:
-            burner_key = self._resolve_burner_key(dest, sim_env)
-        except KeyError as exc:
-            raise ValueError(
-                f"place destination_name must be a stove burner phrase: {exc}"
-            ) from exc
-        stove = sim_env.stove
-        if not OU.check_obj_fixture_contact(sim_env, "obj", stove):
-            return False
-        kettle = sim_env.objects["obj"]
-        body_id = sim_env.obj_body_id[kettle.name]
-        kettle_xy = sim_env.sim.data.body_xpos[body_id][0:2]
-        site_info = stove.burner_sites.get(burner_key)
-        if site_info is None:
-            return False
-        site_name = site_info.get("name")
-        if site_name is None:
-            return False
-        burner_xy = sim_env.sim.data.get_site_xpos(site_name)[0:2]
-        if np.linalg.norm(kettle_xy - burner_xy) > _KETTLE_BURNER_XY_RADIUS:
-            return False
-        return bool(OU.gripper_obj_far(sim_env))
-
-    def _kettle_turn_on_oracle(self, step: dict[str, str]) -> bool:
-        """Sim-GT: named burner knob rotated into the on range."""
-        sim_env = self._sim_env()
-        name = step["target_name"]
-        try:
-            burner_key = self._resolve_burner_key(name, sim_env)
-        except KeyError as exc:
-            raise ValueError(
-                f"turn_on target_name must be a stove burner phrase: {exc}"
-            ) from exc
-        knobs_state = sim_env.stove.get_knobs_state(env=sim_env)
-        angle = knobs_state[burner_key]
-        lo = _KNOB_ON_ABS_MIN
-        hi = 2 * math.pi - _KNOB_ON_ABS_MIN
-        return lo <= abs(angle) <= hi
-
-    def _snack_put_in_oracle(self, step: dict[str, str]) -> bool:
-        """Sim-GT: object in receptacle and gripper far (SnackSorting place stage)."""
-        from robocasa.utils import object_utils as OU
-
-        sim_env = self._sim_env()
-        obj = step["object_name"]
-        recep = step["container_name"]
-        if not OU.check_obj_in_receptacle(sim_env, obj, recep):
-            return False
-        return bool(OU.gripper_obj_far(sim_env, obj_name=obj))
-
-    def _snack_close_oracle(self, step: dict[str, str]) -> bool:
-        """Sim-GT: every drawer door joint closed (ManipulateDrawer close stage)."""
-        del step  # object_name is for VLA grounding only today
+    def _drawer_close_oracle(self) -> bool:
+        """Sim-GT: every drawer door joint closed (joint position <= 0.05)."""
         sim_env = self._sim_env()
         drawer = getattr(sim_env, "drawer", None)
         if drawer is None or not hasattr(drawer, "get_door_state"):
             raise RuntimeError(
-                "SnackSorting sim env missing drawer fixture for close oracle")
+                "OpenDrawer sim env missing drawer fixture for close oracle")
         door_state = drawer.get_door_state(env=sim_env)
         if not door_state:
             raise RuntimeError(
-                "SnackSorting drawer close oracle requires non-empty door state"
-            )
+                "drawer close oracle requires non-empty door state")
         for joint_p in door_state.values():
             if joint_p > _DRAWER_CLOSED_JOINT_MAX:
                 return False

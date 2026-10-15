@@ -20,27 +20,38 @@ simulator/checkpoint pair only to test that claim.
 - **M2 — DONE.** Longor OpenDrawer on RoboCasa with GR00T N1.6-3B through the
   HTTP VLA contract (`colab/run_longor_task.ipynb` -> `examples/run_longor_task.py`):
   succeeded in one `Runner` episode. Report as "given a subtask-completion oracle."
-- **M3 — IN PROGRESS (SnackSorting primitive gating).** Active candidate:
-  `SnackSorting` (`Place the bar in the bowl and close the drawer.`). Extend
-  environment/skills/planner schema/prompt mapping only for SnackSorting's
-  required primitives (`put_in`, `close`); run matched bare-VLA primitive gates
-  for each required primitive before any end-to-end Longor comparison. Gates
-  keep the comparison contract fixed: GR00T N1.6-3B, PandaOmron
-  observations/actions, 8 actions/call, backend horizon. Primitive viability
-  threshold is **>=7/10 episodes** per required primitive (same gate size and
-  threshold family as M1 unless explicitly revised before execution).
-  KettleBoiling remains rejected for M3 under this contract:
-  `robocasa_panda_omron/KettleBoiling_PandaOmron_Env` feasibility was confirmed,
-  but bare-VLA was **0/10** and in-scene place gating was **0/5** (per-episode
-  video-provenance verified). Backup candidates if SnackSorting primitives fail:
-  `PrepareCoffee` and `OrganizeCleaningSupplies` (wrapper feasibility confirmed;
-  stage predicates pinned separately).
-  SnackSorting PandaOmron wrapper: registers and resets with the three-camera /
-  53-D state contract; pinned horizon evidence shows `inner_horizon=1000` with
-  `wrapper_spec_max_steps=None` and `wrapper_max_episode_steps=None`.
-  Stage predicates verified from pinned upstream `SnackSorting` source:
-  place stage `OU.check_obj_in_receptacle(env, "bar", "bowl")`; close stage
-  (ManipulateDrawer `behavior="close"`) every drawer joint position `<= 0.05`.
+- **M3 — IN PROGRESS (drawer open->close chain).** Task: OpenDrawer scene,
+  goal `<reset language>, then close it` (e.g. `open the left drawer, then close
+  it`), plan `open(<side> drawer)` -> `close(<side> drawer)`. Selection rule
+  (learned from the Kettle/SnackSorting failures): a Longor primitive is
+  admissible only if its exact prompt wording is in the checkpoint's training
+  set. `nvidia/GR00T-N1.6-3B` was trained on 24 RoboCasa atomic tasks
+  (`single_panda_gripper.*`; the "66.22%" NVIDIA figure is the average over
+  exactly those, each in its own scene), so unseen composite tasks and
+  unseen prompt wording are expected to fail. Training prompts: `open the
+  left|right drawer`, `close the left|right drawer`. The scene is the same
+  `ManipulateDrawer` class as upstream CloseDrawer, whose start state (door
+  90-100% open) matches the post-`open` state. Gates (GR00T N1.6-3B,
+  PandaOmron observations/actions, 8 actions/call, backend horizon 1000, 10
+  episodes each, threshold **>=7/10**): (1) in-scene chain gate, fixed plan,
+  no LLM, reports `open_ok`, `close_ok_given_open`, `success`; (2) only if (1)
+  passes: bare arm (task description as one prompt) vs Longor `Runner`,
+  reported as "given a subtask-completion oracle." Episode `success()` =
+  drawer closed now AND opened earlier in the episode (latched), because
+  OpenDrawer starts closed. This is a chaining/usefulness check on a single
+  task, not the M5 claim.
+  Rejected under this checkpoint contract (history, code removed):
+  `KettleBoiling` bare-VLA 0/10, in-scene place gate 0/5 (stove-burner
+  destination wording is out of distribution; the burner phrase triggered the
+  TurnOnStove behavior); `SnackSorting` in-scene `put_in` gate **0/10**
+  (`pick the bar from the drawer and place it in the bowl` is not a training
+  phrase: drawer is never a PnP source, `in the bowl` only appears with a pan
+  source; runs hovered at the drawer or pushed the bowl).
+  Reliable trained primitives for future suites (upstream per-task rate,
+  >=85%): CloseDrawer 100, CoffeePressButton 98.5, CloseSingleDoor 96,
+  TurnOffMicrowave 96, TurnOffSinkFaucet 93.5, TurnOnMicrowave 91.5,
+  TurnOnSinkFaucet 89, CloseDoubleDoor 88.5, TurnSinkSpout 87. Pick-and-place
+  tasks are 19-63% upstream.
 - **M4 — PLANNED.** Paired Longor-vs-bare-VLA pilot on the M3 suite. Retain
   per-episode artifacts and assign every failure to exactly one category:
   policy/primitive, planner plan, plan-to-skill grounding, subtask
@@ -77,8 +88,7 @@ Contract points:
   forwards `observe`, `step`, `success`, `check_subtask`, `close`, plus
   `steps`, `horizon`, and `task_description`.
 - Current backend slice: `src/envs/robocasa_env.py` supports
-  `task in {"open_drawer", "kettle_boiling", "snack_sorting"}` and `task_idx=0`
-  only.
+  `task in {"open_drawer", "open_close_drawer"}` and `task_idx=0` only.
 - `observe()` returns `(images, state)` where `images` is a tuple of lossless
   PNG bytes and `state` is a float list. For RoboCasa today: 3 images.
 - VLA integration lives in `src/executor.py`; actions from `vla_client` are
@@ -96,76 +106,32 @@ Planner output must be valid JSON in one of two shapes:
 - Step array: `[{"skill":"open","object_name":"..."}]`
 - STOP sentinel: `{"stop":"<reason>"}`
 
-`open` and `close` take `object_name`. `place` takes `object_name`,
-`source_name`, and `destination_name`. `put_in` takes `object_name`,
-`source_name`, and `container_name`. `turn_on` takes `target_name` for the
-control to activate. The planner decides all names before execution (one plan
-from the initial snapshot) and must be specific whenever a name could match
-more than one object (burner position, left/right drawer); the same object is
+`open` and `close` take `object_name`. The planner decides all names before
+execution (one plan from the initial snapshot) and must be specific whenever a
+name could match more than one object (left/right drawer); the same object is
 named identically across steps.
 
-Runtime skill surface:
+Runtime skill surface (prompts are exact GR00T training wording):
 
 - `open(object_name)` -> VLA task prompt `open the <object_name>`.
-- `place(object_name, source_name, destination_name)` -> VLA task prompt
-  `pick the <object_name> from the <source_name> and place it on the
-  <destination_name>` (GR00T PnP training language, verified from the upstream
-  atomic envs; training destinations are containers like "pan"/"cabinet", so
-  a burner destination is out-of-distribution). Pick and place are one skill:
-  the checkpoint was trained on monolithic prompts only; a split is revisited
-  in M4 with grasp-diagnostic evidence.
-- `put_in(object_name, source_name, container_name)` -> VLA task prompt
-  `pick the <object_name> from the <source_name> and place it in the
-  <container_name>` (in-receptacle PnP language for SnackSorting).
 - `close(object_name)` -> VLA task prompt `close the <object_name>`.
-- `turn_on(target_name)` -> VLA task prompt `turn on the <target_name>`, with
-  `target_name` in GR00T TurnOn language, e.g. `rear right burner of the stove`
-  (use the same burner phrase as the preceding `place` destination).
 
 Subtask oracles (`check_subtask`, sim ground truth, disclosed in claims):
-`place` = object in contact with the destination fixture, within the
-destination site radius, gripper far from the object; `put_in` = object in the
-named receptacle (upstream `check_obj_in_receptacle`) and gripper far from the
-object; `close` = every normalized drawer door joint `<= 0.05`; `turn_on` =
-the named control's state is on.
+`open` = robosuite OpenDrawer `_check_success` (drawer >= 95% open); `close` =
+every normalized drawer door joint `<= 0.05`.
 
-Per-skill step caps (`config.MAX_SKILL_STEPS`): `open` 720, `place` 900,
-`put_in` 720, `close` 400, `turn_on` 400.
+Per-skill step caps (`config.MAX_SKILL_STEPS`): `open` 720, `close` 400.
 
-Episode step cap comes from the backend (`env.horizon`: 720 for OpenDrawer, 1500
-for KettleBoiling, 1000 for SnackSorting), not from a global config constant.
+Episode step cap comes from the backend (`env.horizon`: 720 for `open_drawer`,
+1000 for `open_close_drawer`), not from a global config constant.
 
-## M3 SnackSorting primitive gate (active)
+## M3 drawer-chain gate (active)
 
-In-scene fixed plan, no LLM (`validation/run_snack_sorting_primitive_gate.py`):
-step 1 `put_in(bar, drawer, bowl)`; step 2 `close(drawer)` only if step 1
-succeeds. Ten episodes default; per-episode unique video path when
-`SAVE_VIDEO=1`; simulator ground truth for stage oracles. Viability threshold:
-**>=7/10** per required primitive.
-
-- Stage 1 (`put_in`): pinned upstream `SnackSorting` place stage uses
-  `OU.check_obj_in_receptacle(env, "bar", "bowl")` plus gripper far from bar.
-- Stage 2 (`close`): pinned ManipulateDrawer close stage — every drawer joint
-  position `<= 0.05`.
-
-## M3 backup-suite provisional gate definitions
-
-The following remain backup candidates if SnackSorting primitives fail screening.
-Each gate will be in-scene, fixed-plan, no-LLM, and use simulator ground truth
-for stage oracles at the same **>=7/10** threshold.
-
-- `PrepareCoffee`
-  (`Pick mug from cabinet, place under dispenser, press start button.`):
-  - stage 1 (place): mug is in coffee-machine pour placement region.
-  - stage 2 (turn_on): coffee-machine `_turned_on` state is true.
-- `OrganizeCleaningSupplies`
-  (`Open cabinet, place cleaner near sink, close cabinet.`):
-  - stage 1 (open): cabinet open.
-  - stage 2 (place): cleaner on counter and near sink threshold.
-  - stage 3 (close): cabinet closed.
-
-The selected M3 suite must pass required primitives under the fixed contract
-before any end-to-end Longor vs bare-VLA comparison.
+In-scene fixed plan, no LLM (`validation/run_drawer_chain_gate.py`): step 1
+`open(<side> drawer)`; step 2 `close(<side> drawer)` only if step 1 succeeds,
+with `<side>` parsed from the reset language. Ten episodes default;
+per-episode unique video path when `SAVE_VIDEO=1`; simulator ground truth for
+stage oracles. Viability threshold: **>=7/10** per primitive.
 
 ## VLA service contract
 

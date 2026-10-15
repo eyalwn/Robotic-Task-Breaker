@@ -50,25 +50,25 @@ def test_sim_env_forwards_public_api(monkeypatch: pytest.MonkeyPatch) -> None:
     backend.close.assert_called_once_with()
 
 
-def test_sim_env_snack_sorting_task(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_sim_env_open_close_drawer_task(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(config, "SIM_ENV", "robocasa")
     mock_robocasa = MagicMock()
-    mock_robocasa.from_task.return_value = "snack-instance"
+    mock_robocasa.from_task.return_value = "chain-instance"
     with patch("envs.robocasa_env.RoboCasaEnv", mock_robocasa):
-        result = SimEnv("snack_sorting", 0)
-    mock_robocasa.from_task.assert_called_once_with("snack_sorting", 0)
-    assert result._env == "snack-instance"
+        result = SimEnv("open_close_drawer", 0)
+    mock_robocasa.from_task.assert_called_once_with("open_close_drawer", 0)
+    assert result._env == "chain-instance"
 
 
 def test_sim_env_forwards_horizon(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(config, "SIM_ENV", "robocasa")
     backend = MagicMock()
-    backend.horizon = 1500
+    backend.horizon = 1000
     mock_robocasa = MagicMock()
     mock_robocasa.from_task.return_value = backend
     with patch("envs.robocasa_env.RoboCasaEnv", mock_robocasa):
-        env = SimEnv("kettle_boiling", 0)
-    assert env.horizon == 1500
+        env = SimEnv("open_close_drawer", 0)
+    assert env.horizon == 1000
 
 
 def test_sim_env_unknown_sim_raises(monkeypatch: pytest.MonkeyPatch) -> None:
