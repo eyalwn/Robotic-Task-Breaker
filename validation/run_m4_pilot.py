@@ -25,6 +25,7 @@ from executor import Executor, StopReason  # noqa: E402
 from plan import get_stop_reason, is_stop_plan  # noqa: E402
 from planner import LLMPlanner  # noqa: E402
 from skills import skill_catalog  # noqa: E402
+from utils import configure_logging  # noqa: E402
 from vla_client import VLAClient  # noqa: E402
 
 ARM_BARE = "bare"
@@ -109,6 +110,17 @@ def _infer_infrastructure(error: str) -> bool:
         "address already in use",
     )
     return any(marker in text for marker in markers)
+
+
+def _final_longor_status_fields(
+    success: bool,
+    stop_reason: str,
+    error: str,
+) -> tuple[str, str]:
+    """Final stop_reason/error; clear stale failure after a successful retry."""
+    if success:
+        return "", ""
+    return stop_reason, error
 
 
 def _plan_checks(
@@ -207,6 +219,7 @@ def _run_longor_episode() -> dict[str, object]:
     success = False
     category = CATEGORY_INFRASTRUCTURE
     last_plan: object = None
+    attempts: list[dict[str, object]] = []
     try:
         target_object = _object_name_from_task_description(task_desc)
         planner = LLMPlanner(task_desc, skill_catalog())
@@ -222,6 +235,14 @@ def _run_longor_episode() -> dict[str, object]:
             last_plan = planned
             shape_ok, grounding_ok = _plan_checks(planned, target_object)
             execution_sum = executor.run(planned)
+            attempts.append(
+                {
+                    "plan": planned,
+                    "stop_reason": execution_sum.reason,
+                    "steps": execution_sum.steps,
+                    "error": execution_sum.error,
+                }
+            )
             total_steps += execution_sum.steps
             error = execution_sum.error
             if execution_sum.reason == StopReason.PLAN_DONE:
@@ -271,6 +292,7 @@ def _run_longor_episode() -> dict[str, object]:
         )
     finally:
         env.close()
+    stop_reason, error = _final_longor_status_fields(success, stop_reason, error)
     return {
         "success": success,
         "category": category,
@@ -281,6 +303,7 @@ def _run_longor_episode() -> dict[str, object]:
         "steps": total_steps,
         "error": error,
         "last_plan": last_plan,
+        "attempts": attempts,
     }
 
 
@@ -303,6 +326,7 @@ def _summarize(records: list[dict[str, object]]) -> dict[str, object]:
 
 
 def main() -> int:
+    configure_logging()
     args = _parse_args()
     arms = _parse_arms(args.arms)
     artifact_dir = Path(args.artifact_dir)

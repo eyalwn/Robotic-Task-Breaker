@@ -17,9 +17,9 @@ simulator/checkpoint pair only to test that claim.
   `validation/run_robocasa_primitive_gate.py`): pass threshold = >=7/10 episodes;
   observed 8/10 (10 episodes, 720-step cap, 8 actions/call). Artifacts are
   external (Drive), not committed.
-- **M2 — DONE.** Longor OpenDrawer on RoboCasa with GR00T N1.6-3B through the
-  HTTP VLA contract (`colab/run_longor_task.ipynb` -> `examples/run_longor_task.py`):
-  succeeded in one `Runner` episode. Report as "given a subtask-completion oracle."
+- **M2 — DONE.** Historical Longor OpenDrawer run on RoboCasa with
+  GR00T N1.6-3B through the HTTP VLA contract succeeded in one `Runner` episode.
+  Report as "given a subtask-completion oracle."
 - **M3 — DONE (drawer open->close chain).** Task: OpenDrawer scene,
   goal `<reset language>, then close it` (e.g. `open the left drawer, then close
   it`), plan `open(<side> drawer)` -> `close(<side> drawer)`. Selection rule
@@ -60,16 +60,21 @@ simulator/checkpoint pair only to test that claim.
   TurnOffMicrowave 96, TurnOffSinkFaucet 93.5, TurnOnMicrowave 91.5,
   TurnOnSinkFaucet 89, CloseDoubleDoor 88.5, TurnSinkSpout 87. Pick-and-place
   tasks are 19-63% upstream.
-- **M4 — PLANNED.** Paired Longor-vs-bare-VLA pilot on the M3 suite. Retain
-  per-episode artifacts and assign every failure to exactly one category:
-  policy/primitive, planner plan, plan-to-skill grounding, subtask
-  transition/oracle, or infrastructure. Use the pilot to freeze the M5 suite,
-  budgets, replanning policy, sample size, and decision rule; do not claim a
-  win or loss from it. Before execution, freeze an episode eligibility and
-  observability rule (including ambiguous/framing edge-cases) and keep it
-  fixed for both arms. Launcher:
+- **M4 — IN PROGRESS.** Longor-vs-bare-VLA pilot on the M3 suite. Reset scenes
+  are unpaired until reproducibility is resolved, so pilot rates are diagnostic
+  only. The initial artifact
+  `G:\My Drive\Colab\longor_m4_pilot\20261015T181402Z` observed bare `0/10` and
+  Longor `4/10`; arms saw independently generated scenes, so it does not support
+  a win/loss claim. Retain per-episode artifacts and assign every failure to
+  exactly one category: policy/primitive, planner plan, plan-to-skill grounding,
+  subtask transition/oracle, or infrastructure. Use the pilot to freeze the M5
+  suite, budgets, replanning policy, sample size, and decision rule. Before the
+  next batch, use the single-run `open_close_drawer` debug launcher to validate
+  stage/oracle behavior; then freeze an episode eligibility and observability
+  rule (including ambiguous/framing edge-cases) for both arms. Batch launcher:
   `validation/run_m4_pilot.py` (artifact outputs:
-  `m4_pilot_episodes.jsonl`, `m4_pilot_summary.json`, and optional videos).
+  `m4_pilot_episodes.jsonl`, `m4_pilot_summary.json`, per-attempt Longor
+  records, and optional videos).
 - **M5 — PLANNED.** Formal Longor-vs-bare-VLA comparison. Freeze code, model
   checkpoint, prompts, task IDs/seeds, action chunking, compute limits, and
   stop/timeout policy before execution. Both arms use the same VLA server,

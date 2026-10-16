@@ -10,10 +10,10 @@ Note: Project contracts, milestones, and hypothesis live in `SRD.md`.
 Simulation runs on Colab (L4 verified).
 
 - `colab/run_longor_task.ipynb` — installs the Isaac-GR00T RoboCasa stack,
-  starts the GR00T server (`:5555`) and the Longor adapter (`:8765`), runs one
-  `open_drawer` episode (`examples/run_longor_task.py`), and writes `run.mp4` and
-  logs to Drive. Colab Secrets: `GITHUB_TOKEN`, `OPENAI_API_KEY` (optional
-  `HF_TOKEN`).
+  starts the GR00T server (`:5555`) and the Longor adapter (`:8765`), then runs
+  one debug `open_close_drawer` episode (`examples/run_longor_task.py`) with
+  `LOG_LEVEL=DEBUG`. It writes `run.mp4` and `run_longor_task.log` to Drive.
+  Colab Secrets: `GITHUB_TOKEN`, `OPENAI_API_KEY` (optional `HF_TOKEN`).
 - `colab/run_robocasa_primitive_gate.ipynb` — M1 upstream-only gate launcher
   (no Longor planner/executor); orchestration and verdict logic live in
   `validation/run_robocasa_primitive_gate.py`.
