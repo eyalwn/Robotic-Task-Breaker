@@ -227,6 +227,34 @@ def test_planner_stop_sentinel_on_initial_call(
     assert get_stop_reason(result) == "goal achieved"
 
 
+def test_planner_usage_logging_omits_provider_detail_fields(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    response = _Response(json.dumps(VALID_PLAN))
+    response.usage_metadata = {
+        "input_tokens": 505,
+        "output_tokens": 26,
+        "total_tokens": 531,
+        "input_token_details": {"audio": 0, "cache_read": 0},
+        "output_token_details": {"audio": 0, "reasoning": 0},
+    }
+    monkeypatch.setattr("planner.init_chat_model", lambda _model: _LLM([response]))
+    planner = LLMPlanner("pick cube", "catalog")
+    with caplog.at_level("DEBUG", logger="planner"):
+        planner.plan(SNAPSHOT)
+    usage_logs = [
+        record.getMessage()
+        for record in caplog.records
+        if "LLMPlanner usage:" in record.getMessage()
+    ]
+    assert usage_logs
+    assert "input_tokens" in usage_logs[0]
+    assert "output_tokens" in usage_logs[0]
+    assert "total_tokens" in usage_logs[0]
+    assert "audio" not in usage_logs[0]
+
+
 def _human_text(content: object) -> str:
     if isinstance(content, str):
         return content

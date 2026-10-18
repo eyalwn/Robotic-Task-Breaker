@@ -219,69 +219,74 @@ def _run_longor_episode() -> dict[str, object]:
     success = False
     category = CATEGORY_INFRASTRUCTURE
     last_plan: object = None
+    shape_ok = True
+    grounding_ok = True
     attempts: list[dict[str, object]] = []
     try:
         target_object = _object_name_from_task_description(task_desc)
         planner = LLMPlanner(task_desc, skill_catalog())
         executor = Executor(env=env)
-        for attempt in range(config.MAX_REPLANS + 1):
-            images, _state = env.observe()
-            planned = planner.plan(images[0])
-            if is_stop_plan(planned):
-                plan_status = "stopped"
-                stop_reason = get_stop_reason(planned)
-                category = CATEGORY_PLANNER_PLAN
-                break
+        images, _state = env.observe()
+        planned = planner.plan(images[0])
+        if is_stop_plan(planned):
+            plan_status = "stopped"
+            stop_reason = get_stop_reason(planned)
+        else:
             last_plan = planned
             shape_ok, grounding_ok = _plan_checks(planned, target_object)
-            execution_sum = executor.run(planned)
-            attempts.append(
-                {
-                    "plan": planned,
-                    "stop_reason": execution_sum.reason,
-                    "steps": execution_sum.steps,
-                    "error": execution_sum.error,
-                }
-            )
-            total_steps += execution_sum.steps
-            error = execution_sum.error
-            if execution_sum.reason == StopReason.PLAN_DONE:
-                plan_status = "done"
-                success = env.success()
-                if success:
-                    category = CATEGORY_SUCCESS
-                elif not shape_ok:
-                    category = CATEGORY_PLANNER_PLAN
-                elif not grounding_ok:
-                    category = CATEGORY_PLAN_TO_SKILL_GROUNDING
-                else:
-                    category = CATEGORY_SUBTASK_TRANSITION_ORACLE
-                break
-            plan_status = "execution_error"
-            stop_reason = execution_sum.reason
-            if not shape_ok:
-                category = CATEGORY_PLANNER_PLAN
-            elif not grounding_ok:
-                category = CATEGORY_PLAN_TO_SKILL_GROUNDING
-            elif execution_sum.reason in (
-                StopReason.SUBTASK_TIMEOUT,
-                StopReason.EPISODE_TIMEOUT,
-            ):
-                category = CATEGORY_POLICY_PRIMITIVE
-            elif execution_sum.reason == StopReason.EXECUTION_ERROR:
-                category = (
-                    CATEGORY_INFRASTRUCTURE
-                    if _infer_infrastructure(error)
-                    else CATEGORY_POLICY_PRIMITIVE
+            remaining_steps = list(planned)
+            for retry_count in range(config.MAX_REPLANS + 1):
+                execution_sum = executor.run(remaining_steps)
+                attempts.append(
+                    {
+                        "plan": [dict(step) for step in remaining_steps],
+                        "stop_reason": execution_sum.reason,
+                        "steps": execution_sum.steps,
+                        "error": execution_sum.error,
+                        "next_step_idx": execution_sum.next_step_idx,
+                    }
                 )
-            else:
-                category = CATEGORY_INFRASTRUCTURE
-            if (
-                execution_sum.reason == StopReason.SUBTASK_TIMEOUT
-                and attempt < config.MAX_REPLANS
-            ):
-                continue
-            break
+                total_steps += execution_sum.steps
+                stop_reason = execution_sum.reason
+                error = execution_sum.error
+                if execution_sum.reason == StopReason.PLAN_DONE:
+                    plan_status = "done"
+                    break
+                plan_status = "execution_error"
+                if (
+                    execution_sum.reason == StopReason.SUBTASK_TIMEOUT
+                    and retry_count < config.MAX_REPLANS
+                ):
+                    remaining_steps = remaining_steps[execution_sum.next_step_idx :]
+                    if remaining_steps:
+                        continue
+                break
+        success = bool(env.success())
+        if success:
+            category = CATEGORY_SUCCESS
+        elif plan_status == "stopped":
+            category = CATEGORY_PLANNER_PLAN
+        elif not shape_ok:
+            category = CATEGORY_PLANNER_PLAN
+        elif not grounding_ok:
+            category = CATEGORY_PLAN_TO_SKILL_GROUNDING
+        elif plan_status == "done":
+            category = CATEGORY_SUBTASK_TRANSITION_ORACLE
+        elif stop_reason in (
+            StopReason.SUBTASK_TIMEOUT,
+            StopReason.EPISODE_TIMEOUT,
+        ):
+            category = CATEGORY_POLICY_PRIMITIVE
+        elif stop_reason == StopReason.EXECUTION_ERROR:
+            category = (
+                CATEGORY_INFRASTRUCTURE
+                if _infer_infrastructure(error)
+                else CATEGORY_POLICY_PRIMITIVE
+            )
+        elif plan_status == "plan_failed":
+            category = CATEGORY_PLANNER_PLAN
+        else:
+            category = CATEGORY_INFRASTRUCTURE
     except Exception as exc:
         error = str(exc)
         plan_status = "plan_failed"

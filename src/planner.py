@@ -108,8 +108,9 @@ class LLMPlanner:
             logger.info(
                 "planning attempt: %d/%d", attempt + 1, self._max_plan_retries)
             response = self._llm.invoke(messages)
-            if response.usage_metadata:
-                logger.debug("LLMPlanner usage: %s", response.usage_metadata)
+            usage_summary = _usage_token_summary(response.usage_metadata)
+            if usage_summary:
+                logger.debug("LLMPlanner usage: %s", usage_summary)
 
             raw = response.content.strip()
             raw = _extract_json(raw)
@@ -148,6 +149,19 @@ def _retry_prompt(raw: str, error_msg: str) -> str:
         f"Validation error:\n{error_msg}\n\n"
         "Fix the JSON and respond with ONLY the corrected plan JSON."
     )
+
+
+def _usage_token_summary(usage_metadata: object) -> dict[str, int]:
+    """Return only stable aggregate token counts from provider usage metadata."""
+    if not isinstance(usage_metadata, dict):
+        return {}
+    keys = ("input_tokens", "output_tokens", "total_tokens")
+    summary: dict[str, int] = {}
+    for key in keys:
+        value = usage_metadata.get(key)
+        if isinstance(value, (int, float)):
+            summary[key] = int(value)
+    return summary
 
 
 def _strip_code_fences(raw: str) -> str:

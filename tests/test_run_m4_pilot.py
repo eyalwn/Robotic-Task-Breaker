@@ -52,7 +52,8 @@ def test_longor_episode_retry_timeout_then_success(monkeypatch) -> None:
     timeout_sum = ExecutionSum(
         reason=StopReason.SUBTASK_TIMEOUT,
         steps=400,
-        error="open timed out",
+        error="close timed out",
+        next_step_idx=1,
     )
     done_sum = ExecutionSum(
         reason=StopReason.PLAN_DONE,
@@ -89,8 +90,16 @@ def test_longor_episode_retry_timeout_then_success(monkeypatch) -> None:
     assert row["stop_reason"] == ""
     assert row["error"] == ""
     assert row["steps"] == 860
+    assert planner.plan.call_count == 1
+    assert executor.run.call_count == 2
     assert len(row["attempts"]) == 2
     assert row["attempts"][0]["stop_reason"] == StopReason.SUBTASK_TIMEOUT
-    assert row["attempts"][0]["error"] == "open timed out"
+    assert row["attempts"][0]["error"] == "close timed out"
+    assert row["attempts"][0]["next_step_idx"] == 1
+    assert [step["skill"] for step in row["attempts"][0]["plan"]] == [
+        "open",
+        "close",
+    ]
     assert row["attempts"][1]["stop_reason"] == StopReason.PLAN_DONE
     assert row["attempts"][1]["steps"] == 460
+    assert [step["skill"] for step in row["attempts"][1]["plan"]] == ["close"]

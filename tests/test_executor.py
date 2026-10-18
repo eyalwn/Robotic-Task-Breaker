@@ -75,6 +75,7 @@ def test_subtask_timeout_returns_summary() -> None:
     with patch("config.MAX_SKILL_STEPS", {"open": 2}):
         result = run_plan(executor, plan)
     assert result.reason == StopReason.SUBTASK_TIMEOUT
+    assert result.next_step_idx == 0
     assert len(env.step_calls) == 2
 
 
@@ -86,6 +87,7 @@ def test_episode_timeout_returns_summary() -> None:
     result = run_plan(executor, plan)
     assert result.reason == StopReason.EPISODE_TIMEOUT
     assert result.error == "episode hits maximum steps-budget: 2 steps"
+    assert result.next_step_idx == 0
     assert len(env.step_calls) == 2
 
 
@@ -98,6 +100,7 @@ def test_open_subtask_success_immediate() -> None:
     plan = make_plan([{"skill": "open", "object_name": "right drawer"}])
     result = run_plan(executor, plan)
     assert result.reason == StopReason.PLAN_DONE
+    assert result.next_step_idx == 1
     assert len(vla.calls) == 1
     assert len(env.step_calls) == 1
 
@@ -111,6 +114,7 @@ def test_open_calls_vla_and_succeeds() -> None:
     plan = make_plan([{"skill": "open", "object_name": "right drawer"}])
     result = run_plan(executor, plan)
     assert result.reason == StopReason.PLAN_DONE
+    assert result.next_step_idx == 1
     assert len(vla.calls) == 1
     assert vla.calls[0][2] == "open the right drawer"
     assert len(env.step_calls) == 2
@@ -253,3 +257,18 @@ def test_subtask_timeout_includes_error() -> None:
         )
     assert result.reason == StopReason.SUBTASK_TIMEOUT
     assert "exceeded 2 steps" in result.error
+
+
+def test_timeout_on_second_step_reports_suffix_index() -> None:
+    first = {"skill": "open", "object_name": "left drawer"}
+    second = {"skill": "close", "object_name": "left drawer"}
+    env = FakeEnv(
+        subtask_satisfied={
+            _step_key("open", object_name="left drawer"): True,
+        }
+    )
+    executor = build_executor(env=env, vla=FakeVLA(actions=[[0.0] * 7]))
+    with patch("config.MAX_SKILL_STEPS", {"open": 4, "close": 2}):
+        result = run_plan(executor, [first, second])
+    assert result.reason == StopReason.SUBTASK_TIMEOUT
+    assert result.next_step_idx == 1

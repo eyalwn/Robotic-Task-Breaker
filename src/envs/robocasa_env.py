@@ -373,18 +373,26 @@ class RoboCasaEnv:
         """Return the inner robosuite env (sim ground truth)."""
         return self._env.unwrapped.env
 
-    def _drawer_close_oracle(self) -> bool:
-        """Sim-GT: every drawer door joint closed (joint position <= 0.05)."""
+    def drawer_joint_state(self) -> dict[str, float]:
+        """Return normalized drawer-door joint values for debug observability."""
+        return self._drawer_door_state()
+
+    def _drawer_door_state(self) -> dict[str, float]:
+        """Read normalized drawer-door joints from the OpenDrawer fixture."""
         sim_env = self._sim_env()
         drawer = getattr(sim_env, "drawer", None)
         if drawer is None or not hasattr(drawer, "get_door_state"):
             raise RuntimeError(
-                "OpenDrawer sim env missing drawer fixture for close oracle")
-        door_state = drawer.get_door_state(env=sim_env)
-        if not door_state:
-            raise RuntimeError(
-                "drawer close oracle requires non-empty door state")
-        for joint_p in door_state.values():
+                "OpenDrawer sim env missing drawer fixture for close oracle"
+            )
+        raw_state = drawer.get_door_state(env=sim_env)
+        if not raw_state:
+            raise RuntimeError("drawer close oracle requires non-empty door state")
+        return {str(joint): float(value) for joint, value in raw_state.items()}
+
+    def _drawer_close_oracle(self) -> bool:
+        """Sim-GT: every drawer door joint closed (joint position <= 0.05)."""
+        for joint_p in self._drawer_door_state().values():
             if joint_p > _DRAWER_CLOSED_JOINT_MAX:
                 return False
         return True

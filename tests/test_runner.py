@@ -14,7 +14,10 @@ from runner import Runner
 
 
 def _done_plan() -> Plan:
-    return []
+    return [
+        {"skill": "open", "object_name": "right drawer"},
+        {"skill": "close", "object_name": "right drawer"},
+    ]
 
 
 def _stop_plan(reason: str) -> dict[str, str]:
@@ -27,9 +30,13 @@ class _StubPlanner:
         self.init_catalog = catalog
         self.plan_calls = 0
         self.plan_args: list[bytes] = []
+        self._plan_output: object = _done_plan()
         self._plan_fail_on_call = -1
         self._stop_on_call = -1
         self._stop_reason = "goal achieved"
+
+    def set_plan_output(self, output: object) -> None:
+        self._plan_output = output
 
     def fail_on_plan_call(self, call_number: int) -> None:
         self._plan_fail_on_call = call_number
@@ -46,7 +53,7 @@ class _StubPlanner:
             raise RuntimeError("plan validation failed")
         if self._stop_on_call == self.plan_calls:
             return _stop_plan(self._stop_reason)
-        return _done_plan()
+        return self._plan_output
 
 
 class _StubEnv:
@@ -177,6 +184,7 @@ def test_runner_planner_stop(monkeypatch: pytest.MonkeyPatch) -> None:
         [ExecutionSum(reason=StopReason.PLAN_DONE)],
         monkeypatch,
         planner=planner,
+        env_success=False,
     )
     assert runner.run() is False
     assert executor.run.call_count == 0
@@ -188,13 +196,14 @@ def test_runner_subtask_timeout_from_executor(
     runner, planner, executor = _runner_with_stub_executor(
         [ExecutionSum(reason=StopReason.SUBTASK_TIMEOUT)] * n,
         monkeypatch,
+        env_success=False,
     )
     assert runner.run() is False
-    assert planner.plan_calls == n
+    assert planner.plan_calls == 1
     assert executor.run.call_count == n
 
 
-def test_runner_replans_after_subtask_timeout(
+def test_runner_retries_after_subtask_timeout(
     monkeypatch: pytest.MonkeyPatch) -> None:
     runner, planner, executor = _runner_with_stub_executor(
         [
@@ -207,8 +216,29 @@ def test_runner_replans_after_subtask_timeout(
         monkeypatch,
     )
     assert runner.run() is True
-    assert planner.plan_calls == 2
+    assert planner.plan_calls == 1
     assert executor.run.call_count == 2
+
+
+def test_runner_retries_unfinished_suffix_only(
+    monkeypatch: pytest.MonkeyPatch) -> None:
+    runner, planner, executor = _runner_with_stub_executor(
+        [
+            ExecutionSum(
+                reason=StopReason.SUBTASK_TIMEOUT,
+                error="close exceeded 2 steps",
+                next_step_idx=1,
+            ),
+            ExecutionSum(reason=StopReason.PLAN_DONE),
+        ],
+        monkeypatch,
+    )
+    assert runner.run() is True
+    assert planner.plan_calls == 1
+    first_plan = executor.run.call_args_list[0].args[0]
+    second_plan = executor.run.call_args_list[1].args[0]
+    assert [step["skill"] for step in first_plan] == ["open", "close"]
+    assert [step["skill"] for step in second_plan] == ["close"]
 
 
 def test_runner_episode_timeout_does_not_replan(
@@ -221,8 +251,26 @@ def test_runner_episode_timeout_does_not_replan(
             )
         ],
         monkeypatch,
+        env_success=False,
     )
     assert runner.run() is False
+    assert planner.plan_calls == 1
+    assert executor.run.call_count == 1
+
+
+def test_runner_episode_timeout_uses_terminal_success_verdict(
+    monkeypatch: pytest.MonkeyPatch) -> None:
+    runner, planner, executor = _runner_with_stub_executor(
+        [
+            ExecutionSum(
+                reason=StopReason.EPISODE_TIMEOUT,
+                error="episode hits maximum steps-budget: 2 steps",
+            )
+        ],
+        monkeypatch,
+        env_success=True,
+    )
+    assert runner.run() is True
     assert planner.plan_calls == 1
     assert executor.run.call_count == 1
 
@@ -232,6 +280,7 @@ def test_runner_execution_error_does_not_replan(
     runner, planner, executor = _runner_with_stub_executor(
         [ExecutionSum(reason=StopReason.EXECUTION_ERROR, error="boom")],
         monkeypatch,
+        env_success=False,
     )
     assert runner.run() is False
     assert planner.plan_calls == 1

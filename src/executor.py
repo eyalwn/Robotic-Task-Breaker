@@ -31,10 +31,18 @@ class EpisodeTimeout(Exception):
 class ExecutionSum:
     """Payload returned when plan execution pauses or finishes."""
 
-    def __init__(self, *, reason: str, steps: int = 0, error: str = "") -> None:
+    def __init__(
+        self,
+        *,
+        reason: str,
+        steps: int = 0,
+        error: str = "",
+        next_step_idx: int = 0,
+    ) -> None:
         self.reason = reason
         self.steps = steps
         self.error = error
+        self.next_step_idx = next_step_idx
 
 
 class Executor:
@@ -47,36 +55,40 @@ class Executor:
     def run(self, steps: Plan) -> ExecutionSum:
         """Execute steps in order until done, timeout, or error."""
         steps_at_start = self._env.steps
-        try:
-            for step in steps:
+        for idx, step in enumerate(steps):
+            try:
                 logger.info("executing step: %s", step["skill"])
                 self._run_step(step)
                 logger.info("skill done successfully: %s", step["skill"])
-            return ExecutionSum(
-                reason=StopReason.PLAN_DONE,
-                steps=self._env.steps - steps_at_start,
-            )
-        except SkillTimeout as exc:
-            logger.info("skill timed out: %s", exc)
-            return ExecutionSum(
-                reason=StopReason.SUBTASK_TIMEOUT,
-                steps=self._env.steps - steps_at_start,
-                error=str(exc),
-            )
-        except EpisodeTimeout as exc:
-            logger.info("episode timed out: %s", exc)
-            return ExecutionSum(
-                reason=StopReason.EPISODE_TIMEOUT,
-                steps=self._env.steps - steps_at_start,
-                error=str(exc),
-            )
-        except Exception as exc:
-            logger.exception("executor error")
-            return ExecutionSum(
-                reason=StopReason.EXECUTION_ERROR,
-                steps=self._env.steps - steps_at_start,
-                error=str(exc),
-            )
+            except SkillTimeout as exc:
+                logger.info("skill timed out: %s", exc)
+                return ExecutionSum(
+                    reason=StopReason.SUBTASK_TIMEOUT,
+                    steps=self._env.steps - steps_at_start,
+                    error=str(exc),
+                    next_step_idx=idx,
+                )
+            except EpisodeTimeout as exc:
+                logger.info("episode timed out: %s", exc)
+                return ExecutionSum(
+                    reason=StopReason.EPISODE_TIMEOUT,
+                    steps=self._env.steps - steps_at_start,
+                    error=str(exc),
+                    next_step_idx=idx,
+                )
+            except Exception as exc:
+                logger.exception("executor error")
+                return ExecutionSum(
+                    reason=StopReason.EXECUTION_ERROR,
+                    steps=self._env.steps - steps_at_start,
+                    error=str(exc),
+                    next_step_idx=idx,
+                )
+        return ExecutionSum(
+            reason=StopReason.PLAN_DONE,
+            steps=self._env.steps - steps_at_start,
+            next_step_idx=len(steps),
+        )
 
     def _build_vla_task(self, step: dict[str, str]) -> str:
         """Build the VLA task string for one step."""

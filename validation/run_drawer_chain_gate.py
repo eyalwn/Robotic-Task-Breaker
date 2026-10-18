@@ -24,6 +24,14 @@ from executor import Executor, StopReason  # noqa: E402
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--episodes", type=int, default=10)
+    parser.add_argument(
+        "--close-to-horizon",
+        action="store_true",
+        help=(
+            "Debug-only: after open succeeds, set the close-step cap to the "
+            "remaining episode budget instead of config.MAX_SKILL_STEPS['close']."
+        ),
+    )
     return parser.parse_args()
 
 
@@ -61,8 +69,16 @@ def _object_name_from_task_description(task_desc: str) -> str:
     return name
 
 
-def _run_episode() -> tuple[str, str, str, bool, bool, bool]:
-    """Return task_desc, open_prompt, close_prompt, open_ok, close_ok, success."""
+def _close_budget_for_episode(env: SimEnv, close_to_horizon: bool) -> int:
+    """Return the close-step budget for this episode."""
+    if not close_to_horizon:
+        return config.MAX_SKILL_STEPS["close"]
+    remaining = env.horizon - env.steps
+    return max(1, remaining)
+
+
+def _run_episode(close_to_horizon: bool = False) -> dict[str, object]:
+    """Run one fixed open->close episode and return stage-level observability."""
     env = SimEnv("open_close_drawer", 0)
     task_desc = env.task_description
     try:
@@ -75,11 +91,44 @@ def _run_episode() -> tuple[str, str, str, bool, bool, bool]:
         open_res = executor.run([open_step])
         open_ok = open_res.reason == StopReason.PLAN_DONE
         close_ok = False
+        close_budget = 0
+        close_stop_reason = "not_attempted"
+        close_error = ""
+        close_oracle = False
+        close_joints: dict[str, float] = {}
         if open_ok:
-            close_res = executor.run([close_step])
+            close_budget = _close_budget_for_episode(env, close_to_horizon)
+            original_budgets = config.MAX_SKILL_STEPS
+            patched_budgets = dict(original_budgets)
+            patched_budgets["close"] = close_budget
+            config.MAX_SKILL_STEPS = patched_budgets
+            try:
+                close_res = executor.run([close_step])
+            finally:
+                config.MAX_SKILL_STEPS = original_budgets
             close_ok = close_res.reason == StopReason.PLAN_DONE
+            close_stop_reason = close_res.reason
+            close_error = close_res.error
+            close_oracle = env.check_subtask(close_step)
+            close_joints = env.drawer_joint_state()
+        final_close_oracle = env.check_subtask(close_step)
+        final_joints = env.drawer_joint_state()
         success = env.success()
-        return task_desc, open_prompt, close_prompt, open_ok, close_ok, success
+        return {
+            "task_description": task_desc,
+            "open_prompt": open_prompt,
+            "close_prompt": close_prompt,
+            "open_ok": open_ok,
+            "close_ok": close_ok,
+            "close_budget": close_budget,
+            "close_stop_reason": close_stop_reason,
+            "close_error": close_error,
+            "close_oracle": close_oracle,
+            "close_joints": close_joints,
+            "final_close_oracle": final_close_oracle,
+            "final_joints": final_joints,
+            "success": success,
+        }
     finally:
         env.close()
 
@@ -93,17 +142,28 @@ def main() -> int:
         if config.SAVE_VIDEO:
             config.VIDEO_PATH = _episode_video_path(ep)
         try:
-            task_desc, open_prompt, close_prompt, o_ok, c_ok, s_ok = (
-                _run_episode())
+            row = _run_episode(close_to_horizon=args.close_to_horizon)
         finally:
             config.VIDEO_PATH = orig_video_path
+        o_ok = bool(row["open_ok"])
+        c_ok = bool(row["close_ok"])
+        s_ok = bool(row["success"])
         open_ok += int(o_ok)
         close_ok += int(c_ok)
         success_ok += int(s_ok)
         print(
-            f"ep={ep} video={video_log!r} task_description={task_desc!r} "
-            f"open_prompt={open_prompt!r} close_prompt={close_prompt!r} "
-            f"open_ok={o_ok} close_ok={c_ok} success={s_ok}"
+            f"ep={ep} video={video_log!r} "
+            f"task_description={row['task_description']!r} "
+            f"open_prompt={row['open_prompt']!r} "
+            f"close_prompt={row['close_prompt']!r} "
+            f"open_ok={o_ok} close_ok={c_ok} success={s_ok} "
+            f"close_budget={row['close_budget']} "
+            f"close_stop_reason={row['close_stop_reason']!r} "
+            f"close_error={row['close_error']!r} "
+            f"close_oracle={row['close_oracle']} "
+            f"close_joints={row['close_joints']!r} "
+            f"final_close_oracle={row['final_close_oracle']} "
+            f"final_joints={row['final_joints']!r}"
         )
     n = args.episodes
     print(

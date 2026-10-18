@@ -74,7 +74,10 @@ simulator/checkpoint pair only to test that claim.
   rule (including ambiguous/framing edge-cases) for both arms. Batch launcher:
   `validation/run_m4_pilot.py` (artifact outputs:
   `m4_pilot_episodes.jsonl`, `m4_pilot_summary.json`, per-attempt Longor
-  records, and optional videos).
+  records, and optional videos). Budget policy stays unchanged from M3:
+  `close` keeps its 400-step cap for pilot accounting. A close-to-horizon run
+  can be used only as a debug probe to inspect oracle/joint trajectories; those
+  probe outcomes are not counted as M4 evaluation outcomes.
 - **M5 — PLANNED.** Formal Longor-vs-bare-VLA comparison. Freeze code, model
   checkpoint, prompts, task IDs/seeds, action chunking, compute limits, and
   stop/timeout policy before execution. Both arms use the same VLA server,
@@ -138,6 +141,15 @@ Subtask oracles (`check_subtask`, sim ground truth, disclosed in claims):
 every normalized drawer door joint `<= 0.05`.
 
 Per-skill step caps (`config.MAX_SKILL_STEPS`): `open` 720, `close` 400.
+
+Retry semantics: when a subtask times out, runtime retries only the unfinished
+suffix of the current plan. Completed prefix steps are never recreated by a new
+planner call and are never re-executed due to retry control flow.
+
+Terminal verdict semantics: final task success is `env.success()` at the final
+state, regardless of whether execution terminated via `plan_done`,
+`subtask_timeout`, or `episode_timeout`. Stop reason remains a diagnostic field
+and is logged separately from the verdict.
 
 Episode step cap comes from the backend (`env.horizon`: 720 for `open_drawer`,
 1000 for `open_close_drawer`), not from a global config constant.

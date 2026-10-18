@@ -171,6 +171,14 @@ def test_drawer_close_oracle_false_when_joint_above_threshold() -> None:
     assert robocasa._drawer_close_oracle() is False
 
 
+def test_drawer_joint_state_returns_float_map() -> None:
+    robocasa, _ = _robocasa_with_kitchen(
+        OPEN_CLOSE_DRAWER_TASK, False, door_state={"door": np.float32(0.03)})
+    state = robocasa.drawer_joint_state()
+    assert state["door"] == pytest.approx(0.03)
+    assert isinstance(state["door"], float)
+
+
 def test_drawer_close_oracle_raises_when_no_door_state() -> None:
     robocasa, _ = _robocasa_with_kitchen(
         OPEN_CLOSE_DRAWER_TASK, False, door_state={})

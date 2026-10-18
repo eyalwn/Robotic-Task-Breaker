@@ -48,6 +48,13 @@ class SimEnv:
         """Return the backend subtask-completion check for ``step``."""
         return self._env.check_subtask(step)
 
+    def drawer_joint_state(self) -> dict[str, float]:
+        """Return drawer-joint state for debug scripts on supported backends."""
+        getter = getattr(self._env, "drawer_joint_state", None)
+        if getter is None:
+            raise RuntimeError("'drawer_joint_state' not supported for this env")
+        return getter()
+
     def close(self) -> None:
         """Release the backend."""
         self._env.close()
