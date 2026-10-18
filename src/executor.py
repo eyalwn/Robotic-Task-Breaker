@@ -31,14 +31,9 @@ class EpisodeTimeout(Exception):
 class ExecutionSum:
     """Payload returned when plan execution pauses or finishes."""
 
-    def __init__(
-        self,
-        *,
-        reason: str,
-        steps: int = 0,
-        error: str = "",
-        next_step_idx: int = 0,
-    ) -> None:
+    def __init__(self, *, reason: str, steps: int = 0, error: str = "",
+                 next_step_idx: int = 0) -> None:
+        """Capture why execution stopped and where the plan resumes."""
         self.reason = reason
         self.steps = steps
         self.error = error
@@ -49,6 +44,7 @@ class Executor:
     """Executes a linear step list against the environment and VLA policy."""
 
     def __init__(self, env: SimEnv) -> None:
+        """Bind the environment and a VLA client."""
         self._env = env
         self._vla = VLAClient()
 
@@ -62,33 +58,22 @@ class Executor:
                 logger.info("skill done successfully: %s", step["skill"])
             except SkillTimeout as exc:
                 logger.info("skill timed out: %s", exc)
-                return ExecutionSum(
-                    reason=StopReason.SUBTASK_TIMEOUT,
-                    steps=self._env.steps - steps_at_start,
-                    error=str(exc),
-                    next_step_idx=idx,
-                )
+                return ExecutionSum(reason=StopReason.SUBTASK_TIMEOUT,
+                                    steps=self._env.steps - steps_at_start,
+                                    error=str(exc), next_step_idx=idx)
             except EpisodeTimeout as exc:
                 logger.info("episode timed out: %s", exc)
-                return ExecutionSum(
-                    reason=StopReason.EPISODE_TIMEOUT,
-                    steps=self._env.steps - steps_at_start,
-                    error=str(exc),
-                    next_step_idx=idx,
-                )
+                return ExecutionSum(reason=StopReason.EPISODE_TIMEOUT,
+                                    steps=self._env.steps - steps_at_start,
+                                    error=str(exc), next_step_idx=idx)
             except Exception as exc:
                 logger.exception("executor error")
-                return ExecutionSum(
-                    reason=StopReason.EXECUTION_ERROR,
-                    steps=self._env.steps - steps_at_start,
-                    error=str(exc),
-                    next_step_idx=idx,
-                )
-        return ExecutionSum(
-            reason=StopReason.PLAN_DONE,
-            steps=self._env.steps - steps_at_start,
-            next_step_idx=len(steps),
-        )
+                return ExecutionSum(reason=StopReason.EXECUTION_ERROR,
+                                    steps=self._env.steps - steps_at_start,
+                                    error=str(exc), next_step_idx=idx)
+        return ExecutionSum(reason=StopReason.PLAN_DONE,
+                            steps=self._env.steps - steps_at_start,
+                            next_step_idx=len(steps))
 
     def _build_vla_task(self, step: dict[str, str]) -> str:
         """Build the VLA task string for one step."""
@@ -114,11 +99,7 @@ class Executor:
                 is_done = self._env.step(action)
                 skill_steps += 1
                 is_done = is_done or self._env.check_subtask(step)
-                logger.debug(
-                    "steps=%d, check_subtask=%s",
-                    skill_steps,
-                    is_done,
-                )
+                logger.debug("steps=%d, check_subtask=%s", skill_steps, is_done)
                 if is_done:
                     return
                 self._enforce_max_steps_budget(step, skill_steps)
@@ -128,8 +109,7 @@ class Executor:
         skill_key = step["skill"]
         max_skill_steps = config.MAX_SKILL_STEPS[skill_key]
         if skill_steps >= max_skill_steps:
-            raise SkillTimeout(
-                f"{step['skill']} exceeded {max_skill_steps} steps")
+            raise SkillTimeout(f"{step['skill']} exceeded {max_skill_steps} steps")
         elif self._env.steps >= self._env.horizon:
             raise EpisodeTimeout(
                 f"episode hits maximum steps-budget: {self._env.steps} steps")

@@ -32,44 +32,22 @@ def to_png(rgb: np.ndarray) -> bytes:
 OPEN_DRAWER_TASK = "open_drawer"
 OPEN_CLOSE_DRAWER_TASK = "open_close_drawer"
 OPEN_DRAWER_GYM_ENV_ID = "robocasa_panda_omron/OpenDrawer_PandaOmron_Env"
-_TASK_GYM_ENV_IDS = {
-    OPEN_DRAWER_TASK: OPEN_DRAWER_GYM_ENV_ID,
-    OPEN_CLOSE_DRAWER_TASK: OPEN_DRAWER_GYM_ENV_ID,
-}
-_TASK_HORIZONS = {
-    OPEN_DRAWER_TASK: 720,
-    OPEN_CLOSE_DRAWER_TASK: 1000,
-}
+_TASK_GYM_ENV_IDS = {OPEN_DRAWER_TASK: OPEN_DRAWER_GYM_ENV_ID,
+                     OPEN_CLOSE_DRAWER_TASK: OPEN_DRAWER_GYM_ENV_ID}
+_TASK_HORIZONS = {OPEN_DRAWER_TASK: 720, OPEN_CLOSE_DRAWER_TASK: 1000}
 _DRAWER_CLOSED_JOINT_MAX = 0.05
 _OPEN_CLOSE_SUFFIX = ", then close it"
 
-CAMERA_KEYS = (
-    "res256_image_side_0",
-    "res256_image_side_1",
-    "res256_image_wrist_0",
-)
-STATE_KEYS = (
-    "gripper_qpos",
-    "base_position",
-    "base_rotation",
-    "end_effector_position_relative",
-    "end_effector_rotation_relative",
-    "gripper_qvel",
-    "end_effector_position_absolute",
-    "end_effector_rotation_absolute",
-    "joint_position",
-    "joint_position_cos",
-    "joint_position_sin",
-    "joint_velocity",
-)
+CAMERA_KEYS = ("res256_image_side_0", "res256_image_side_1",
+               "res256_image_wrist_0")
+STATE_KEYS = ("gripper_qpos", "base_position", "base_rotation",
+              "end_effector_position_relative", "end_effector_rotation_relative",
+              "gripper_qvel", "end_effector_position_absolute",
+              "end_effector_rotation_absolute", "joint_position",
+              "joint_position_cos", "joint_position_sin", "joint_velocity")
 STATE_DIMS = (2, 3, 4, 3, 4, 2, 3, 4, 7, 7, 7, 7)
-ACTION_KEYS = (
-    "gripper_close",
-    "end_effector_position",
-    "end_effector_rotation",
-    "base_motion",
-    "control_mode",
-)
+ACTION_KEYS = ("gripper_close", "end_effector_position", "end_effector_rotation",
+               "base_motion", "control_mode")
 ACTION_DIMS = (1, 3, 3, 4, 1)
 IMAGE_SIZE = 256
 
@@ -102,8 +80,7 @@ def unflatten_state(flat: list[float]) -> dict[str, list[float]]:
     """Split a flat state vector into PandaOmron state group dict entries."""
     if len(flat) != expected_state_dim():
         raise ValueError(
-            f"state must have {expected_state_dim()} floats, got {len(flat)}"
-        )
+            f"state must have {expected_state_dim()} floats, got {len(flat)}")
     groups: dict[str, list[float]] = {}
     idx = 0
     for key, width in zip(STATE_KEYS, STATE_DIMS):
@@ -116,8 +93,7 @@ def unflatten_action(flat: list[float]) -> dict[str, list[float]]:
     """Split one flat action vector into PandaOmron action group dict entries."""
     if len(flat) != expected_action_dim():
         raise ValueError(
-            f"action must have {expected_action_dim()} floats, got {len(flat)}"
-        )
+            f"action must have {expected_action_dim()} floats, got {len(flat)}")
     groups: dict[str, list[float]] = {}
     idx = 0
     for key, width in zip(ACTION_KEYS, ACTION_DIMS):
@@ -151,18 +127,14 @@ def _import_robocasa_gym():
     try:
         import gymnasium as gym
         with warnings.catch_warnings():
-            warnings.filterwarnings(
-                "ignore",
-                message=".*offscreen render.*",
-                category=UserWarning,
-            )
+            warnings.filterwarnings("ignore", message=".*offscreen render.*",
+                                    category=UserWarning)
             import robocasa  # noqa: F401
             from robocasa.utils.gym_utils import GrootRoboCasaEnv  # noqa: F401
             import robosuite  # noqa: F401
     except ImportError as exc:
-        raise ImportError(
-            "RoboCasa is not installed. Follow README RoboCasa setup (Linux only)."
-        ) from exc
+        raise ImportError("RoboCasa is not installed. Follow README "
+                          "RoboCasa setup (Linux only).") from exc
     return gym
 
 
@@ -171,10 +143,8 @@ def _resolve_gym_env_id(task: str) -> str:
     env_id = _TASK_GYM_ENV_IDS.get(task)
     if env_id is None:
         supported = ", ".join(sorted(_TASK_GYM_ENV_IDS))
-        raise RuntimeError(
-            f"RoboCasa backend supports tasks {supported!r} only, "
-            f"got {task!r}"
-        )
+        raise RuntimeError(f"RoboCasa backend supports tasks {supported!r} only, "
+                           f"got {task!r}")
     return env_id
 
 
@@ -184,33 +154,25 @@ _TASK_DESCRIPTION_KEY = "annotation.human.action.task_description"
 def _task_description_from_reset_obs(reset_obs: object) -> str:
     """Read episode language from the GrootRoboCasaEnv reset observation."""
     if not isinstance(reset_obs, dict):
-        raise RuntimeError(
-            "RoboCasa reset observation must be a dict with "
-            f"{_TASK_DESCRIPTION_KEY!r}"
-        )
+        raise RuntimeError("RoboCasa reset observation must be a dict with "
+                           f"{_TASK_DESCRIPTION_KEY!r}")
     raw = reset_obs.get(_TASK_DESCRIPTION_KEY)
     if raw is None:
         raise RuntimeError(
-            f"RoboCasa reset observation missing {_TASK_DESCRIPTION_KEY!r}"
-        )
+            f"RoboCasa reset observation missing {_TASK_DESCRIPTION_KEY!r}")
     value = raw
     if isinstance(value, (tuple, list)):
         if not value:
-            raise RuntimeError(
-                f"RoboCasa {_TASK_DESCRIPTION_KEY!r} is empty"
-            )
+            raise RuntimeError(f"RoboCasa {_TASK_DESCRIPTION_KEY!r} is empty")
         value = value[0]
     elif isinstance(value, np.ndarray):
         if value.size == 0:
-            raise RuntimeError(
-                f"RoboCasa {_TASK_DESCRIPTION_KEY!r} is empty"
-            )
+            raise RuntimeError(f"RoboCasa {_TASK_DESCRIPTION_KEY!r} is empty")
         value = value.flat[0]
     text = str(value).strip()
     if not text:
         raise RuntimeError(
-            f"RoboCasa {_TASK_DESCRIPTION_KEY!r} is blank after normalization"
-        )
+            f"RoboCasa {_TASK_DESCRIPTION_KEY!r} is blank after normalization")
     return text
 
 
@@ -224,9 +186,7 @@ class RoboCasaEnv:
         ``task_idx`` is reserved for future eval sets.
         """
         if task_idx != 0:
-            raise RuntimeError(
-                "RoboCasa backend supports task_idx=0 only"
-            )
+            raise RuntimeError("RoboCasa backend supports task_idx=0 only")
         env = cls.__new__(cls)
         env._init_env(task)
         return env
@@ -251,6 +211,7 @@ class RoboCasaEnv:
 
     @property
     def steps(self) -> int:
+        """Episode step count so far."""
         return self._steps
 
     @property
@@ -290,8 +251,8 @@ class RoboCasaEnv:
                 f"unexpected camera shape for {flat_key}: {arr.shape}")
         return np.ascontiguousarray(arr, dtype=np.uint8)
 
-    def _state_groups_from_obs(
-        self, obs: dict[str, object]) -> dict[str, list[float]]:
+    def _state_groups_from_obs(self,
+                               obs: dict[str, object]) -> dict[str, list[float]]:
         groups: dict[str, list[float]] = {}
         for key, width in zip(STATE_KEYS, STATE_DIMS):
             flat_key = f"state.{key}"
@@ -306,8 +267,7 @@ class RoboCasaEnv:
             vec = arr.reshape(-1)
             if vec.size != width:
                 raise RuntimeError(
-                    f"state {flat_key} expected {width} floats, got {vec.size}"
-                )
+                    f"state {flat_key} expected {width} floats, got {vec.size}")
             groups[key] = [float(v) for v in vec]
         return groups
 
@@ -338,12 +298,9 @@ class RoboCasaEnv:
             height, width = frame.shape[:2]
             path = Path(config.VIDEO_PATH)
             path.parent.mkdir(parents=True, exist_ok=True)
-            self._writer = cv2.VideoWriter(
-                str(path),
-                cv2.VideoWriter_fourcc(*"mp4v"),
-                config.VIDEO_FPS,
-                (width, height),
-            )
+            self._writer = cv2.VideoWriter(str(path),
+                                           cv2.VideoWriter_fourcc(*"mp4v"),
+                                           config.VIDEO_FPS, (width, height))
             if not self._writer.isOpened():
                 raise RuntimeError(f"cv2.VideoWriter failed to open {path}")
         self._writer.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
@@ -366,8 +323,7 @@ class RoboCasaEnv:
                 raise KeyError(
                     f"unsupported skill {skill!r} for task {self._task!r}")
             return self._drawer_close_oracle()
-        raise KeyError(
-            f"unsupported skill {skill!r} for task {self._task!r}")
+        raise KeyError(f"unsupported skill {skill!r} for task {self._task!r}")
 
     def _sim_env(self):
         """Return the inner robosuite env (sim ground truth)."""
@@ -383,8 +339,7 @@ class RoboCasaEnv:
         drawer = getattr(sim_env, "drawer", None)
         if drawer is None or not hasattr(drawer, "get_door_state"):
             raise RuntimeError(
-                "OpenDrawer sim env missing drawer fixture for close oracle"
-            )
+                "OpenDrawer sim env missing drawer fixture for close oracle")
         raw_state = drawer.get_door_state(env=sim_env)
         if not raw_state:
             raise RuntimeError("drawer close oracle requires non-empty door state")

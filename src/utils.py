@@ -8,38 +8,23 @@ from typing import TextIO
 
 import config
 
-_PROJECT_LOGGER_NAMES = (
-    "config",
-    "envs",
-    "vla_client",
-    "plan",
-    "skills",
-    "executor",
-    "planner",
-    "runner",
-    "utils",
-    "services",
-    "__main__",
-)
-_QUIET_LOGGER_NAMES = (
-    "absl",
-    "robosuite_logs",
-)
+_PROJECT_LOGGER_NAMES = ("config", "envs", "vla_client", "plan", "skills",
+                         "executor", "planner", "runner", "utils", "services",
+                         "__main__")
+_QUIET_LOGGER_NAMES = ("absl", "robosuite_logs")
 _DEFAULT_FORMAT = "%(levelname)s [%(name)s] %(message)s"
 _UPSTREAM_NOISE_SUBSTRINGS = (
-    "No private macro file found",
-    "It is recommended to use a private macro file",
-    "To setup, run: python",
-    "Could not import robosuite_models",
+    "No private macro file found", "It is recommended to use a private macro file",
+    "To setup, run: python", "Could not import robosuite_models",
     "Could not load the mink-based whole-body IK",
-    "mimicgen environments not imported since mimicgen is not installed",
-)
+    "mimicgen environments not imported since mimicgen is not installed")
 _UPSTREAM_NOISE_LOGGER_PREFIXES = ("robosuite", "robocasa", "mimicgen")
 
 
 def _upstream_noise_logger(name: str) -> bool:
     """True when ``name`` is a RoboCasa/RoboSuite upstream logger tree."""
-    return name == "robosuite_logs" or name.startswith(_UPSTREAM_NOISE_LOGGER_PREFIXES)
+    return (name == "robosuite_logs"
+            or name.startswith(_UPSTREAM_NOISE_LOGGER_PREFIXES))
 
 
 class _UpstreamNoiseFilter(logging.Filter):
@@ -65,22 +50,15 @@ def _pin_quiet_logger(name: str) -> None:
 
 def _suppress_gymnasium_passive_obs_warnings() -> None:
     """GrootRoboCasaEnv dict obs fails PassiveEnvChecker; sim still runs."""
-    warnings.filterwarnings(
-        "ignore",
-        message=r"The obs returned by the .* method is not within the observation space\.",
-        category=UserWarning,
-        module=r"gymnasium\.utils\.passive_env_checker",
-    )
+    warnings.filterwarnings("ignore", category=UserWarning,
+                            message=r"The obs returned by the .* method is not "
+                            r"within the observation space\.",
+                            module=r"gymnasium\.utils\.passive_env_checker")
 
 
-def configure_logging(
-    *,
-    level: str = "",
-    extra_logger_names: tuple[str, ...] = (),
-    fmt: str = _DEFAULT_FORMAT,
-    stream: TextIO = sys.stdout,
-    force: bool = True,
-) -> None:
+def configure_logging(*, level: str = "", extra_logger_names: tuple[str, ...] = (),
+                      fmt: str = _DEFAULT_FORMAT, stream: TextIO = sys.stdout,
+                      force: bool = True) -> None:
     """Configure root logging: project namespaces verbose, 3rd-party quiet.
 
     Root stays at WARNING so third-party INFO/DEBUG is suppressed. Longor
@@ -94,17 +72,12 @@ def configure_logging(
         raise ValueError(f"Invalid log level: {level!r}")
     level = resolved
 
-    logging.basicConfig(
-        level=logging.WARNING,
-        format=fmt,
-        stream=stream,
-        force=force,
-    )
+    logging.basicConfig(level=logging.WARNING, format=fmt, stream=stream,
+                        force=force)
     noise_filter = _UpstreamNoiseFilter()
     for handler in logging.root.handlers:
-        if isinstance(handler, logging.StreamHandler) and not isinstance(
-            handler, logging.FileHandler
-        ):
+        if (isinstance(handler, logging.StreamHandler)
+            and not isinstance(handler, logging.FileHandler)):
             handler.setLevel(level)
             handler.addFilter(noise_filter)
 

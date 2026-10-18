@@ -1,34 +1,74 @@
 ---
-description: Global development priorities and coding preferences for all Longor agents
+description: Longor coding conventions, public API hygiene, and development process for all agents
 alwaysApply: true
 ---
 
-# Longor global development defaults
+# Longor development conventions
+
+## Priorities and process
 
 - Priority order is strict: **simplicity > readability > modularity > performance**.
 - Keep interface stability high and code surface area low. Prefer fewer files and fewer lines.
 - Remove non-critical features, dead code, redundant wrappers, and speculative abstractions.
-- Do not add wrapper return types around a single payload unless at least two independent consumers require distinct fields.
-- Do not add private state-holder structs/classes for one-function control flow (`_LoopState` style); use locals or a compact tuple instead.
-- In orchestration paths, prefer one top-level `try` and avoid nested `try` blocks unless different exception classes require different handling.
-- If requirements are unclear, stop at the first decision point and ask a targeted question. Do not guess.
+- If requirements are unclear or conflict with `SRD.md`, stop at the first decision point and ask a targeted question. Do not guess.
 - Never stage, commit, or push unless the user explicitly asks in the current message.
-- Follow `SRD.md` as the contract source; when implementation conflicts with SRD,
-  stop and resolve explicitly before proceeding.
-- Follow PEP 8 except the 79-column limit; use 85. A statement that fits in 85 stays on one line. Past 85, use as few lines as possible and keep the closing `)`, `]`, or `}` on the last content line. Pack arguments together; one per line only when one argument does not fit beside another.
+
+## Formatting (strict, every edited file)
+
+- PEP 8, except max line length is **85**.
+- A statement that fits in 85 columns MUST be one line.
+- Otherwise use the **fewest lines** PEP 8 allows (visual or hanging indent, whichever is shorter) and keep the closing `)`, `]`, or `}` on the last content line. NEVER use Black/ruff-format "exploded" style. Trailing commas are fine.
+- **Fix-on-touch:** when you edit a file, fix every violation of this section in the whole file, not just the lines you changed. Formatting-only fixes do not count toward the debug budget below.
+
+Bad:
+
+```python
+    logger.debug(
+        "steps=%d, check_subtask=%s",
+        skill_steps,
+        is_done,
+    )
+```
+
+Good:
+
+```python
+    logger.debug("steps=%d, check_subtask=%s", skill_steps, is_done)
+```
+
+## Structure
+
+- Target functions around 60 lines. If a function grows past ~100 lines, extract helpers before adding behavior.
+- Keep main-path nesting at or below 3-4 levels. Flatten with early returns, `continue`, and `break`.
+- Split long closures/callbacks/`try` blocks into named helpers.
+- In orchestration paths, prefer one top-level `try` and avoid nested `try` blocks unless different exception classes require different handling.
+- Do not add private state-holder structs/classes for one-function control flow (`_LoopState` style); use locals or a compact tuple instead.
+- Do not define `*args` or `**kwargs` in `src/**` or `services/**`. Name every parameter. Test doubles and monkeypatch lambdas may splat. Call-site unpacking (`f(*tuple)`) is fine.
+- Comments should explain **why**, not obvious **what**.
+- If you touch poorly structured code, improve structure instead of piling on.
+
+## Public API (`src/**`)
+
+- Every public module, class, and public method/function must have a concise docstring.
+- Public constructors (`__init__`) stay small and explicit:
+  - Prefer required arguments over optional defaults for runtime orchestration APIs.
+  - No dependency-injection args on public runtime entrypoints unless explicitly approved.
+  - If defaults are necessary, keep them minimal and justify them in `SRD.md`.
+- Keep public entrypoint signatures stable and compact. `Runner`-style entrypoints expose only essential domain inputs; wiring/shape logic lives behind the boundary owner.
+- Return the payload directly. No wrapper return types around a single payload unless at least two independent consumers need distinct fields or `SRD.md` explicitly approves it. Method names match return semantics (`plan` returns the plan).
+- Do not silently continue when required runtime context is missing. Fail fast with a clear error.
+
+Examples:
+
+- Good: `Runner(task: str, task_idx: int = 0)` forwards those args to `SimEnv`; goal comes from `env.task_description`. Example: `Runner("open_drawer")`.
+- Bad: packing task/index into one string (`"open_drawer:0"`).
+- Bad: `Runner(..., planner=None, executor=None, env=None, max_replans=...)`.
+- Good: planner prompt/goal shaping lives in `planner.py`.
+- Bad: LLM-facing goal shaping in `runner.py`.
 
 ## Debug containment protocol (strict)
 
 - When debugging, default to **small, reversible passes**. Per pass: touch at most 2 source files under `src/**` or `services/**` and keep diffs under ~200 changed LOC. Executing an approved `SRD.md` phase is not debugging and is not subject to this budget.
 - If the expected change exceeds that budget, stop and get user approval first with: hypothesis, file list, and rollback plan.
-- Put milestone validation and experiment orchestration in validation/; keep production runtime modules free of experiment-only code. Colab notebooks are launchers only, with orchestration and verdict logic in Python scripts.
 - Delete temporary debug instrumentation once the root cause is confirmed. Do not leave it behind a flag.
-- For Colab validation, notebooks are launchers only; orchestration and verdict logic live in Python scripts.
-
-## Structural defaults (apply globally)
-
-- Target functions around 60 lines. If a function grows past ~100 lines, extract helpers before adding behavior.
-- Keep main-path nesting at or below 3-4 levels. Flatten with early returns, `continue`, and `break`.
-- Split long closures/callbacks/`try` blocks into named helpers.
-- Comments should explain **why**, not obvious **what**.
-- If you touch poorly structured code, improve structure instead of piling on.
+- Put milestone validation and experiment orchestration in `validation/`; keep production runtime modules free of experiment-only code. Colab notebooks are launchers only; orchestration and verdict logic live in Python scripts.

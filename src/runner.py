@@ -55,13 +55,12 @@ class Runner:
                     status = "execution_error"
                     if execution_sum.reason == StopReason.SUBTASK_TIMEOUT:
                         error = execution_sum.error or "subtask step cap exceeded"
-                        remaining_steps = remaining_steps[execution_sum.next_step_idx :]
+                        remaining_steps = remaining_steps[
+                            execution_sum.next_step_idx:]
                         if retry_count < config.MAX_REPLANS and remaining_steps:
                             retry_count += 1
-                            logger.info(
-                                "retrying unfinished plan suffix after %s",
-                                execution_sum.reason,
-                            )
+                            logger.info("retrying unfinished plan suffix after %s",
+                                        execution_sum.reason)
                             continue
                         break
                     if execution_sum.reason == StopReason.EPISODE_TIMEOUT:
@@ -84,27 +83,15 @@ class Runner:
         """Compute final success verdict from the terminal simulator state."""
         return bool(self._env.success())
 
-    def _log_status(
-        self,
-        status: RunStatus,
-        success: bool,
-        error: str,
-        stop_reason: str,
-        total_steps: int,
-    ) -> None:
+    def _log_status(self, status: RunStatus, success: bool, error: str,
+                    stop_reason: str, total_steps: int) -> None:
         """Emit outcome-specific logs and a compact run summary."""
         if success:
-            logger.info(
-                "Task succeeded: %r (status=%s, stop_reason=%s)",
-                self._goal,
-                status,
-                stop_reason or "none",
-            )
+            logger.info("Task succeeded: %r (status=%s, stop_reason=%s)",
+                        self._goal, status, stop_reason or "none")
         elif status == "done":
-            logger.info(
-                "Task not achieved: %r (plan finished; env goal check failed)",
-                self._goal,
-            )
+            logger.info("Task not achieved: %r (plan finished; "
+                        "env goal check failed)", self._goal)
         elif status == "plan_failed":
             logger.info("Task failed: %r (planner error)", self._goal)
         elif status == "stopped":
@@ -112,11 +99,8 @@ class Runner:
         else:
             logger.info("Task failed: %r (status=%s)", self._goal, status)
 
-        summary_parts = [
-            f"success={success}",
-            f"plan_status={status}",
-            f"steps={total_steps}",
-        ]
+        summary_parts = [f"success={success}", f"plan_status={status}",
+                         f"steps={total_steps}"]
         if stop_reason:
             summary_parts.append(f"stop_reason={stop_reason}")
         if error:

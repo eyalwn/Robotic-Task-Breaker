@@ -74,39 +74,33 @@ class LLMPlanner:
     """Generate linear step lists from a goal and RGB snapshot."""
 
     def __init__(self, goal: str, catalog: str) -> None:
+        """Bind the goal, skill catalog, and planning model."""
         self._goal = goal
         self._catalog = catalog
         self._model_name = config.LLM_MODEL
         self._max_plan_retries = config.MAX_PLAN_RETRIES
         if self._max_plan_retries < 1:
             raise ValueError(
-                f"MAX_PLAN_RETRIES must be >= 1, got {self._max_plan_retries}"
-            )
+                f"MAX_PLAN_RETRIES must be >= 1, got {self._max_plan_retries}")
         self._llm = _init_planning_llm(self._model_name)
 
     def plan(self, snapshot: bytes) -> object:
         """Return executable steps or a STOP sentinel dict."""
-        system_prompt = _SYSTEM_TEMPLATE.format(
-            catalog=self._catalog, plan_spec=_PLAN_SPEC
-        )
+        system_prompt = _SYSTEM_TEMPLATE.format(catalog=self._catalog,
+                                                plan_spec=_PLAN_SPEC)
         task_text = f"Goal: {self._goal}\n\n"
 
         image_b64 = base64.b64encode(snapshot).decode("utf-8")
         task_prompt: list[Any] = [
             {"type": "text", "text": task_text},
-            {
-                "type": "image_url",
-                "image_url": {"url": f"data:image/png;base64,{image_b64}"},
-            },
-        ]
-        messages: list[Any] = [
-            SystemMessage(content=system_prompt),
-            HumanMessage(content=task_prompt),
-        ]
+            {"type": "image_url",
+             "image_url": {"url": f"data:image/png;base64,{image_b64}"}}]
+        messages: list[Any] = [SystemMessage(content=system_prompt),
+                               HumanMessage(content=task_prompt)]
 
         for attempt in range(self._max_plan_retries):
-            logger.info(
-                "planning attempt: %d/%d", attempt + 1, self._max_plan_retries)
+            logger.info("planning attempt: %d/%d", attempt + 1,
+                        self._max_plan_retries)
             response = self._llm.invoke(messages)
             usage_summary = _usage_token_summary(response.usage_metadata)
             if usage_summary:
@@ -123,32 +117,22 @@ class LLMPlanner:
                 return validated_plan
             except (json.JSONDecodeError, ValueError) as exc:
                 error_msg = str(exc)
-                logger.warning(
-                    "LLMPlanner: plan invalid on attempt %d: %s",
-                    attempt + 1,
-                    error_msg[:200],
-                )
+                logger.warning("LLMPlanner: plan invalid on attempt %d: %s",
+                               attempt + 1, error_msg[:200])
                 if attempt >= self._max_plan_retries - 1:
-                    raise RuntimeError(
-                        f"LLMPlanner: plan validation failed after "
-                        f"{self._max_plan_retries} attempts. "
-                        f"Last error: {error_msg}"
-                    ) from exc
+                    raise RuntimeError(f"LLMPlanner: plan validation failed after "
+                                       f"{self._max_plan_retries} attempts. "
+                                       f"Last error: {error_msg}") from exc
 
-                messages.append(
-                    HumanMessage(
-                        content=_retry_prompt(raw=raw, error_msg=error_msg)
-                    )
-                )
+                messages.append(HumanMessage(content=_retry_prompt(
+                    raw=raw, error_msg=error_msg)))
+
 
 def _retry_prompt(raw: str, error_msg: str) -> str:
     """Build a repair prompt after JSON or schema validation failure."""
-    return (
-        "The plan you emitted is invalid.\n"
-        f"Invalid plan JSON:\n{raw}\n\n"
-        f"Validation error:\n{error_msg}\n\n"
-        "Fix the JSON and respond with ONLY the corrected plan JSON."
-    )
+    return ("The plan you emitted is invalid.\n" f"Invalid plan JSON:\n{raw}\n\n"
+            f"Validation error:\n{error_msg}\n\n"
+            "Fix the JSON and respond with ONLY the corrected plan JSON.")
 
 
 def _usage_token_summary(usage_metadata: object) -> dict[str, int]:
@@ -211,12 +195,12 @@ def _extract_json(raw: str) -> str:
                     return text[start : i + 1]
 
     return text
+
+
 def _init_planning_llm(model: str):
     """Initialize the chat model for planning."""
     logger.info("initiating chat with model: %s", model)
     return init_chat_model(model)
 
 
-__all__ = [
-    "LLMPlanner",
-]
+__all__ = ["LLMPlanner"]

@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import logging
 import math
+
 import requests
 
 import config
@@ -23,8 +24,9 @@ class VLAError(Exception):
 class VLAClient:
     """HTTP client for the VLA policy service."""
 
-    def __init__(
-        self, url: str = config.VLA_URL, timeout: float = config.VLA_TIMEOUT) -> None:
+    def __init__(self, url: str = config.VLA_URL,
+                 timeout: float = config.VLA_TIMEOUT) -> None:
+        """Point the client at the VLA service."""
         self._url = url.rstrip("/")
         self._timeout = timeout
 
@@ -39,25 +41,17 @@ class VLAClient:
         except ValueError as exc:
             raise VLAError(f"VLA service /health returned non-JSON: {exc}") from exc
 
-    def predict(
-        self,
-        images: tuple[bytes, ...],
-        state: list[float],
-        task: str,
-    ) -> list[list[float]]:
+    def predict(self, images: tuple[bytes, ...], state: list[float],
+                task: str) -> list[list[float]]:
         """Return a chunk of validated action vectors for the current observation."""
         if not images:
             raise VLAError("predict requires at least one image frame")
         try:
-            response = requests.post(
-                f"{self._url}/predict",
-                timeout=self._timeout,
-                files=[
-                    ("images", (f"cam{i}.png", png, "image/png"))
-                    for i, png in enumerate(images)
-                ],
-                data={"task": task, "state": json.dumps(state)},
-            )
+            files = [("images", (f"cam{i}.png", png, "image/png"))
+                     for i, png in enumerate(images)]
+            data = {"task": task, "state": json.dumps(state)}
+            response = requests.post(f"{self._url}/predict", files=files,
+                                     data=data, timeout=self._timeout)
             response.raise_for_status()
             payload: dict[str, list[list[float]]] = response.json()
             logger.debug("payload = %s", payload)
@@ -79,8 +73,7 @@ class VLAClient:
                 chunk_dim = len(vec)
             elif len(vec) != chunk_dim:
                 raise VLAError(
-                    f"action {idx} length {len(vec)} != chunk length {chunk_dim}"
-                )
+                    f"action {idx} length {len(vec)} != chunk length {chunk_dim}")
             out.append(vec)
         return out
 

@@ -6,10 +6,8 @@ from typing import TypeAlias
 Step: TypeAlias = dict[str, str]
 Plan: TypeAlias = list[Step]
 
-_SKILL_ARG_KEYS: dict[str, tuple[str, ...]] = {
-    "open": ("object_name",),
-    "close": ("object_name",),
-}
+_SKILL_ARG_KEYS: dict[str, tuple[str, ...]] = {"open": ("object_name",),
+                                               "close": ("object_name",)}
 
 
 def is_stop_plan(data: object) -> bool:
@@ -60,7 +58,6 @@ def _parse_step(step: object) -> Step:
     for key in arg_keys:
         value = step.get(key)
         if not isinstance(value, str) or not value.strip():
-            raise ValueError(
-                f"{skill_name} step requires non-empty {key!r}")
+            raise ValueError(f"{skill_name} step requires non-empty {key!r}")
         out[key] = value.strip()
     return out
