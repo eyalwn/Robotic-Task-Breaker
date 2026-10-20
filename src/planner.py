@@ -7,11 +7,6 @@ import logging
 import re
 from typing import Any
 
-# Import before the sim creates its EGL/MuJoCo context. A first-time httpx/openai
-# import after that context exists corrupts RoboCasa camera frames (static/black).
-# Keep this eager; do not lazy-import langchain_openai from planning helpers.
-import langchain_openai  # noqa: F401
-
 from langchain.chat_models import init_chat_model
 from langchain_core.messages import HumanMessage, SystemMessage
 
@@ -73,9 +68,8 @@ Respond with ONLY the plan JSON — no markdown, no code fences, no explanation.
 class LLMPlanner:
     """Generate linear step lists from a goal and RGB snapshot."""
 
-    def __init__(self, goal: str, catalog: str) -> None:
-        """Bind the goal, skill catalog, and planning model."""
-        self._goal = goal
+    def __init__(self, catalog: str) -> None:
+        """Bind the skill catalog and planning model."""
         self._catalog = catalog
         self._model_name = config.LLM_MODEL
         self._max_plan_retries = config.MAX_PLAN_RETRIES
@@ -84,11 +78,11 @@ class LLMPlanner:
                 f"MAX_PLAN_RETRIES must be >= 1, got {self._max_plan_retries}")
         self._llm = _init_planning_llm(self._model_name)
 
-    def plan(self, snapshot: bytes) -> object:
+    def plan(self, goal: str, snapshot: bytes) -> object:
         """Return executable steps or a STOP sentinel dict."""
         system_prompt = _SYSTEM_TEMPLATE.format(catalog=self._catalog,
                                                 plan_spec=_PLAN_SPEC)
-        task_text = f"Goal: {self._goal}\n\n"
+        task_text = f"Goal: {goal}\n\n"
 
         image_b64 = base64.b64encode(snapshot).decode("utf-8")
         task_prompt: list[Any] = [
@@ -192,7 +186,7 @@ def _extract_json(raw: str) -> str:
             elif ch == closer:
                 depth -= 1
                 if depth == 0:
-                    return text[start : i + 1]
+                    return text[start:i + 1]
 
     return text
 

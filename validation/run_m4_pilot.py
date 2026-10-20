@@ -44,15 +44,10 @@ CATEGORY_INFRASTRUCTURE = "infrastructure"
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--episodes", type=int, default=10)
-    parser.add_argument(
-        "--artifact-dir",
-        default=os.environ.get("ARTIFACT_DIR", "artifacts/m4_pilot"),
-    )
-    parser.add_argument(
-        "--arms",
-        default="bare,longor",
-        help="Comma-separated subset of: bare,longor",
-    )
+    parser.add_argument("--artifact-dir",
+                        default=os.environ.get("ARTIFACT_DIR", "artifacts/m4_pilot"))
+    parser.add_argument("--arms", default="bare,longor",
+                        help="Comma-separated subset of: bare,longor")
     return parser.parse_args()
 
 
@@ -82,15 +77,13 @@ def _object_name_from_task_description(task_desc: str) -> str:
     if not task_desc.endswith(_OPEN_CLOSE_SUFFIX):
         raise RuntimeError(
             f"task_description must end with {_OPEN_CLOSE_SUFFIX!r}, "
-            f"got {task_desc!r}"
-        )
-    open_phrase = task_desc[: -len(_OPEN_CLOSE_SUFFIX)].strip()
+            f"got {task_desc!r}")
+    open_phrase = task_desc[:-len(_OPEN_CLOSE_SUFFIX)].strip()
     prefix = "open the "
     if not open_phrase.lower().startswith(prefix):
         raise RuntimeError(
-            f"expected reset language 'open the <name>', got {open_phrase!r}"
-        )
-    name = open_phrase[len(prefix) :].strip()
+            f"expected reset language 'open the <name>', got {open_phrase!r}")
+    name = open_phrase[len(prefix):].strip()
     if not name:
         raise RuntimeError(f"empty object name in task description {task_desc!r}")
     return name
@@ -99,34 +92,20 @@ def _object_name_from_task_description(task_desc: str) -> str:
 def _infer_infrastructure(error: str) -> bool:
     """Return whether an error string is likely infrastructure-related."""
     text = error.lower()
-    markers = (
-        "vla service",
-        "connection",
-        "timed out",
-        "api key",
-        "503",
-        "404",
-        "not installed",
-        "address already in use",
-    )
+    markers = ("vla service", "connection", "timed out", "api key", "503", "404",
+               "not installed", "address already in use")
     return any(marker in text for marker in markers)
 
 
-def _final_longor_status_fields(
-    success: bool,
-    stop_reason: str,
-    error: str,
-) -> tuple[str, str]:
+def _final_longor_status_fields(success: bool, stop_reason: str,
+                                error: str) -> tuple[str, str]:
     """Final stop_reason/error; clear stale failure after a successful retry."""
     if success:
         return "", ""
     return stop_reason, error
 
 
-def _plan_checks(
-    plan_steps: object,
-    expected_object: str,
-) -> tuple[bool, bool]:
+def _plan_checks(plan_steps: object, expected_object: str) -> tuple[bool, bool]:
     """Return ``(shape_ok, grounding_ok)`` for one planner payload."""
     if not isinstance(plan_steps, list) or not plan_steps:
         return False, False
@@ -181,28 +160,16 @@ def _run_bare_episode() -> dict[str, object]:
             category = CATEGORY_POLICY_PRIMITIVE
         else:
             category = CATEGORY_SUBTASK_TRANSITION_ORACLE
-        return {
-            "success": success,
-            "category": category,
-            "task_description": task_desc,
-            "target_object": object_name,
-            "prompt": prompt,
-            "stop_reason": stop_reason,
-            "steps": env.steps,
-            "error": error,
-        }
+        return {"success": success, "category": category,
+                "task_description": task_desc, "target_object": object_name,
+                "prompt": prompt, "stop_reason": stop_reason,
+                "steps": env.steps, "error": error}
     except Exception as exc:
         error = str(exc)
-        return {
-            "success": False,
-            "category": CATEGORY_INFRASTRUCTURE,
-            "task_description": task_desc,
-            "target_object": object_name,
-            "prompt": prompt,
-            "stop_reason": "execution_error",
-            "steps": env.steps,
-            "error": error,
-        }
+        return {"success": False, "category": CATEGORY_INFRASTRUCTURE,
+                "task_description": task_desc, "target_object": object_name,
+                "prompt": prompt, "stop_reason": "execution_error",
+                "steps": env.steps, "error": error}
     finally:
         env.close()
 
@@ -223,11 +190,11 @@ def _run_longor_episode() -> dict[str, object]:
     grounding_ok = True
     attempts: list[dict[str, object]] = []
     try:
+        planner = LLMPlanner(skill_catalog())
         target_object = _object_name_from_task_description(task_desc)
-        planner = LLMPlanner(task_desc, skill_catalog())
         executor = Executor(env=env)
         images, _state = env.observe()
-        planned = planner.plan(images[0])
+        planned = planner.plan(task_desc, images[0])
         if is_stop_plan(planned):
             plan_status = "stopped"
             stop_reason = get_stop_reason(planned)
@@ -237,15 +204,11 @@ def _run_longor_episode() -> dict[str, object]:
             remaining_steps = list(planned)
             for retry_count in range(config.MAX_REPLANS + 1):
                 execution_sum = executor.run(remaining_steps)
-                attempts.append(
-                    {
-                        "plan": [dict(step) for step in remaining_steps],
-                        "stop_reason": execution_sum.reason,
-                        "steps": execution_sum.steps,
-                        "error": execution_sum.error,
-                        "next_step_idx": execution_sum.next_step_idx,
-                    }
-                )
+                attempts.append({
+                    "plan": [dict(step) for step in remaining_steps],
+                    "stop_reason": execution_sum.reason,
+                    "steps": execution_sum.steps, "error": execution_sum.error,
+                    "next_step_idx": execution_sum.next_step_idx})
                 total_steps += execution_sum.steps
                 stop_reason = execution_sum.reason
                 error = execution_sum.error
@@ -253,11 +216,9 @@ def _run_longor_episode() -> dict[str, object]:
                     plan_status = "done"
                     break
                 plan_status = "execution_error"
-                if (
-                    execution_sum.reason == StopReason.SUBTASK_TIMEOUT
-                    and retry_count < config.MAX_REPLANS
-                ):
-                    remaining_steps = remaining_steps[execution_sum.next_step_idx :]
+                if (execution_sum.reason == StopReason.SUBTASK_TIMEOUT
+                        and retry_count < config.MAX_REPLANS):
+                    remaining_steps = remaining_steps[execution_sum.next_step_idx:]
                     if remaining_steps:
                         continue
                 break
@@ -272,17 +233,11 @@ def _run_longor_episode() -> dict[str, object]:
             category = CATEGORY_PLAN_TO_SKILL_GROUNDING
         elif plan_status == "done":
             category = CATEGORY_SUBTASK_TRANSITION_ORACLE
-        elif stop_reason in (
-            StopReason.SUBTASK_TIMEOUT,
-            StopReason.EPISODE_TIMEOUT,
-        ):
+        elif stop_reason in (StopReason.SUBTASK_TIMEOUT, StopReason.EPISODE_TIMEOUT):
             category = CATEGORY_POLICY_PRIMITIVE
         elif stop_reason == StopReason.EXECUTION_ERROR:
-            category = (
-                CATEGORY_INFRASTRUCTURE
-                if _infer_infrastructure(error)
-                else CATEGORY_POLICY_PRIMITIVE
-            )
+            category = (CATEGORY_INFRASTRUCTURE if _infer_infrastructure(error)
+                        else CATEGORY_POLICY_PRIMITIVE)
         elif plan_status == "plan_failed":
             category = CATEGORY_PLANNER_PLAN
         else:
@@ -290,26 +245,16 @@ def _run_longor_episode() -> dict[str, object]:
     except Exception as exc:
         error = str(exc)
         plan_status = "plan_failed"
-        category = (
-            CATEGORY_INFRASTRUCTURE
-            if _infer_infrastructure(error)
-            else CATEGORY_PLANNER_PLAN
-        )
+        category = (CATEGORY_INFRASTRUCTURE if _infer_infrastructure(error)
+                    else CATEGORY_PLANNER_PLAN)
     finally:
         env.close()
     stop_reason, error = _final_longor_status_fields(success, stop_reason, error)
-    return {
-        "success": success,
-        "category": category,
-        "task_description": task_desc,
-        "target_object": target_object,
-        "plan_status": plan_status,
-        "stop_reason": stop_reason,
-        "steps": total_steps,
-        "error": error,
-        "last_plan": last_plan,
-        "attempts": attempts,
-    }
+    return {"success": success, "category": category,
+            "task_description": task_desc, "target_object": target_object,
+            "plan_status": plan_status, "stop_reason": stop_reason,
+            "steps": total_steps, "error": error, "last_plan": last_plan,
+            "attempts": attempts}
 
 
 def _summarize(records: list[dict[str, object]]) -> dict[str, object]:
@@ -322,11 +267,9 @@ def _summarize(records: list[dict[str, object]]) -> dict[str, object]:
         success_count = sum(1 for row in arm_rows if bool(row["success"]))
         counts = Counter(str(row["category"]) for row in arm_rows)
         summary["arms"][arm] = {
-            "episodes": len(arm_rows),
-            "successes": success_count,
+            "episodes": len(arm_rows), "successes": success_count,
             "success_rate": (success_count / len(arm_rows)) if arm_rows else 0.0,
-            "category_counts": dict(counts),
-        }
+            "category_counts": dict(counts)}
     return summary
 
 
@@ -352,19 +295,19 @@ def main() -> int:
                 else:
                     video_marker = "video_disabled"
                 started = time.perf_counter()
-                row = _run_bare_episode() if arm == ARM_BARE else _run_longor_episode()
+                run = _run_bare_episode if arm == ARM_BARE else _run_longor_episode
+                row = run()
                 elapsed = time.perf_counter() - started
                 row["arm"] = arm
                 row["episode"] = ep
                 row["video"] = video_marker
                 row["elapsed_s"] = round(elapsed, 3)
-                print(
-                    f"arm={arm} ep={ep} video={video_marker!r} "
-                    f"task_description={row['task_description']!r} "
-                    f"success={row['success']} category={row['category']} "
-                    f"steps={row['steps']} stop_reason={row.get('stop_reason', '')!r} "
-                    f"error={row['error']!r}"
-                )
+                print(f"arm={arm} ep={ep} video={video_marker!r} "
+                      f"task_description={row['task_description']!r} "
+                      f"success={row['success']} category={row['category']} "
+                      f"steps={row['steps']} "
+                      f"stop_reason={row.get('stop_reason', '')!r} "
+                      f"error={row['error']!r}")
                 records.append(row)
     finally:
         config.VIDEO_PATH = original_video_path
@@ -379,11 +322,10 @@ def main() -> int:
     print(f"episodes_file={records_path}")
     print(f"summary_file={summary_path}")
     for arm, arm_sum in summary["arms"].items():
-        print(
-            f"summary arm={arm} success={arm_sum['successes']}/{arm_sum['episodes']} "
-            f"rate={arm_sum['success_rate']:.3f} "
-            f"categories={arm_sum['category_counts']}"
-        )
+        print(f"summary arm={arm} "
+              f"success={arm_sum['successes']}/{arm_sum['episodes']} "
+              f"rate={arm_sum['success_rate']:.3f} "
+              f"categories={arm_sum['category_counts']}")
     return 0
 
 

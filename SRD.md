@@ -115,6 +115,13 @@ Contract points:
   passed to `env.step(action)` unchanged (shape/finiteness validation only).
 - `Runner` owns planner STOP handling and the final task verdict; `Executor`
   only reports execution outcomes.
+- `plan(goal, snapshot)` takes the goal (`env.task_description`) per call.
+- RoboCasa backend: robosuite render contexts are finalised in their own EGL
+  context (`_free_render_contexts_in_own_egl_context`). An old sim survives
+  `reset()` as cyclic garbage; when the cyclic GC finalises it, stock
+  `MjRenderContext.__del__` frees GL objects in the live context and every later
+  camera frame is noise or black (Colab probe, Oct 2026: GC forced after init
+  corrupted 5/5 runs; finalising in the owning context was clean 5/5).
 - Sim ground truth is allowed only for subtask/episode completion checks
   (`check_subtask`, `success`) and must be disclosed in evaluation claims.
 - Unsupported backend API is a hard stop with `'not supported for this env'`.

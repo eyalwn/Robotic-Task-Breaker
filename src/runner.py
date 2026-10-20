@@ -19,11 +19,11 @@ class Runner:
     """Orchestrates observe → plan → execute with suffix-preserving retries."""
 
     def __init__(self, task: str, task_idx: int = 0) -> None:
-        """Wire env, planner, and executor for one task."""
+        """Wire planner, env, and executor for one task."""
         self._env = SimEnv(task, task_idx)
         self._goal = self._env.task_description
         try:
-            self._planner = LLMPlanner(self._goal, skill_catalog())
+            self._planner = LLMPlanner(skill_catalog())
             self._executor = Executor(env=self._env)
         except Exception:
             self._env.close()
@@ -37,7 +37,7 @@ class Runner:
         total_steps = 0
         try:
             images, _state = self._env.observe()
-            current_plan = self._planner.plan(images[0])
+            current_plan = self._planner.plan(self._goal, images[0])
             if is_stop_plan(current_plan):
                 status = "stopped"
                 error = get_stop_reason(current_plan)

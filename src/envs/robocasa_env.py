@@ -84,7 +84,7 @@ def unflatten_state(flat: list[float]) -> dict[str, list[float]]:
     groups: dict[str, list[float]] = {}
     idx = 0
     for key, width in zip(STATE_KEYS, STATE_DIMS):
-        groups[key] = [float(v) for v in flat[idx : idx + width]]
+        groups[key] = [float(v) for v in flat[idx:idx + width]]
         idx += width
     return groups
 
@@ -97,7 +97,7 @@ def unflatten_action(flat: list[float]) -> dict[str, list[float]]:
     groups: dict[str, list[float]] = {}
     idx = 0
     for key, width in zip(ACTION_KEYS, ACTION_DIMS):
-        groups[key] = [float(v) for v in flat[idx : idx + width]]
+        groups[key] = [float(v) for v in flat[idx:idx + width]]
         idx += width
     return groups
 
@@ -123,7 +123,40 @@ def validate_finite_vector(values: list[float], label: str) -> None:
             raise ValueError(f"{label}[{idx}] is not finite: {value!r}")
 
 
+def _free_render_contexts_in_own_egl_context() -> None:
+    """Make robosuite render contexts free their GL objects in their own context.
+
+    ``MjRenderContext.__del__`` frees MuJoCo's GL objects in whichever EGL context
+    is current. A stale context (an old sim kept alive by a reference cycle) is
+    finalised whenever the cyclic GC runs, and then deletes the live context's
+    same-numbered FBO and textures: every later camera frame is noise or black.
+    """
+    from mujoco.egl import egl_ext as egl
+    from robosuite.renderers.context import egl_context
+    from robosuite.utils.binding_utils import MjRenderContext
+
+    original = MjRenderContext.__del__
+    if getattr(original, "own_context", False):
+        return
+
+    def free_in_own_context(self) -> None:
+        live = egl.eglGetCurrentContext()
+        own = self.gl_ctx._context
+        try:
+            self.gl_ctx.make_current()
+        except RuntimeError:  # EGL display already terminated at interpreter exit
+            own = live
+        original(self)  # destroys the context and leaves the thread without one
+        if live and live.address != own.address:
+            egl.eglMakeCurrent(egl_context.EGL_DISPLAY, egl.EGL_NO_SURFACE,
+                               egl.EGL_NO_SURFACE, live)
+
+    free_in_own_context.own_context = True
+    MjRenderContext.__del__ = free_in_own_context
+
+
 def _import_robocasa_gym():
+    """Import the Linux-only sim stack and harden robosuite's EGL teardown."""
     try:
         import gymnasium as gym
         with warnings.catch_warnings():
@@ -135,6 +168,7 @@ def _import_robocasa_gym():
     except ImportError as exc:
         raise ImportError("RoboCasa is not installed. Follow README "
                           "RoboCasa setup (Linux only).") from exc
+    _free_render_contexts_in_own_egl_context()
     return gym
 
 

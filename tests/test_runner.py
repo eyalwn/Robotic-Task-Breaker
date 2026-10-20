@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -14,10 +13,8 @@ from runner import Runner
 
 
 def _done_plan() -> Plan:
-    return [
-        {"skill": "open", "object_name": "right drawer"},
-        {"skill": "close", "object_name": "right drawer"},
-    ]
+    return [{"skill": "open", "object_name": "right drawer"},
+            {"skill": "close", "object_name": "right drawer"}]
 
 
 def _stop_plan(reason: str) -> dict[str, str]:
@@ -25,10 +22,10 @@ def _stop_plan(reason: str) -> dict[str, str]:
 
 
 class _StubPlanner:
-    def __init__(self, goal: str = "", catalog: str = "") -> None:
-        self.init_goal = goal
+    def __init__(self, catalog: str = "") -> None:
         self.init_catalog = catalog
         self.plan_calls = 0
+        self.plan_goals: list[str] = []
         self.plan_args: list[bytes] = []
         self._plan_output: object = _done_plan()
         self._plan_fail_on_call = -1
@@ -42,12 +39,13 @@ class _StubPlanner:
         self._plan_fail_on_call = call_number
 
     def stop_on_plan_call(
-        self, call_number: int, reason: str = "goal achieved") -> None:
+            self, call_number: int, reason: str = "goal achieved") -> None:
         self._stop_on_call = call_number
         self._stop_reason = reason
 
-    def plan(self, snapshot: bytes) -> object:
+    def plan(self, goal: str, snapshot: bytes) -> object:
         self.plan_calls += 1
+        self.plan_goals.append(goal)
         self.plan_args.append(snapshot)
         if self._plan_fail_on_call == self.plan_calls:
             raise RuntimeError("plan validation failed")
@@ -58,8 +56,7 @@ class _StubPlanner:
 
 class _StubEnv:
     task_description = (
-        "put both the alphabet soup and the tomato sauce in the basket"
-    )
+        "put both the alphabet soup and the tomato sauce in the basket")
 
     def __init__(self, *, success: bool = True) -> None:
         self._success = success
@@ -90,12 +87,9 @@ class _StubEnv:
 
 
 def _runner_with_stub_executor(
-    summaries: list[ExecutionSum],
-    monkeypatch: pytest.MonkeyPatch,
-    *,
-    planner=None,
-    env_success: bool = True,
-    runner_args: tuple = ("select_fruit",),
+        summaries: list[ExecutionSum], monkeypatch: pytest.MonkeyPatch, *,
+        planner=None, env_success: bool = True,
+        runner_args: tuple = ("select_fruit",),
 ) -> tuple[Runner, _StubPlanner, MagicMock]:
     planner = planner or _StubPlanner()
     env = _StubEnv(success=env_success)
@@ -107,8 +101,7 @@ def _runner_with_stub_executor(
 
     executor.run.side_effect = _run
 
-    def _planner_factory(goal: str, catalog: str, **_kwargs: object) -> _StubPlanner:
-        planner.init_goal = goal
+    def _planner_factory(catalog: str, **_kwargs: object) -> _StubPlanner:
         planner.init_catalog = catalog
         return planner
 
@@ -121,13 +114,11 @@ def _runner_with_stub_executor(
 
 
 def test_runner_uses_env_task_description_for_planner(
-    monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch: pytest.MonkeyPatch) -> None:
     runner, planner, _ = _runner_with_stub_executor(
-        [ExecutionSum(reason=StopReason.PLAN_DONE)],
-        monkeypatch,
-    )
+        [ExecutionSum(reason=StopReason.PLAN_DONE)], monkeypatch)
     assert runner.run() is True
-    assert planner.init_goal == _StubEnv.task_description
+    assert planner.plan_goals == [_StubEnv.task_description]
 
 
 def test_runner_args_reach_sim_env(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -139,25 +130,18 @@ def test_runner_args_reach_sim_env(monkeypatch: pytest.MonkeyPatch) -> None:
         return _StubEnv(success=True)
 
     monkeypatch.setattr("runner.SimEnv", _capture_sim)
-    monkeypatch.setattr(
-        "runner.LLMPlanner",
-        lambda goal, catalog, **_kwargs: _StubPlanner(goal, catalog),
-    )
-    monkeypatch.setattr(
-        "runner.Executor",
-        lambda *_args, **_kwargs: MagicMock(
-            run=lambda _steps: ExecutionSum(reason=StopReason.PLAN_DONE)
-        ),
-    )
+    monkeypatch.setattr("runner.LLMPlanner",
+                        lambda catalog, **_kwargs: _StubPlanner(catalog))
+    done = ExecutionSum(reason=StopReason.PLAN_DONE)
+    monkeypatch.setattr("runner.Executor",
+                        lambda *_a, **_k: MagicMock(run=lambda _steps: done))
     Runner("select_fruit", 0).run()
     assert captured["args"] == ("select_fruit", 0)
 
 
 def test_runner_plan_done_success(monkeypatch: pytest.MonkeyPatch) -> None:
     runner, planner, executor = _runner_with_stub_executor(
-        [ExecutionSum(reason=StopReason.PLAN_DONE)],
-        monkeypatch,
-    )
+        [ExecutionSum(reason=StopReason.PLAN_DONE)], monkeypatch)
     assert runner.run() is True
     assert planner.plan_calls == 1
     assert planner.plan_args[0] == b"img"
@@ -165,12 +149,9 @@ def test_runner_plan_done_success(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_runner_run_calls_success_before_close(
-    monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch: pytest.MonkeyPatch) -> None:
     runner, _, _ = _runner_with_stub_executor(
-        [ExecutionSum(reason=StopReason.PLAN_DONE)],
-        monkeypatch,
-        env_success=True,
-    )
+        [ExecutionSum(reason=StopReason.PLAN_DONE)], monkeypatch, env_success=True)
     assert runner.run() is True
     env = runner._env
     assert "success" in env.events
@@ -181,58 +162,40 @@ def test_runner_planner_stop(monkeypatch: pytest.MonkeyPatch) -> None:
     planner = _StubPlanner()
     planner.stop_on_plan_call(1, reason="goal achieved")
     runner, _, executor = _runner_with_stub_executor(
-        [ExecutionSum(reason=StopReason.PLAN_DONE)],
-        monkeypatch,
-        planner=planner,
-        env_success=False,
-    )
+        [ExecutionSum(reason=StopReason.PLAN_DONE)], monkeypatch,
+        planner=planner, env_success=False)
     assert runner.run() is False
     assert executor.run.call_count == 0
 
 
 def test_runner_subtask_timeout_from_executor(
-    monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch: pytest.MonkeyPatch) -> None:
     n = config.MAX_REPLANS + 1
     runner, planner, executor = _runner_with_stub_executor(
-        [ExecutionSum(reason=StopReason.SUBTASK_TIMEOUT)] * n,
-        monkeypatch,
-        env_success=False,
-    )
+        [ExecutionSum(reason=StopReason.SUBTASK_TIMEOUT)] * n, monkeypatch,
+        env_success=False)
     assert runner.run() is False
     assert planner.plan_calls == 1
     assert executor.run.call_count == n
 
 
 def test_runner_retries_after_subtask_timeout(
-    monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch: pytest.MonkeyPatch) -> None:
     runner, planner, executor = _runner_with_stub_executor(
-        [
-            ExecutionSum(
-                reason=StopReason.SUBTASK_TIMEOUT,
-                error="open exceeded 2 steps"),
-            ExecutionSum(
-                reason=StopReason.PLAN_DONE),
-        ],
-        monkeypatch,
-    )
+        [ExecutionSum(reason=StopReason.SUBTASK_TIMEOUT,
+                      error="open exceeded 2 steps"),
+         ExecutionSum(reason=StopReason.PLAN_DONE)], monkeypatch)
     assert runner.run() is True
     assert planner.plan_calls == 1
     assert executor.run.call_count == 2
 
 
 def test_runner_retries_unfinished_suffix_only(
-    monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch: pytest.MonkeyPatch) -> None:
     runner, planner, executor = _runner_with_stub_executor(
-        [
-            ExecutionSum(
-                reason=StopReason.SUBTASK_TIMEOUT,
-                error="close exceeded 2 steps",
-                next_step_idx=1,
-            ),
-            ExecutionSum(reason=StopReason.PLAN_DONE),
-        ],
-        monkeypatch,
-    )
+        [ExecutionSum(reason=StopReason.SUBTASK_TIMEOUT,
+                      error="close exceeded 2 steps", next_step_idx=1),
+         ExecutionSum(reason=StopReason.PLAN_DONE)], monkeypatch)
     assert runner.run() is True
     assert planner.plan_calls == 1
     first_plan = executor.run.call_args_list[0].args[0]
@@ -242,46 +205,32 @@ def test_runner_retries_unfinished_suffix_only(
 
 
 def test_runner_episode_timeout_does_not_replan(
-    monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch: pytest.MonkeyPatch) -> None:
     runner, planner, executor = _runner_with_stub_executor(
-        [
-            ExecutionSum(
-                reason=StopReason.EPISODE_TIMEOUT,
-                error="episode hits maximum steps-budget: 2 steps",
-            )
-        ],
-        monkeypatch,
-        env_success=False,
-    )
+        [ExecutionSum(reason=StopReason.EPISODE_TIMEOUT,
+                      error="episode hits maximum steps-budget: 2 steps")],
+        monkeypatch, env_success=False)
     assert runner.run() is False
     assert planner.plan_calls == 1
     assert executor.run.call_count == 1
 
 
 def test_runner_episode_timeout_uses_terminal_success_verdict(
-    monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch: pytest.MonkeyPatch) -> None:
     runner, planner, executor = _runner_with_stub_executor(
-        [
-            ExecutionSum(
-                reason=StopReason.EPISODE_TIMEOUT,
-                error="episode hits maximum steps-budget: 2 steps",
-            )
-        ],
-        monkeypatch,
-        env_success=True,
-    )
+        [ExecutionSum(reason=StopReason.EPISODE_TIMEOUT,
+                      error="episode hits maximum steps-budget: 2 steps")],
+        monkeypatch, env_success=True)
     assert runner.run() is True
     assert planner.plan_calls == 1
     assert executor.run.call_count == 1
 
 
 def test_runner_execution_error_does_not_replan(
-    monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch: pytest.MonkeyPatch) -> None:
     runner, planner, executor = _runner_with_stub_executor(
         [ExecutionSum(reason=StopReason.EXECUTION_ERROR, error="boom")],
-        monkeypatch,
-        env_success=False,
-    )
+        monkeypatch, env_success=False)
     assert runner.run() is False
     assert planner.plan_calls == 1
     assert executor.run.call_count == 1
