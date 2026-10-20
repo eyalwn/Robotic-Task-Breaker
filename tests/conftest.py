@@ -81,8 +81,8 @@ def build_executor(*, env=None, vla=None) -> Executor:
     return executor
 
 
-def run_plan(executor: Executor, steps: Plan):
-    return executor.run(steps)
+def run_plan(executor: Executor, steps: Plan, **run_kwargs: object):
+    return executor.run(steps, **run_kwargs)  # type: ignore[arg-type]
 
 
 def make_plan(steps=None) -> Plan:

@@ -9,11 +9,16 @@ Note: Project contracts, milestones, and hypothesis live in `SRD.md`.
 
 Simulation runs on Colab (L4 verified).
 
-- `colab/run_longor_task.ipynb` — installs the Isaac-GR00T RoboCasa stack,
-  starts the GR00T server (`:5555`) and the Longor adapter (`:8765`), then runs
-  one debug `open_close_drawer` episode (`examples/run_longor_task.py`) with
-  `LOG_LEVEL=DEBUG`. It writes `run.mp4` and `run_longor_task.log` to Drive.
-  Colab Secrets: `GITHUB_TOKEN`, `OPENAI_API_KEY` (optional `HF_TOKEN`).
+- `colab/run_longor_task.ipynb` — minimal single-task launcher: installs the
+  Isaac-GR00T RoboCasa stack, starts GR00T (`:5555`) and the Longor adapter
+  (`:8765`), then runs one episode via `examples/run_longor_task.py` (default
+  task `open_drawer`; notebook uses `open_close_drawer` for M4-path debug).
+  Artifacts: `run.mp4`, `run_longor_task.log` on Drive. Colab Secrets:
+  `GITHUB_TOKEN`, `OPENAI_API_KEY` (optional `HF_TOKEN`).
+- `colab/run_m4_pilot.ipynb` — M4 batch launcher (`validation/run_m4_pilot.py`,
+  bare + longor arms). Writes `m4_pilot_episodes.jsonl`, `m4_pilot_summary.json`,
+  and optional per-episode videos under one artifact directory; share that path
+  for analysis.
 - `colab/run_robocasa_primitive_gate.ipynb` — M1 upstream-only gate launcher
   (no Longor planner/executor); orchestration and verdict logic live in
   `validation/run_robocasa_primitive_gate.py`.
@@ -22,10 +27,13 @@ Simulation runs on Colab (L4 verified).
   `open_ok`/`close_ok`/`success` lines and a final summary to
   `drawer_chain_gate.log`; with `SAVE_VIDEO=1`, it writes per-episode videos as
   `run_epNNN.mp4` under `VIDEO_PATH`'s parent directory.
-- `validation/run_m4_pilot.py` — M4 pilot launcher (`bare` and `longor` arms
-  on `open_close_drawer`). It writes per-episode records to
-  `m4_pilot_episodes.jsonl`, arm summaries to `m4_pilot_summary.json`, and
-  per-episode videos as `videos/{arm}_epNNN.mp4` when `SAVE_VIDEO=1`.
+- `validation/run_m4_pilot.py` — M4 pilot orchestration (`bare` and `longor`
+  arms on `open_close_drawer`, horizon-only Longor cap, plan-once). Same
+  artifact layout as the M4 Colab notebook.
+
+M4/M5 Longor runtime uses backend `env.horizon` as the only hard step cap;
+`MAX_SKILL_STEPS` (720/400) is observational telemetry only. M3 gate scripts
+pass explicit `skill_step_limits` to enforce per-skill caps.
 
 ## Local development (Windows OK, no sim)
 

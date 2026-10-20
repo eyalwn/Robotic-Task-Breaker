@@ -3,10 +3,9 @@
 import logging
 from typing import Literal
 
-import config
 from envs.sim_env import SimEnv
 from executor import Executor, StopReason
-from plan import Plan, get_stop_reason, is_stop_plan
+from plan import get_stop_reason, is_stop_plan
 from planner import LLMPlanner
 from skills import skill_catalog
 
@@ -16,17 +15,20 @@ RunStatus = Literal["done", "plan_failed", "stopped", "execution_error"]
 
 
 class Runner:
-    """Orchestrates observe → plan → execute with suffix-preserving retries."""
+    """Orchestrates observe → plan once → execute once for one task."""
 
     def __init__(self, task: str, task_idx: int = 0) -> None:
         """Wire planner, env, and executor for one task."""
-        self._env = SimEnv(task, task_idx)
-        self._goal = self._env.task_description
+        env = None
         try:
             self._planner = LLMPlanner(skill_catalog())
+            env = SimEnv(task, task_idx)
+            self._env = env
+            self._goal = self._env.task_description
             self._executor = Executor(env=self._env)
         except Exception:
-            self._env.close()
+            if env is not None:
+                env.close()
             raise
 
     def run(self) -> bool:
@@ -43,34 +45,23 @@ class Runner:
                 error = get_stop_reason(current_plan)
                 stop_reason = "planner_stop"
             else:
-                remaining_steps: Plan = list(current_plan)
-                retry_count = 0
-                while remaining_steps:
-                    execution_sum = self._executor.run(remaining_steps)
-                    stop_reason = execution_sum.reason
-                    total_steps += execution_sum.steps
-                    if execution_sum.reason == StopReason.PLAN_DONE:
-                        status = "done"
-                        break
+                execution_sum = self._executor.run(list(current_plan))
+                stop_reason = execution_sum.reason
+                total_steps = execution_sum.steps
+                if execution_sum.reason == StopReason.PLAN_DONE:
+                    status = "done"
+                else:
                     status = "execution_error"
-                    if execution_sum.reason == StopReason.SUBTASK_TIMEOUT:
-                        error = execution_sum.error or "subtask step cap exceeded"
-                        remaining_steps = remaining_steps[
-                            execution_sum.next_step_idx:]
-                        if retry_count < config.MAX_REPLANS and remaining_steps:
-                            retry_count += 1
-                            logger.info("retrying unfinished plan suffix after %s",
-                                        execution_sum.reason)
-                            continue
-                        break
                     if execution_sum.reason == StopReason.EPISODE_TIMEOUT:
-                        error = execution_sum.error or "episode step cap exceeded"
-                        break
-                    if execution_sum.reason == StopReason.EXECUTION_ERROR:
+                        error = (execution_sum.error
+                                 or "episode step cap exceeded")
+                    elif execution_sum.reason == StopReason.SUBTASK_TIMEOUT:
+                        error = (execution_sum.error
+                                 or "explicit subtask step cap exceeded")
+                    elif execution_sum.reason == StopReason.EXECUTION_ERROR:
                         error = execution_sum.error or ""
-                        break
-                    error = f"unexpected stop reason: {execution_sum.reason}"
-                    break
+                    else:
+                        error = f"unexpected stop reason: {execution_sum.reason}"
         except RuntimeError as exc:
             error = str(exc)
         finally:

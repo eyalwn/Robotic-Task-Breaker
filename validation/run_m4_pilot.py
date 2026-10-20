@@ -99,7 +99,7 @@ def _infer_infrastructure(error: str) -> bool:
 
 def _final_longor_status_fields(success: bool, stop_reason: str,
                                 error: str) -> tuple[str, str]:
-    """Final stop_reason/error; clear stale failure after a successful retry."""
+    """Clear stop_reason/error on terminal env success."""
     if success:
         return "", ""
     return stop_reason, error
@@ -176,8 +176,8 @@ def _run_bare_episode() -> dict[str, object]:
 
 def _run_longor_episode() -> dict[str, object]:
     """Run one Longor episode (LLM planner + executor)."""
-    env = SimEnv(_TASK_NAME, 0)
-    task_desc = env.task_description
+    env = None
+    task_desc = ""
     target_object = ""
     total_steps = 0
     plan_status = "plan_failed"
@@ -191,6 +191,8 @@ def _run_longor_episode() -> dict[str, object]:
     attempts: list[dict[str, object]] = []
     try:
         planner = LLMPlanner(skill_catalog())
+        env = SimEnv(_TASK_NAME, 0)
+        task_desc = env.task_description
         target_object = _object_name_from_task_description(task_desc)
         executor = Executor(env=env)
         images, _state = env.observe()
@@ -201,27 +203,22 @@ def _run_longor_episode() -> dict[str, object]:
         else:
             last_plan = planned
             shape_ok, grounding_ok = _plan_checks(planned, target_object)
-            remaining_steps = list(planned)
-            for retry_count in range(config.MAX_REPLANS + 1):
-                execution_sum = executor.run(remaining_steps)
-                attempts.append({
-                    "plan": [dict(step) for step in remaining_steps],
-                    "stop_reason": execution_sum.reason,
-                    "steps": execution_sum.steps, "error": execution_sum.error,
-                    "next_step_idx": execution_sum.next_step_idx})
-                total_steps += execution_sum.steps
-                stop_reason = execution_sum.reason
-                error = execution_sum.error
-                if execution_sum.reason == StopReason.PLAN_DONE:
-                    plan_status = "done"
-                    break
+            plan_steps = list(planned)
+            execution_sum = executor.run(plan_steps)
+            attempts.append({
+                "plan": [dict(step) for step in plan_steps],
+                "stop_reason": execution_sum.reason,
+                "steps": execution_sum.steps,
+                "error": execution_sum.error,
+                "next_step_idx": execution_sum.next_step_idx,
+                "skill_telemetry": execution_sum.skill_telemetry})
+            total_steps = execution_sum.steps
+            stop_reason = execution_sum.reason
+            error = execution_sum.error
+            if execution_sum.reason == StopReason.PLAN_DONE:
+                plan_status = "done"
+            else:
                 plan_status = "execution_error"
-                if (execution_sum.reason == StopReason.SUBTASK_TIMEOUT
-                        and retry_count < config.MAX_REPLANS):
-                    remaining_steps = remaining_steps[execution_sum.next_step_idx:]
-                    if remaining_steps:
-                        continue
-                break
         success = bool(env.success())
         if success:
             category = CATEGORY_SUCCESS
@@ -248,7 +245,8 @@ def _run_longor_episode() -> dict[str, object]:
         category = (CATEGORY_INFRASTRUCTURE if _infer_infrastructure(error)
                     else CATEGORY_PLANNER_PLAN)
     finally:
-        env.close()
+        if env is not None:
+            env.close()
     stop_reason, error = _final_longor_status_fields(success, stop_reason, error)
     return {"success": success, "category": category,
             "task_description": task_desc, "target_object": target_object,

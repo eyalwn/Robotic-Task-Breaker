@@ -6,7 +6,6 @@ from unittest.mock import MagicMock
 
 import pytest
 
-import config
 from executor import ExecutionSum, Executor, StopReason
 from plan import Plan
 from runner import Runner
@@ -96,7 +95,7 @@ def _runner_with_stub_executor(
     executor = MagicMock(spec=Executor)
     summary_iter = iter(summaries)
 
-    def _run(_steps: Plan) -> ExecutionSum:
+    def _run(_steps: Plan, skill_step_limits=None) -> ExecutionSum:
         return next(summary_iter)
 
     executor.run.side_effect = _run
@@ -121,6 +120,27 @@ def test_runner_uses_env_task_description_for_planner(
     assert planner.plan_goals == [_StubEnv.task_description]
 
 
+def test_runner_initializes_planner_before_sim_env(
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    order: list[str] = []
+
+    def _sim(*_args, **_kwargs) -> _StubEnv:
+        order.append("sim")
+        return _StubEnv(success=True)
+
+    def _planner(_catalog: str, **_kwargs: object) -> _StubPlanner:
+        order.append("planner")
+        return _StubPlanner()
+
+    done = ExecutionSum(reason=StopReason.PLAN_DONE)
+    monkeypatch.setattr("runner.SimEnv", _sim)
+    monkeypatch.setattr("runner.LLMPlanner", _planner)
+    monkeypatch.setattr("runner.Executor",
+                        lambda *_a, **_k: MagicMock(run=lambda _s, **_kw: done))
+    Runner("select_fruit", 0).run()
+    assert order == ["planner", "sim"]
+
+
 def test_runner_args_reach_sim_env(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, object] = {}
 
@@ -134,7 +154,7 @@ def test_runner_args_reach_sim_env(monkeypatch: pytest.MonkeyPatch) -> None:
                         lambda catalog, **_kwargs: _StubPlanner(catalog))
     done = ExecutionSum(reason=StopReason.PLAN_DONE)
     monkeypatch.setattr("runner.Executor",
-                        lambda *_a, **_k: MagicMock(run=lambda _steps: done))
+                        lambda *_a, **_k: MagicMock(run=lambda _steps, **_kw: done))
     Runner("select_fruit", 0).run()
     assert captured["args"] == ("select_fruit", 0)
 
@@ -168,40 +188,14 @@ def test_runner_planner_stop(monkeypatch: pytest.MonkeyPatch) -> None:
     assert executor.run.call_count == 0
 
 
-def test_runner_subtask_timeout_from_executor(
+def test_runner_subtask_timeout_single_execution(
         monkeypatch: pytest.MonkeyPatch) -> None:
-    n = config.MAX_REPLANS + 1
     runner, planner, executor = _runner_with_stub_executor(
-        [ExecutionSum(reason=StopReason.SUBTASK_TIMEOUT)] * n, monkeypatch,
+        [ExecutionSum(reason=StopReason.SUBTASK_TIMEOUT)], monkeypatch,
         env_success=False)
     assert runner.run() is False
     assert planner.plan_calls == 1
-    assert executor.run.call_count == n
-
-
-def test_runner_retries_after_subtask_timeout(
-        monkeypatch: pytest.MonkeyPatch) -> None:
-    runner, planner, executor = _runner_with_stub_executor(
-        [ExecutionSum(reason=StopReason.SUBTASK_TIMEOUT,
-                      error="open exceeded 2 steps"),
-         ExecutionSum(reason=StopReason.PLAN_DONE)], monkeypatch)
-    assert runner.run() is True
-    assert planner.plan_calls == 1
-    assert executor.run.call_count == 2
-
-
-def test_runner_retries_unfinished_suffix_only(
-        monkeypatch: pytest.MonkeyPatch) -> None:
-    runner, planner, executor = _runner_with_stub_executor(
-        [ExecutionSum(reason=StopReason.SUBTASK_TIMEOUT,
-                      error="close exceeded 2 steps", next_step_idx=1),
-         ExecutionSum(reason=StopReason.PLAN_DONE)], monkeypatch)
-    assert runner.run() is True
-    assert planner.plan_calls == 1
-    first_plan = executor.run.call_args_list[0].args[0]
-    second_plan = executor.run.call_args_list[1].args[0]
-    assert [step["skill"] for step in first_plan] == ["open", "close"]
-    assert [step["skill"] for step in second_plan] == ["close"]
+    assert executor.run.call_count == 1
 
 
 def test_runner_episode_timeout_does_not_replan(

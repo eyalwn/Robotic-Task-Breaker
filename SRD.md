@@ -68,16 +68,28 @@ simulator/checkpoint pair only to test that claim.
   a win/loss claim. Retain per-episode artifacts and assign every failure to
   exactly one category: policy/primitive, planner plan, plan-to-skill grounding,
   subtask transition/oracle, or infrastructure. Use the pilot to freeze the M5
-  suite, budgets, replanning policy, sample size, and decision rule. Before the
+  suite, budgets, no-replanning policy, sample size, and decision rule. Before
+  the
   next batch, use the single-run `open_close_drawer` debug launcher to validate
   stage/oracle behavior; then freeze an episode eligibility and observability
   rule (including ambiguous/framing edge-cases) for both arms. Batch launcher:
   `validation/run_m4_pilot.py` (artifact outputs:
   `m4_pilot_episodes.jsonl`, `m4_pilot_summary.json`, per-attempt Longor
-  records, and optional videos). Budget policy stays unchanged from M3:
-  `close` keeps its 400-step cap for pilot accounting. A close-to-horizon run
-  can be used only as a debug probe to inspect oracle/joint trajectories; those
-  probe outcomes are not counted as M4 evaluation outcomes.
+  records, and optional videos).
+  **Frozen M4/M5 runtime protocol:** Longor scored episodes use a single
+  observe→plan→execute pass (no timeout-triggered suffix retry/replan). The only
+  default hard step cap is the backend episode horizon (`env.horizon`: 1000 for
+  `open_close_drawer`). `config.MAX_SKILL_STEPS` (`open` 720, `close` 400) is
+  observational telemetry only (threshold crossings captured in executor
+  telemetry and persisted in pilot artifacts); it is not a default runtime stop.
+  Final success is always `env.success()` at the terminal state. The pre-freeze
+  unpaired artifact
+  `G:\My Drive\Colab\longor_m4_pilot\20261015T181402Z` remains diagnostic-only
+  and does not support formal win/loss claims. M3 drawer-chain gate behavior
+  stays separate: it enforces per-skill caps via explicit
+  `Executor.run(..., skill_step_limits=...)` (not global config mutation). A
+  close-to-horizon debug probe (`run_drawer_chain_gate.py --close-to-horizon`)
+  inspects oracle/joint trajectories and is not counted as M4 evaluation output.
 - **M5 — PLANNED.** Formal Longor-vs-bare-VLA comparison. Freeze code, model
   checkpoint, prompts, task IDs/seeds, action chunking, compute limits, and
   stop/timeout policy before execution. Both arms use the same VLA server,
@@ -147,16 +159,20 @@ Subtask oracles (`check_subtask`, sim ground truth, disclosed in claims):
 `open` = robosuite OpenDrawer `_check_success` (drawer >= 95% open); `close` =
 every normalized drawer door joint `<= 0.05`.
 
-Per-skill step caps (`config.MAX_SKILL_STEPS`): `open` 720, `close` 400.
+Per-skill telemetry thresholds (`config.MAX_SKILL_STEPS`): `open` 720, `close`
+400. These are logged when crossed during a skill; they do not stop default
+Longor runtime (M4/M5). Optional hard per-skill caps are passed explicitly as
+`Executor.run(..., skill_step_limits=...)` (M3 drawer-chain gate and debug
+probes only).
 
-Retry semantics: when a subtask times out, runtime retries only the unfinished
-suffix of the current plan. Completed prefix steps are never recreated by a new
-planner call and are never re-executed due to retry control flow.
+Plan-once semantics: `Runner` and M4 Longor episodes call the planner once
+from the initial snapshot, execute the full plan once, and do not retry an
+unfinished suffix after timeout. Genuine replanning remains out of scope.
 
 Terminal verdict semantics: final task success is `env.success()` at the final
-state, regardless of whether execution terminated via `plan_done`,
-`subtask_timeout`, or `episode_timeout`. Stop reason remains a diagnostic field
-and is logged separately from the verdict.
+state, regardless of whether execution terminated via `plan_done` or
+`episode_timeout`. Stop reason remains a diagnostic field and is logged
+separately from the verdict.
 
 Episode step cap comes from the backend (`env.horizon`: 720 for `open_drawer`,
 1000 for `open_close_drawer`), not from a global config constant.

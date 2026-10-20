@@ -53,7 +53,7 @@ class _FakeEnv:
         self.closed = True
 
 
-def _build_executor_factory(gate_module, env: _FakeEnv, seen_budgets: list[int]):
+def _build_executor_factory(gate_module, env: _FakeEnv, seen_close_limits: list[int]):
     class _FakeExecutor:
         def __init__(self, env) -> None:
             self._env = env
@@ -61,12 +61,13 @@ def _build_executor_factory(gate_module, env: _FakeEnv, seen_budgets: list[int])
         def _build_vla_task(self, step: dict[str, str]) -> str:
             return f"{step['skill']} the {step['object_name']}"
 
-        def run(self, steps):
+        def run(self, steps, skill_step_limits=None):
             skill = steps[0]["skill"]
             if skill == "open":
                 self._env._steps = 588
                 return ExecutionSum(reason=StopReason.PLAN_DONE, steps=188)
-            seen_budgets.append(gate_module.config.MAX_SKILL_STEPS["close"])
+            limit = (skill_step_limits or {}).get("close")
+            seen_close_limits.append(limit)
             return ExecutionSum(reason=StopReason.PLAN_DONE, steps=200)
 
     return _FakeExecutor
@@ -75,17 +76,15 @@ def _build_executor_factory(gate_module, env: _FakeEnv, seen_budgets: list[int])
 def test_run_episode_default_close_budget(monkeypatch: pytest.MonkeyPatch) -> None:
     gate = _load_gate_module()
     env = _FakeEnv()
-    seen_budgets: list[int] = []
-    executor_cls = _build_executor_factory(gate, env, seen_budgets)
+    seen_close_limits: list[int] = []
+    executor_cls = _build_executor_factory(gate, env, seen_close_limits)
     monkeypatch.setattr(gate, "SimEnv", lambda *_a, **_k: env)
     monkeypatch.setattr(gate, "Executor", executor_cls)
 
-    original_budgets = dict(gate.config.MAX_SKILL_STEPS)
     row = gate._run_episode(close_to_horizon=False)
 
-    assert row["close_budget"] == original_budgets["close"]
-    assert seen_budgets == [original_budgets["close"]]
-    assert gate.config.MAX_SKILL_STEPS == original_budgets
+    assert row["close_budget"] == gate.config.MAX_SKILL_STEPS["close"]
+    assert seen_close_limits == [gate.config.MAX_SKILL_STEPS["close"]]
     assert row["final_joints"]["right_joint"] == pytest.approx(0.02)
     assert env.closed is True
 
@@ -93,15 +92,13 @@ def test_run_episode_default_close_budget(monkeypatch: pytest.MonkeyPatch) -> No
 def test_run_episode_close_to_horizon_budget(monkeypatch: pytest.MonkeyPatch) -> None:
     gate = _load_gate_module()
     env = _FakeEnv()
-    seen_budgets: list[int] = []
-    executor_cls = _build_executor_factory(gate, env, seen_budgets)
+    seen_close_limits: list[int] = []
+    executor_cls = _build_executor_factory(gate, env, seen_close_limits)
     monkeypatch.setattr(gate, "SimEnv", lambda *_a, **_k: env)
     monkeypatch.setattr(gate, "Executor", executor_cls)
 
-    original_budgets = dict(gate.config.MAX_SKILL_STEPS)
     row = gate._run_episode(close_to_horizon=True)
 
     assert row["close_budget"] == 412
-    assert seen_budgets == [412]
-    assert gate.config.MAX_SKILL_STEPS == original_budgets
+    assert seen_close_limits == [412]
     assert row["close_stop_reason"] == StopReason.PLAN_DONE

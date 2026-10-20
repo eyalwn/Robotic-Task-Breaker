@@ -88,7 +88,8 @@ def _run_episode(close_to_horizon: bool = False) -> dict[str, object]:
         executor = Executor(env=env)
         open_prompt = executor._build_vla_task(open_step)
         close_prompt = executor._build_vla_task(close_step)
-        open_res = executor.run([open_step])
+        open_limits = {"open": config.MAX_SKILL_STEPS["open"]}
+        open_res = executor.run([open_step], skill_step_limits=open_limits)
         open_ok = open_res.reason == StopReason.PLAN_DONE
         close_ok = False
         close_budget = 0
@@ -98,14 +99,8 @@ def _run_episode(close_to_horizon: bool = False) -> dict[str, object]:
         close_joints: dict[str, float] = {}
         if open_ok:
             close_budget = _close_budget_for_episode(env, close_to_horizon)
-            original_budgets = config.MAX_SKILL_STEPS
-            patched_budgets = dict(original_budgets)
-            patched_budgets["close"] = close_budget
-            config.MAX_SKILL_STEPS = patched_budgets
-            try:
-                close_res = executor.run([close_step])
-            finally:
-                config.MAX_SKILL_STEPS = original_budgets
+            close_res = executor.run(
+                [close_step], skill_step_limits={"close": close_budget})
             close_ok = close_res.reason == StopReason.PLAN_DONE
             close_stop_reason = close_res.reason
             close_error = close_res.error
