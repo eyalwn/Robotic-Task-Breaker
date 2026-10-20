@@ -55,6 +55,29 @@ class SimEnv:
             raise RuntimeError("'drawer_joint_state' not supported for this env")
         return getter()
 
+    def episode_wrapper_state(self) -> dict[str, int | bool]:
+        """Return wrapper counters and latches for paired-start observability."""
+        getter = getattr(self._env, "episode_wrapper_state", None)
+        if getter is None:
+            raise RuntimeError("'episode_wrapper_state' not supported for this env")
+        return getter()
+
+    def capture_episode_checkpoint(self) -> dict[str, object]:
+        """Capture a post-reset backend checkpoint for paired arm replay."""
+        getter = getattr(self._env, "capture_episode_checkpoint", None)
+        if getter is None:
+            raise RuntimeError(
+                "'capture_episode_checkpoint' not supported for this env")
+        return getter()
+
+    def restore_episode_checkpoint(self, checkpoint: dict[str, object]) -> None:
+        """Restore a backend-owned checkpoint on this env."""
+        getter = getattr(self._env, "restore_episode_checkpoint", None)
+        if getter is None:
+            raise RuntimeError(
+                "'restore_episode_checkpoint' not supported for this env")
+        getter(checkpoint)
+
     def close(self) -> None:
         """Release the backend."""
         self._env.close()

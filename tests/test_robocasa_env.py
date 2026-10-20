@@ -356,6 +356,91 @@ class _FakeGymStepEnv:
         return self.step_obs, 0.0, False, False, {}
 
 
+class _FakeMjSimState:
+    def __init__(self, time: float, qpos, qvel, act=None) -> None:
+        self.time = time
+        self.qpos = qpos
+        self.qvel = qvel
+        self.act = act
+
+    def _replace(self, **kwargs):
+        data = {"time": self.time, "qpos": self.qpos, "qvel": self.qvel,
+                "act": self.act}
+        data.update(kwargs)
+        return _FakeMjSimState(**data)
+
+
+class _FakeSim:
+    def __init__(self) -> None:
+        self._state = _FakeMjSimState(
+            0.0, np.array([1.0, 2.0]), np.array([0.1, 0.2]))
+        self.set_calls = 0
+
+    def get_state(self):
+        return self._state
+
+    def set_state(self, state) -> None:
+        self.set_calls += 1
+        self._state = state
+
+
+def _robocasa_post_reset(task: str = OPEN_CLOSE_DRAWER_TASK) -> RoboCasaEnv:
+    robocasa = RoboCasaEnv.__new__(RoboCasaEnv)
+    robocasa._task = task
+    robocasa._steps = 0
+    robocasa._drawer_was_opened = False
+    robocasa._writer = None
+    robocasa.task_description = f"open the left drawer{_OPEN_CLOSE_SUFFIX}"
+    robocasa._last_obs = {"marker": np.array([1.0, 2.0])}
+    fake_sim = _FakeSim()
+    kitchen = SimpleNamespace(sim=fake_sim)
+    robocasa._env = SimpleNamespace(
+        unwrapped=_GrootUnwrapped(kitchen), close=lambda: None)
+    return robocasa
+
+
+def test_capture_episode_checkpoint_post_reset_only() -> None:
+    env = _robocasa_post_reset()
+    ckpt = env.capture_episode_checkpoint()
+    assert ckpt["version"] == 1
+    assert ckpt["steps"] == 0
+    assert ckpt["drawer_was_opened"] is False
+    env._steps = 1
+    with pytest.raises(RuntimeError, match="immediately after reset"):
+        env.capture_episode_checkpoint()
+
+
+def test_restore_episode_checkpoint_rehydrates_wrapper_and_sim() -> None:
+    env = _robocasa_post_reset()
+    ckpt = env.capture_episode_checkpoint()
+    env._steps = 9
+    env._drawer_was_opened = True
+    env._last_obs = {"marker": np.array([9.0])}
+    sim = env._sim_env().sim
+    assert isinstance(sim, _FakeSim)
+    env.restore_episode_checkpoint(ckpt)
+    assert env._steps == 0
+    assert env._drawer_was_opened is False
+    assert np.array_equal(env._last_obs["marker"], np.array([1.0, 2.0]))
+    assert sim.set_calls == 1
+
+
+def test_restore_episode_checkpoint_rejects_version_mismatch() -> None:
+    env = _robocasa_post_reset()
+    ckpt = env.capture_episode_checkpoint()
+    ckpt["version"] = 99
+    with pytest.raises(RuntimeError, match="unsupported episode checkpoint"):
+        env.restore_episode_checkpoint(ckpt)
+
+
+def test_episode_wrapper_state_exposes_latches() -> None:
+    env = _robocasa_post_reset()
+    env._drawer_was_opened = True
+    env._steps = 4
+    assert env.episode_wrapper_state() == {
+        "steps": 4, "drawer_was_opened": True}
+
+
 def test_step_stores_obs_returned_by_gym_step() -> None:
     fake = _FakeGymStepEnv()
     robocasa = RoboCasaEnv.__new__(RoboCasaEnv)

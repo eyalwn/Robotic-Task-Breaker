@@ -60,20 +60,24 @@ simulator/checkpoint pair only to test that claim.
   TurnOffMicrowave 96, TurnOffSinkFaucet 93.5, TurnOnMicrowave 91.5,
   TurnOnSinkFaucet 89, CloseDoubleDoor 88.5, TurnSinkSpout 87. Pick-and-place
   tasks are 19-63% upstream.
-- **M4 — IN PROGRESS.** Longor-vs-bare-VLA pilot on the M3 suite. Reset scenes
-  are unpaired until reproducibility is resolved, so pilot rates are diagnostic
-  only. The initial artifact
-  `G:\My Drive\Colab\longor_m4_pilot\20261015T181402Z` observed bare `0/10` and
-  Longor `4/10`; arms saw independently generated scenes, so it does not support
-  a win/loss claim. Retain per-episode artifacts and assign every failure to
-  exactly one category: policy/primitive, planner plan, plan-to-skill grounding,
-  subtask transition/oracle, or infrastructure. Use the pilot to freeze the M5
-  suite, budgets, no-replanning policy, sample size, and decision rule. Before
-  the
-  next batch, use the single-run `open_close_drawer` debug launcher to validate
-  stage/oracle behavior; then freeze an episode eligibility and observability
-  rule (including ambiguous/framing edge-cases) for both arms. Batch launcher:
-  `validation/run_m4_pilot.py` (artifact outputs:
+- **M4 — IN PROGRESS.** Longor-vs-bare-VLA pilot on the M3 suite.
+  **Paired protocol is now the only eligible M4/M5 comparison path.**
+  Unpaired artifacts remain diagnostic-only:
+  `G:\My Drive\Colab\longor_m4_pilot\20261015T181402Z` (`0/10` vs `4/10`) and
+  `G:\My Drive\Colab\longor_m4_pilot\20261020T101902Z` (`0/10` vs `8/10`).
+  They used independently generated scenes and do not support a win/loss claim.
+  Retain per-episode artifacts and assign every failure to exactly one category:
+  policy/primitive, planner plan, plan-to-skill grounding,
+  subtask transition/oracle, or infrastructure.
+  **Frozen paired-evaluation contract for M4/M5:**
+  (1) for each pair, create one scene, capture a backend-owned post-reset
+  checkpoint, and restore that same checkpoint before each arm;
+  (2) counterbalance arm order by pair index;
+  (3) fail closed: a pair is valid only when both arms start from identical
+  observables (task language, target object parse, policy PNG bytes, flattened
+  state vector, oracle state, and wrapper counters/latches); any mismatch aborts
+  scoring for that batch with an explicit invalid-pair record.
+  Batch launcher: `validation/run_m4_pilot.py` (artifact outputs:
   `m4_pilot_episodes.jsonl`, `m4_pilot_summary.json`, per-attempt Longor
   records, and optional videos).
   **Frozen M4/M5 runtime protocol:** Longor scored episodes use a single
@@ -82,11 +86,8 @@ simulator/checkpoint pair only to test that claim.
   `open_close_drawer`). `config.MAX_SKILL_STEPS` (`open` 720, `close` 400) is
   observational telemetry only (threshold crossings captured in executor
   telemetry and persisted in pilot artifacts); it is not a default runtime stop.
-  Final success is always `env.success()` at the terminal state. The pre-freeze
-  unpaired artifact
-  `G:\My Drive\Colab\longor_m4_pilot\20261015T181402Z` remains diagnostic-only
-  and does not support formal win/loss claims. M3 drawer-chain gate behavior
-  stays separate: it enforces per-skill caps via explicit
+  Final success is always `env.success()` at the terminal state. M3 drawer-chain
+  gate behavior stays separate: it enforces per-skill caps via explicit
   `Executor.run(..., skill_step_limits=...)` (not global config mutation). A
   close-to-horizon debug probe (`run_drawer_chain_gate.py --close-to-horizon`)
   inspects oracle/joint trajectories and is not counted as M4 evaluation output.
@@ -98,10 +99,9 @@ simulator/checkpoint pair only to test that claim.
   prompts. Report per-episode paired outcomes, success rates with uncertainty,
   and simulation-ground-truth use for subtask checks. The predeclared decision
   rule requires the lower confidence bound of Longor's absolute success-rate
-  lift across the suite to be positive. Pairing requires reproducible scenes:
-  `reset(seed=...)` through the GR00T wrapper was verified NOT reproducible
-  (same seed -> different frames); resolve (seed hook vs unpaired comparison)
-  before M4 freezes the protocol.
+  lift across the suite to be positive. Pairing uses M4's backend
+  checkpoint/restore contract (not `reset(seed=...)` through the GR00T wrapper,
+  which was verified non-reproducible for scene identity).
 
 ## Runtime architecture contract
 

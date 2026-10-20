@@ -1,13 +1,15 @@
 """Run the M4 pilot: bare VLA vs Longor on the drawer open->close chain.
 
-This script runs both arms on ``open_close_drawer`` and writes per-episode
-records plus a compact summary under one artifact directory.
+Paired protocol only: one scene per pair, backend checkpoint restore before
+each arm, counterbalanced order, fail-closed observability matching.
 
-Measurement-only script: always exits 0 regardless of episode outcomes.
+Writes per-episode records and a compact summary under one artifact directory.
+Exits non-zero when a pair fails observability matching.
 """
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import sys
@@ -41,23 +43,28 @@ CATEGORY_SUBTASK_TRANSITION_ORACLE = "subtask_transition_oracle"
 CATEGORY_INFRASTRUCTURE = "infrastructure"
 
 
+class PairObservabilityMismatch(RuntimeError):
+    """Raised when paired arms do not share identical initial observables."""
+
+
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--episodes", type=int, default=10)
+    parser.add_argument("--episodes", type=int, default=10,
+                        help="Number of paired episodes (one scene per pair)")
     parser.add_argument("--artifact-dir",
                         default=os.environ.get("ARTIFACT_DIR", "artifacts/m4_pilot"))
     parser.add_argument("--arms", default="bare,longor",
-                        help="Comma-separated subset of: bare,longor")
+                        help="Must be both arms for paired M4: bare,longor")
     return parser.parse_args()
 
 
-def _video_path(artifact_dir: Path, arm: str, ep: int) -> str:
-    """Build the per-episode video path for one arm."""
-    return str(artifact_dir / "videos" / f"{arm}_ep{ep:03d}.mp4")
+def _video_path(artifact_dir: Path, arm: str, pair_id: int) -> str:
+    """Build the per-pair video path for one arm."""
+    return str(artifact_dir / "videos" / f"{arm}_ep{pair_id:03d}.mp4")
 
 
 def _parse_arms(raw: str) -> list[str]:
-    """Parse and validate ``--arms`` into execution order."""
+    """Parse and validate ``--arms`` for paired execution (both arms required)."""
     names = [token.strip().lower() for token in raw.split(",") if token.strip()]
     if not names:
         raise RuntimeError("at least one arm must be requested")
@@ -69,7 +76,18 @@ def _parse_arms(raw: str) -> list[str]:
     for name in names:
         if name not in deduped:
             deduped.append(name)
+    if set(deduped) != set(_ARM_CHOICES) or len(deduped) != 2:
+        raise RuntimeError(
+            "paired M4 pilot requires exactly both arms bare,longor "
+            f"(got {deduped!r})")
     return deduped
+
+
+def _arm_order_for_pair(pair_id: int) -> tuple[str, str]:
+    """Counterbalance execution order by pair index."""
+    if pair_id % 2 == 0:
+        return (ARM_BARE, ARM_LONGOR)
+    return (ARM_LONGOR, ARM_BARE)
 
 
 def _object_name_from_task_description(task_desc: str) -> str:
@@ -87,6 +105,62 @@ def _object_name_from_task_description(task_desc: str) -> str:
     if not name:
         raise RuntimeError(f"empty object name in task description {task_desc!r}")
     return name
+
+
+def _sha256_hex(data: bytes) -> str:
+    return hashlib.sha256(data).hexdigest()
+
+
+def _state_vector_hash(state: list[float]) -> str:
+    parts = [f"{float(v):.17g}" for v in state]
+    return _sha256_hex(",".join(parts).encode("utf-8"))
+
+
+def _json_stable_hash(payload: object) -> str:
+    text = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return _sha256_hex(text.encode("utf-8"))
+
+
+def _initial_observability(env: SimEnv) -> dict[str, object]:
+    """Snapshot observables immediately before policy inference."""
+    images, state = env.observe()
+    task_desc = env.task_description
+    target = _object_name_from_task_description(task_desc)
+    oracle = env.drawer_joint_state()
+    wrapper = env.episode_wrapper_state()
+    return {
+        "task_description": task_desc,
+        "target_object": target,
+        "policy_png_bytes": list(images),
+        "state_vector": list(state),
+        "oracle_state": oracle,
+        "wrapper_state": wrapper,
+    }
+
+
+def _observability_hashes(obs: dict[str, object]) -> dict[str, str]:
+    pngs = obs["policy_png_bytes"]
+    assert isinstance(pngs, list)
+    return {
+        "task_description": _sha256_hex(
+            str(obs["task_description"]).encode("utf-8")),
+        "target_object": _sha256_hex(str(obs["target_object"]).encode("utf-8")),
+        "policy_png": [_sha256_hex(b) for b in pngs],
+        "state_vector": _state_vector_hash(obs["state_vector"]),  # type: ignore[arg-type]
+        "oracle_state": _json_stable_hash(obs["oracle_state"]),
+        "wrapper_state": _json_stable_hash(obs["wrapper_state"]),
+    }
+
+
+def _observability_mismatch_reason(first: dict[str, object],
+                                   second: dict[str, object]) -> str:
+    for key in sorted(first):
+        if first.get(key) != second.get(key):
+            return f"initial observability mismatch on {key!r}"
+    for key in sorted(second):
+        if key not in first:
+            return f"initial observability mismatch on {key!r}"
+    return ""
 
 
 def _infer_infrastructure(error: str) -> bool:
@@ -127,9 +201,8 @@ def _plan_checks(plan_steps: object, expected_object: str) -> tuple[bool, bool]:
     return shape_ok, all_names_match
 
 
-def _run_bare_episode() -> dict[str, object]:
+def _run_bare_episode(env: SimEnv) -> dict[str, object]:
     """Run one bare-VLA episode with the raw task string as prompt."""
-    env = SimEnv(_TASK_NAME, 0)
     task_desc = env.task_description
     object_name = ""
     prompt = task_desc
@@ -170,14 +243,11 @@ def _run_bare_episode() -> dict[str, object]:
                 "task_description": task_desc, "target_object": object_name,
                 "prompt": prompt, "stop_reason": "execution_error",
                 "steps": env.steps, "error": error}
-    finally:
-        env.close()
 
 
-def _run_longor_episode() -> dict[str, object]:
+def _run_longor_episode(env: SimEnv) -> dict[str, object]:
     """Run one Longor episode (LLM planner + executor)."""
-    env = None
-    task_desc = ""
+    task_desc = env.task_description
     target_object = ""
     total_steps = 0
     plan_status = "plan_failed"
@@ -191,8 +261,6 @@ def _run_longor_episode() -> dict[str, object]:
     attempts: list[dict[str, object]] = []
     try:
         planner = LLMPlanner(skill_catalog())
-        env = SimEnv(_TASK_NAME, 0)
-        task_desc = env.task_description
         target_object = _object_name_from_task_description(task_desc)
         executor = Executor(env=env)
         images, _state = env.observe()
@@ -244,9 +312,6 @@ def _run_longor_episode() -> dict[str, object]:
         plan_status = "plan_failed"
         category = (CATEGORY_INFRASTRUCTURE if _infer_infrastructure(error)
                     else CATEGORY_PLANNER_PLAN)
-    finally:
-        if env is not None:
-            env.close()
     stop_reason, error = _final_longor_status_fields(success, stop_reason, error)
     return {"success": success, "category": category,
             "task_description": task_desc, "target_object": target_object,
@@ -255,11 +320,28 @@ def _run_longor_episode() -> dict[str, object]:
             "attempts": attempts}
 
 
+def _invalid_arm_row(arm: str, pair_id: int, arm_order: str,
+                     reason: str) -> dict[str, object]:
+    return {
+        "arm": arm, "pair_id": pair_id, "arm_order": arm_order,
+        "pair_valid": False, "pair_mismatch_reason": reason,
+        "success": False, "category": CATEGORY_INFRASTRUCTURE,
+        "task_description": "", "target_object": "",
+        "stop_reason": "pair_invalid", "steps": 0,
+        "error": reason, "initial_hashes": {},
+    }
+
+
 def _summarize(records: list[dict[str, object]]) -> dict[str, object]:
     """Aggregate outcomes by arm for a compact final report."""
-    summary: dict[str, object] = {"arms": {}}
+    valid = [row for row in records if bool(row.get("pair_valid", False))]
+    summary: dict[str, object] = {
+        "pairs_total": len({row["pair_id"] for row in records}),
+        "pairs_valid": len({row["pair_id"] for row in valid}),
+        "arms": {},
+    }
     for arm in _ARM_CHOICES:
-        arm_rows = [row for row in records if row["arm"] == arm]
+        arm_rows = [row for row in valid if row["arm"] == arm]
         if not arm_rows:
             continue
         success_count = sum(1 for row in arm_rows if bool(row["success"]))
@@ -271,10 +353,21 @@ def _summarize(records: list[dict[str, object]]) -> dict[str, object]:
     return summary
 
 
+def _write_artifacts(records_path: Path, summary_path: Path,
+                     records: list[dict[str, object]]) -> dict[str, object]:
+    with records_path.open("w", encoding="utf-8") as fp:
+        for row in records:
+            fp.write(json.dumps(row, sort_keys=True) + "\n")
+    summary = _summarize(records)
+    with summary_path.open("w", encoding="utf-8") as fp:
+        fp.write(json.dumps(summary, indent=2) + "\n")
+    return summary
+
+
 def main() -> int:
     configure_logging()
     args = _parse_args()
-    arms = _parse_arms(args.arms)
+    _parse_arms(args.arms)
     artifact_dir = Path(args.artifact_dir)
     videos_dir = artifact_dir / "videos"
     artifact_dir.mkdir(parents=True, exist_ok=True)
@@ -283,40 +376,90 @@ def main() -> int:
     summary_path = artifact_dir / "m4_pilot_summary.json"
 
     records: list[dict[str, object]] = []
+    original_save_video = config.SAVE_VIDEO
     original_video_path = config.VIDEO_PATH
+    exit_code = 0
     try:
-        for ep in range(args.episodes):
-            for arm in arms:
-                if config.SAVE_VIDEO:
-                    config.VIDEO_PATH = _video_path(artifact_dir, arm, ep)
-                    video_marker = config.VIDEO_PATH
-                else:
-                    video_marker = "video_disabled"
-                started = time.perf_counter()
-                run = _run_bare_episode if arm == ARM_BARE else _run_longor_episode
-                row = run()
-                elapsed = time.perf_counter() - started
-                row["arm"] = arm
-                row["episode"] = ep
-                row["video"] = video_marker
-                row["elapsed_s"] = round(elapsed, 3)
-                print(f"arm={arm} ep={ep} video={video_marker!r} "
-                      f"task_description={row['task_description']!r} "
-                      f"success={row['success']} category={row['category']} "
-                      f"steps={row['steps']} "
-                      f"stop_reason={row.get('stop_reason', '')!r} "
-                      f"error={row['error']!r}")
-                records.append(row)
+        for pair_id in range(args.episodes):
+            arm_order = _arm_order_for_pair(pair_id)
+            arm_order_str = ",".join(arm_order)
+            config.SAVE_VIDEO = False
+            scene_env = SimEnv(_TASK_NAME, 0)
+            try:
+                checkpoint = scene_env.capture_episode_checkpoint()
+            finally:
+                scene_env.close()
+
+            baseline_hashes: dict[str, str] | None = None
+            pair_rows: list[dict[str, object]] = []
+
+            for arm in arm_order:
+                config.SAVE_VIDEO = False
+                env = SimEnv(_TASK_NAME, 0)
+                try:
+                    env.restore_episode_checkpoint(checkpoint)
+                    observability = _initial_observability(env)
+                    hashes = _observability_hashes(observability)
+                    if baseline_hashes is None:
+                        baseline_hashes = hashes
+                    else:
+                        reason = _observability_mismatch_reason(
+                            baseline_hashes, hashes)
+                        if reason:
+                            if pair_rows:
+                                pair_rows[0]["pair_valid"] = False
+                                pair_rows[0]["pair_mismatch_reason"] = reason
+                            else:
+                                pair_rows.append(_invalid_arm_row(
+                                    arm_order[0], pair_id, arm_order_str,
+                                    reason))
+                            pair_rows.append(_invalid_arm_row(
+                                arm, pair_id, arm_order_str, reason))
+                            records.extend(pair_rows)
+                            _write_artifacts(
+                                records_path, summary_path, records)
+                            raise PairObservabilityMismatch(reason)
+
+                    if original_save_video:
+                        config.SAVE_VIDEO = True
+                        config.VIDEO_PATH = _video_path(
+                            artifact_dir, arm, pair_id)
+                        video_marker = config.VIDEO_PATH
+                    else:
+                        video_marker = "video_disabled"
+                    started = time.perf_counter()
+                    runner = (_run_bare_episode if arm == ARM_BARE
+                              else _run_longor_episode)
+                    row = runner(env)
+                    elapsed = time.perf_counter() - started
+                    row["arm"] = arm
+                    row["pair_id"] = pair_id
+                    row["arm_order"] = arm_order_str
+                    row["pair_valid"] = True
+                    row["pair_mismatch_reason"] = ""
+                    row["initial_hashes"] = hashes
+                    row["video"] = video_marker
+                    row["elapsed_s"] = round(elapsed, 3)
+                    print(f"pair={pair_id} arm={arm} order={arm_order_str!r} "
+                          f"video={video_marker!r} "
+                          f"task_description={row['task_description']!r} "
+                          f"success={row['success']} category={row['category']} "
+                          f"steps={row['steps']} "
+                          f"stop_reason={row.get('stop_reason', '')!r} "
+                          f"error={row['error']!r}")
+                    pair_rows.append(row)
+                finally:
+                    env.close()
+
+            records.extend(pair_rows)
+    except PairObservabilityMismatch as exc:
+        print(f"pair_invalid: {exc}", file=sys.stderr)
+        exit_code = 1
     finally:
+        config.SAVE_VIDEO = original_save_video
         config.VIDEO_PATH = original_video_path
 
-    with records_path.open("w", encoding="utf-8") as fp:
-        for row in records:
-            fp.write(json.dumps(row, sort_keys=True) + "\n")
-    summary = _summarize(records)
-    with summary_path.open("w", encoding="utf-8") as fp:
-        fp.write(json.dumps(summary, indent=2) + "\n")
-
+    summary = _write_artifacts(records_path, summary_path, records)
     print(f"episodes_file={records_path}")
     print(f"summary_file={summary_path}")
     for arm, arm_sum in summary["arms"].items():
@@ -324,7 +467,7 @@ def main() -> int:
               f"success={arm_sum['successes']}/{arm_sum['episodes']} "
               f"rate={arm_sum['success_rate']:.3f} "
               f"categories={arm_sum['category_counts']}")
-    return 0
+    return exit_code
 
 
 if __name__ == "__main__":

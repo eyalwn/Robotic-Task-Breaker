@@ -50,6 +50,7 @@ ACTION_KEYS = ("gripper_close", "end_effector_position", "end_effector_rotation"
                "base_motion", "control_mode")
 ACTION_DIMS = (1, 3, 3, 4, 1)
 IMAGE_SIZE = 256
+_EPISODE_CHECKPOINT_VERSION = 1
 
 
 def expected_state_dim() -> int:
@@ -208,6 +209,17 @@ def _task_description_from_reset_obs(reset_obs: object) -> str:
         raise RuntimeError(
             f"RoboCasa {_TASK_DESCRIPTION_KEY!r} is blank after normalization")
     return text
+
+
+def _deepcopy_obs(obs: object) -> object:
+    """Deep-copy a RoboCasa flat observation dict for checkpoint storage."""
+    if isinstance(obs, dict):
+        return {str(k): _deepcopy_obs(v) for k, v in obs.items()}
+    if isinstance(obs, (list, tuple)):
+        return type(obs)(_deepcopy_obs(v) for v in obs)
+    if isinstance(obs, np.ndarray):
+        return np.array(obs, copy=True)
+    return obs
 
 
 class RoboCasaEnv:
@@ -389,6 +401,99 @@ class RoboCasaEnv:
     def _drawer_open_oracle(self) -> bool:
         """Sim-GT: robosuite OpenDrawer ``_check_success`` (drawer >= 95% open)."""
         return bool(self._env.unwrapped.env._check_success())
+
+    def episode_wrapper_state(self) -> dict[str, int | bool]:
+        """Return wrapper counters and latches for paired-start observability."""
+        return {"steps": self._steps,
+                "drawer_was_opened": self._drawer_was_opened}
+
+    def capture_episode_checkpoint(self) -> dict[str, object]:
+        """Capture a post-reset episode snapshot for paired arm replay."""
+        if self._steps != 0 or self._drawer_was_opened:
+            raise RuntimeError(
+                "episode checkpoint must be captured immediately after reset "
+                f"(steps={self._steps}, drawer_was_opened={self._drawer_was_opened})")
+        return {
+            "version": _EPISODE_CHECKPOINT_VERSION,
+            "task": self._task,
+            "task_description": self.task_description,
+            "steps": self._steps,
+            "drawer_was_opened": self._drawer_was_opened,
+            "last_obs": _deepcopy_obs(self._last_obs),
+            "sim_state": self._capture_sim_state(),
+        }
+
+    def restore_episode_checkpoint(self, checkpoint: dict[str, object]) -> None:
+        """Rehydrate this episode from a backend-owned checkpoint."""
+        self._validate_episode_checkpoint(checkpoint)
+        self._restore_sim_state(checkpoint["sim_state"])
+        self._last_obs = _deepcopy_obs(checkpoint["last_obs"])
+        self.task_description = str(checkpoint["task_description"])
+        self._steps = int(checkpoint["steps"])
+        self._drawer_was_opened = bool(checkpoint["drawer_was_opened"])
+        if self._writer is not None:
+            self._writer.release()
+            self._writer = None
+
+    def _validate_episode_checkpoint(self, checkpoint: dict[str, object]) -> None:
+        if not isinstance(checkpoint, dict):
+            raise RuntimeError("episode checkpoint must be a dict")
+        version = checkpoint.get("version")
+        if version != _EPISODE_CHECKPOINT_VERSION:
+            raise RuntimeError(
+                f"unsupported episode checkpoint version {version!r}")
+        if checkpoint.get("task") != self._task:
+            raise RuntimeError(
+                f"checkpoint task {checkpoint.get('task')!r} "
+                f"does not match env task {self._task!r}")
+        if int(checkpoint.get("steps", -1)) != 0:
+            raise RuntimeError("episode checkpoint must be post-reset (steps=0)")
+        if bool(checkpoint.get("drawer_was_opened")):
+            raise RuntimeError(
+                "episode checkpoint must be post-reset (drawer_was_opened=False)")
+        for key in ("task_description", "last_obs", "sim_state"):
+            if key not in checkpoint:
+                raise RuntimeError(f"episode checkpoint missing {key!r}")
+
+    def _capture_sim_state(self) -> dict[str, object]:
+        sim = self._sim_env().sim
+        get_state = getattr(sim, "get_state", None)
+        if get_state is None:
+            raise RuntimeError(
+                "episode checkpoint capture unsupported: sim.get_state missing")
+        state = get_state()
+        payload: dict[str, object] = {
+            "time": float(state.time),
+            "qpos": np.asarray(state.qpos, dtype=np.float64).copy(),
+            "qvel": np.asarray(state.qvel, dtype=np.float64).copy(),
+        }
+        act = getattr(state, "act", None)
+        if act is not None:
+            payload["act"] = np.asarray(act, dtype=np.float64).copy()
+        return payload
+
+    def _restore_sim_state(self, payload: dict[str, object]) -> None:
+        if not isinstance(payload, dict):
+            raise RuntimeError("sim_state payload must be a dict")
+        sim = self._sim_env().sim
+        set_state = getattr(sim, "set_state", None)
+        get_state = getattr(sim, "get_state", None)
+        if set_state is None or get_state is None:
+            raise RuntimeError(
+                "episode checkpoint restore unsupported: sim.set_state/get_state")
+        template = get_state()
+        fields: dict[str, object] = {}
+        for name in ("time", "qpos", "qvel", "act"):
+            if name in payload:
+                val = payload[name]
+                fields[name] = (float(val) if name == "time"
+                                else np.asarray(val, dtype=np.float64))
+            elif hasattr(template, name):
+                fields[name] = getattr(template, name)
+        if hasattr(template, "_replace"):
+            set_state(template._replace(**fields))
+            return
+        set_state(type(template)(**fields))
 
     def close(self) -> None:
         """Release the video writer and close the simulation environment."""
