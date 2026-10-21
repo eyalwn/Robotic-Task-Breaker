@@ -45,6 +45,47 @@ def test_final_longor_status_fields_keep_failure() -> None:
     assert err == "episode timed out"
 
 
+@pytest.mark.parametrize(
+    "success, plan_status, shape_ok, grounding_ok, stop_reason, error, expected",
+    [
+        (True, "done", True, True, "", "", "success"),
+        (False, "stopped", True, True, "n/a", "", "planner_plan"),
+        (False, "execution_error", False, True, StopReason.PLAN_DONE, "",
+         "planner_plan"),
+        (False, "execution_error", True, False, StopReason.PLAN_DONE, "",
+         "plan_to_skill_grounding"),
+        (False, "done", True, True, StopReason.PLAN_DONE, "",
+         "subtask_transition_oracle"),
+        (False, "execution_error", True, True, StopReason.SUBTASK_TIMEOUT, "",
+         "policy_primitive"),
+        (False, "execution_error", True, True, StopReason.EPISODE_TIMEOUT, "",
+         "policy_primitive"),
+        (False, "execution_error", True, True, StopReason.EXECUTION_ERROR,
+         "connection refused", "infrastructure"),
+        (False, "execution_error", True, True, StopReason.EXECUTION_ERROR,
+         "bad skill", "policy_primitive"),
+        (False, "plan_failed", True, True, "", "", "planner_plan"),
+        (False, "execution_error", True, True, StopReason.PLAN_DONE, "",
+         "infrastructure"),
+    ],
+)
+def test_longor_category_branches(
+    success, plan_status, shape_ok, grounding_ok, stop_reason, error, expected,
+) -> None:
+    m4 = _load_m4_module()
+    by_name = {
+        "success": m4.CATEGORY_SUCCESS,
+        "planner_plan": m4.CATEGORY_PLANNER_PLAN,
+        "plan_to_skill_grounding": m4.CATEGORY_PLAN_TO_SKILL_GROUNDING,
+        "subtask_transition_oracle": m4.CATEGORY_SUBTASK_TRANSITION_ORACLE,
+        "policy_primitive": m4.CATEGORY_POLICY_PRIMITIVE,
+        "infrastructure": m4.CATEGORY_INFRASTRUCTURE,
+    }
+    assert m4._longor_category(
+        success, plan_status, shape_ok, grounding_ok, stop_reason, error,
+    ) == by_name[expected]
+
+
 def test_longor_episode_builds_planner_before_executor(monkeypatch) -> None:
     m4 = _load_m4_module()
     order: list[str] = []
@@ -137,20 +178,56 @@ def test_arm_order_counterbalanced() -> None:
     assert m4._arm_order_for_pair(2) == (m4.ARM_BARE, m4.ARM_LONGOR)
 
 
-def test_parse_arms_requires_both() -> None:
+def test_vla_preflight_ok_when_pid_and_health_live(monkeypatch, tmp_path) -> None:
     m4 = _load_m4_module()
-    assert m4._parse_arms("bare,longor") == ["bare", "longor"]
-    with pytest.raises(RuntimeError, match="requires exactly both"):
-        m4._parse_arms("bare")
+    monkeypatch.setattr(m4, "_pid_alive", lambda _pid: True)
+    monkeypatch.setattr(m4, "_fetch_vla_health",
+                        lambda *_a, **_k: (True, '{"status":"ok"}'))
+    payload = m4.run_vla_preflight(tmp_path, adapter_pid=4242)
+    assert payload["ok"] is True
+    assert json.loads(
+        (tmp_path / "vla_preflight.json").read_text(encoding="utf-8"))["ok"]
 
 
-def test_observability_mismatch_reason() -> None:
+def test_vla_preflight_fail_closed_on_health(monkeypatch, tmp_path) -> None:
+    m4 = _load_m4_module()
+    monkeypatch.setattr(m4, "_pid_alive", lambda _pid: True)
+    monkeypatch.setattr(m4, "_fetch_vla_health",
+                        lambda *_a, **_k: (False, "connection refused"))
+    with pytest.raises(RuntimeError, match="health check failed"):
+        m4.run_vla_preflight(tmp_path, adapter_pid=4242)
+
+
+def test_vla_preflight_fail_closed_on_dead_adapter_pid(
+    monkeypatch, tmp_path) -> None:
+    m4 = _load_m4_module()
+    monkeypatch.setattr(m4, "_pid_alive", lambda _pid: False)
+    monkeypatch.setattr(m4, "_fetch_vla_health",
+                        lambda *_a, **_k: (True, '{"status":"ok"}'))
+    with pytest.raises(RuntimeError, match="not running"):
+        m4.run_vla_preflight(tmp_path, adapter_pid=4242)
+
+
+def test_vla_preflight_reads_adapter_pid_file(monkeypatch, tmp_path) -> None:
+    m4 = _load_m4_module()
+    checked: list[int] = []
+    monkeypatch.setattr(m4, "_pid_alive",
+                        lambda pid: checked.append(pid) or True)
+    monkeypatch.setattr(m4, "_fetch_vla_health",
+                        lambda *_a, **_k: (True, '{"status":"ok"}'))
+    (tmp_path / "adapter.pid").write_text("9999", encoding="utf-8")
+    payload = m4.run_vla_preflight(tmp_path)
+    assert checked == [9999]
+    assert payload["adapter_pid"] == 9999
+
+
+def test_hash_mismatch_reason() -> None:
     m4 = _load_m4_module()
     first = {"task_description": "a", "state_vector": "b"}
     second = {"task_description": "x", "state_vector": "b"}
-    reason = m4._observability_mismatch_reason(first, second)
-    assert "task_description" in reason
-    assert m4._observability_mismatch_reason(first, first) == ""
+    reason = m4._hash_mismatch_reason(first, second)
+    assert reason == "initial observability mismatch on 'task_description'"
+    assert m4._hash_mismatch_reason(first, first) == ""
 
 
 class _PairedFakeBackend:
@@ -241,11 +318,10 @@ def test_paired_pilot_disables_video_until_arm_run(
     monkeypatch.setattr(
         sys,
         "argv",
-        ["run_m4_pilot.py", "--episodes", "1",
-         "--artifact-dir", str(tmp_path), "--arms", "bare,longor"],
+        ["run_m4_pilot.py", "--episodes", "1", "--artifact-dir", str(tmp_path)],
     )
     assert m4.main() == 0
-    assert save_video_at_simenv == [False, False, False]
+    assert save_video_at_simenv == [False]
     assert save_video_at_run == [True, True]
     assert m4.config.SAVE_VIDEO is True
 
@@ -278,8 +354,7 @@ def test_paired_pilot_writes_provenance_and_exits_on_mismatch(
     monkeypatch.setattr(
         sys,
         "argv",
-        ["run_m4_pilot.py", "--episodes", "1",
-         "--artifact-dir", str(tmp_path), "--arms", "bare,longor"],
+        ["run_m4_pilot.py", "--episodes", "1", "--artifact-dir", str(tmp_path)],
     )
     assert m4.main() == 0
     rows = [json.loads(line) for line in
@@ -321,8 +396,7 @@ def test_paired_pilot_fail_closed_on_observability_mismatch(
     monkeypatch.setattr(
         sys,
         "argv",
-        ["run_m4_pilot.py", "--episodes", "1",
-         "--artifact-dir", str(tmp_path), "--arms", "bare,longor"],
+        ["run_m4_pilot.py", "--episodes", "1", "--artifact-dir", str(tmp_path)],
     )
     assert m4.main() == 1
     rows = [json.loads(line) for line in
@@ -330,3 +404,7 @@ def test_paired_pilot_fail_closed_on_observability_mismatch(
     assert len(rows) == 2
     assert all(row["pair_valid"] is False for row in rows)
     assert rows[1]["stop_reason"] == "pair_invalid"
+    summary = json.loads(
+        (tmp_path / "m4_pilot_summary.json").read_text(encoding="utf-8"))
+    assert summary["pairs_total"] == 1
+    assert summary["pairs_valid"] == 0

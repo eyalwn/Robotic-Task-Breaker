@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import logging
 import math
+import random
 import warnings
 from pathlib import Path
 
@@ -50,7 +51,7 @@ ACTION_KEYS = ("gripper_close", "end_effector_position", "end_effector_rotation"
                "base_motion", "control_mode")
 ACTION_DIMS = (1, 3, 3, 4, 1)
 IMAGE_SIZE = 256
-_EPISODE_CHECKPOINT_VERSION = 1
+_EPISODE_CHECKPOINT_VERSION = 2
 
 
 def expected_state_dim() -> int:
@@ -223,7 +224,8 @@ def _deepcopy_obs(obs: object) -> object:
 
 
 class RoboCasaEnv:
-    """One RoboCasa OpenDrawer episode (``open_drawer`` or ``open_close_drawer``)."""
+    """One RoboCasa OpenDrawer episode (``open_drawer`` or
+    ``open_close_drawer``)."""
 
     @classmethod
     def from_task(cls, task: str, task_idx: int = 0) -> "RoboCasaEnv":
@@ -412,7 +414,8 @@ class RoboCasaEnv:
         if self._steps != 0 or self._drawer_was_opened:
             raise RuntimeError(
                 "episode checkpoint must be captured immediately after reset "
-                f"(steps={self._steps}, drawer_was_opened={self._drawer_was_opened})")
+                f"(steps={self._steps}, "
+                f"drawer_was_opened={self._drawer_was_opened})")
         return {
             "version": _EPISODE_CHECKPOINT_VERSION,
             "task": self._task,
@@ -426,6 +429,7 @@ class RoboCasaEnv:
     def restore_episode_checkpoint(self, checkpoint: dict[str, object]) -> None:
         """Rehydrate this episode from a backend-owned checkpoint."""
         self._validate_episode_checkpoint(checkpoint)
+        self._reset_backend_internal_state()
         self._restore_sim_state(checkpoint["sim_state"])
         self._last_obs = _deepcopy_obs(checkpoint["last_obs"])
         self.task_description = str(checkpoint["task_description"])
@@ -434,6 +438,7 @@ class RoboCasaEnv:
         if self._writer is not None:
             self._writer.release()
             self._writer = None
+        self._sync_sim_after_restore()
 
     def _validate_episode_checkpoint(self, checkpoint: dict[str, object]) -> None:
         if not isinstance(checkpoint, dict):
@@ -455,6 +460,170 @@ class RoboCasaEnv:
             if key not in checkpoint:
                 raise RuntimeError(f"episode checkpoint missing {key!r}")
 
+    def _capture_backend_state(self) -> dict[str, object]:
+        """Capture stepping state that lives outside MuJoCo flattened state."""
+        rs_env = self._sim_env()
+        backend: dict[str, object] = {}
+        if hasattr(rs_env, "timestep"):
+            backend["robosuite_timestep"] = int(rs_env.timestep)
+        backend["python_random_state"] = random.getstate()
+        backend["numpy_random_state"] = np.random.get_state()
+        env_rng_states = self._capture_env_rng_states()
+        if env_rng_states:
+            backend["env_rng_states"] = env_rng_states
+        return backend
+
+    def _restore_backend_state(self, backend: object) -> None:
+        """Restore backend counters captured by ``_capture_backend_state``."""
+        if not isinstance(backend, dict):
+            raise RuntimeError(
+                "episode checkpoint sim_state.backend must be a dict")
+        if "python_random_state" not in backend:
+            raise RuntimeError(
+                "episode checkpoint sim_state.backend missing "
+                "'python_random_state'")
+        if "numpy_random_state" not in backend:
+            raise RuntimeError(
+                "episode checkpoint sim_state.backend missing "
+                "'numpy_random_state'")
+        rs_env = self._sim_env()
+        if "robosuite_timestep" in backend:
+            if not hasattr(rs_env, "timestep"):
+                raise RuntimeError(
+                    "episode checkpoint restore: robosuite_timestep saved but "
+                    "robosuite env has no timestep attribute")
+            rs_env.timestep = int(backend["robosuite_timestep"])
+        random.setstate(backend["python_random_state"])
+        np.random.set_state(backend["numpy_random_state"])
+        if "env_rng_states" in backend:
+            self._restore_env_rng_states(backend["env_rng_states"])
+
+    def _capture_rng_state(self, rng: object) -> dict[str, object] | None:
+        """Capture one RNG state in a restoreable form."""
+        if rng is None:
+            return None
+        bit_gen = getattr(rng, "bit_generator", None)
+        if bit_gen is not None:
+            state = getattr(bit_gen, "state", None)
+            if state is not None:
+                return {"kind": "np_generator", "state": _deepcopy_obs(state)}
+        get_state = getattr(rng, "get_state", None)
+        set_state = getattr(rng, "set_state", None)
+        if callable(get_state) and callable(set_state):
+            return {"kind": "np_random_state", "state": get_state()}
+        return None
+
+    def _restore_rng_state(self, rng: object, payload: object,
+                           label: str) -> None:
+        """Restore one RNG state captured by ``_capture_rng_state``."""
+        if not isinstance(payload, dict):
+            raise RuntimeError(
+                f"episode checkpoint rng payload for {label!r} must be a dict")
+        kind = payload.get("kind")
+        if kind == "np_generator":
+            bit_gen = getattr(rng, "bit_generator", None)
+            if bit_gen is None or not hasattr(bit_gen, "state"):
+                raise RuntimeError(
+                    f"episode checkpoint restore: rng {label!r} "
+                    "has no bit_generator.state")
+            if "state" not in payload:
+                raise RuntimeError(
+                    f"episode checkpoint rng payload for {label!r} "
+                    "missing 'state'")
+            bit_gen.state = _deepcopy_obs(payload["state"])
+            return
+        if kind == "np_random_state":
+            set_state = getattr(rng, "set_state", None)
+            if not callable(set_state):
+                raise RuntimeError(
+                    f"episode checkpoint restore: rng {label!r} "
+                    "has no set_state")
+            if "state" not in payload:
+                raise RuntimeError(
+                    f"episode checkpoint rng payload for {label!r} "
+                    "missing 'state'")
+            set_state(payload["state"])
+            return
+        raise RuntimeError(
+            f"episode checkpoint restore: unsupported rng kind {kind!r} "
+            f"for {label!r}")
+
+    def _capture_env_rng_states(self) -> dict[str, dict[str, object]]:
+        """Capture env-local RNG states that affect stepping/observations."""
+        out: dict[str, dict[str, object]] = {}
+        env_roots = {
+            "outer_env": self._env,
+            "outer_unwrapped": getattr(self._env, "unwrapped", None),
+            "sim_env": self._sim_env(),
+        }
+        for label, env_obj in env_roots.items():
+            if env_obj is None:
+                continue
+            rng_state = self._capture_rng_state(
+                getattr(env_obj, "np_random", None))
+            if rng_state is not None:
+                out[label] = rng_state
+        return out
+
+    def _restore_env_rng_states(self, payload: object) -> None:
+        """Restore env-local RNG states captured by ``_capture_env_rng_states``."""
+        if payload is None:
+            return
+        if not isinstance(payload, dict):
+            raise RuntimeError(
+                "episode checkpoint sim_state.backend.env_rng_states must be "
+                "a dict")
+        env_roots = {
+            "outer_env": self._env,
+            "outer_unwrapped": getattr(self._env, "unwrapped", None),
+            "sim_env": self._sim_env(),
+        }
+        for label, state_payload in payload.items():
+            env_obj = env_roots.get(str(label))
+            if env_obj is None:
+                raise RuntimeError(
+                    f"episode checkpoint restore: unknown env rng scope "
+                    f"{label!r}")
+            rng = getattr(env_obj, "np_random", None)
+            if rng is None:
+                raise RuntimeError(
+                    f"episode checkpoint restore: env rng scope {label!r} "
+                    "has no np_random")
+            self._restore_rng_state(rng, state_payload, str(label))
+
+    def _reset_backend_internal_state(self) -> None:
+        """Reset backend-owned non-sim buffers before sim-state rehydration."""
+        rs_env = self._sim_env()
+        outer_reset = getattr(self._env, "reset", None)
+        reset_internal = getattr(rs_env, "_reset_internal", None)
+        if not callable(outer_reset) and reset_internal is None:
+            return
+        has_flag = hasattr(rs_env, "deterministic_reset")
+        old_flag = getattr(rs_env, "deterministic_reset", None)
+        if has_flag:
+            rs_env.deterministic_reset = True
+        try:
+            if callable(outer_reset):
+                outer_reset()
+            elif reset_internal is not None:
+                reset_internal()
+        except Exception as exc:
+            raise RuntimeError(
+                "episode checkpoint restore failed during backend internal "
+                "reset") from exc
+        finally:
+            if has_flag:
+                rs_env.deterministic_reset = old_flag
+
+    def _sync_sim_after_restore(self) -> None:
+        """Run sim forward and refresh derived state after MuJoCo rehydration."""
+        sim = self._sim_env().sim
+        forward = getattr(sim, "forward", None)
+        if forward is None:
+            raise RuntimeError(
+                "episode checkpoint restore unsupported: sim.forward missing")
+        forward()
+
     def _capture_sim_state(self) -> dict[str, object]:
         sim = self._sim_env().sim
         get_state = getattr(sim, "get_state", None)
@@ -462,38 +631,46 @@ class RoboCasaEnv:
             raise RuntimeError(
                 "episode checkpoint capture unsupported: sim.get_state missing")
         state = get_state()
-        payload: dict[str, object] = {
-            "time": float(state.time),
-            "qpos": np.asarray(state.qpos, dtype=np.float64).copy(),
-            "qvel": np.asarray(state.qvel, dtype=np.float64).copy(),
+        flatten = getattr(state, "flatten", None)
+        set_flat = getattr(sim, "set_state_from_flattened", None)
+        if flatten is None or set_flat is None:
+            raise RuntimeError(
+                "episode checkpoint capture unsupported: sim state flatten API "
+                "missing (need MjSimState.flatten and "
+                "sim.set_state_from_flattened)")
+        flat = np.asarray(flatten(), dtype=np.float64).copy()
+        return {
+            "encoding": "mjsim_flat_v1",
+            "flat": flat,
+            "backend": self._capture_backend_state(),
         }
-        act = getattr(state, "act", None)
-        if act is not None:
-            payload["act"] = np.asarray(act, dtype=np.float64).copy()
-        return payload
 
     def _restore_sim_state(self, payload: dict[str, object]) -> None:
         if not isinstance(payload, dict):
             raise RuntimeError("sim_state payload must be a dict")
-        sim = self._sim_env().sim
-        set_state = getattr(sim, "set_state", None)
-        get_state = getattr(sim, "get_state", None)
-        if set_state is None or get_state is None:
+        encoding = payload.get("encoding")
+        if encoding != "mjsim_flat_v1":
             raise RuntimeError(
-                "episode checkpoint restore unsupported: sim.set_state/get_state")
-        template = get_state()
-        fields: dict[str, object] = {}
-        for name in ("time", "qpos", "qvel", "act"):
-            if name in payload:
-                val = payload[name]
-                fields[name] = (float(val) if name == "time"
-                                else np.asarray(val, dtype=np.float64))
-            elif hasattr(template, name):
-                fields[name] = getattr(template, name)
-        if hasattr(template, "_replace"):
-            set_state(template._replace(**fields))
-            return
-        set_state(type(template)(**fields))
+                f"unsupported sim_state encoding {encoding!r}; "
+                f"expected 'mjsim_flat_v1'")
+        flat_raw = payload.get("flat")
+        if flat_raw is None:
+            raise RuntimeError("sim_state payload missing 'flat'")
+        saved = np.asarray(flat_raw, dtype=np.float64)
+        sim = self._sim_env().sim
+        get_state = getattr(sim, "get_state", None)
+        set_flat = getattr(sim, "set_state_from_flattened", None)
+        if get_state is None or set_flat is None:
+            raise RuntimeError(
+                "episode checkpoint restore unsupported: sim flatten API missing")
+        live_flat = np.asarray(get_state().flatten(), dtype=np.float64)
+        if live_flat.shape != saved.shape:
+            raise RuntimeError(
+                f"episode checkpoint restore: flat state shape {saved.shape} "
+                f"does not match live sim {live_flat.shape}; restore on the "
+                "same backend instance that captured the checkpoint")
+        set_flat(saved)
+        self._restore_backend_state(payload.get("backend", {}))
 
     def close(self) -> None:
         """Release the video writer and close the simulation environment."""

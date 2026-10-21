@@ -27,9 +27,14 @@ Simulation runs on Colab (L4 verified).
   `open_ok`/`close_ok`/`success` lines and a final summary to
   `drawer_chain_gate.log`; with `SAVE_VIDEO=1`, it writes per-episode videos as
   `run_epNNN.mp4` under `VIDEO_PATH`'s parent directory.
-- `validation/run_m4_pilot.py` — M4 pilot orchestration (`bare` and `longor`
-  arms on `open_close_drawer`, horizon-only Longor cap, plan-once). Same
-  artifact layout as the M4 Colab notebook.
+- `validation/run_m4_pilot.py` — M4 pilot orchestration (paired `bare` and
+  `longor` arms on `open_close_drawer`, one env per pair restored from a
+  post-reset checkpoint, horizon-only Longor cap, plan-once). Same artifact
+  layout as the M4 Colab notebook.
+- `validation/probe_pair_restore.py` — restore-fidelity probe (no VLA/LLM):
+  replays one scripted action sequence pristine, after a clean restore, and
+  after a dirty restore, then writes `pair_restore_probe.json` with verdict
+  `EXACT`, `CLEAN_ONLY`, or `INEXACT`. Optional cell in the M4 notebook.
 
 M4/M5 Longor runtime uses backend `env.horizon` as the only hard step cap;
 `MAX_SKILL_STEPS` (720/400) is observational telemetry only. M3 gate scripts

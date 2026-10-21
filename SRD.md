@@ -70,13 +70,24 @@ simulator/checkpoint pair only to test that claim.
   policy/primitive, planner plan, plan-to-skill grounding,
   subtask transition/oracle, or infrastructure.
   **Frozen paired-evaluation contract for M4/M5:**
-  (1) for each pair, create one scene, capture a backend-owned post-reset
-  checkpoint, and restore that same checkpoint before each arm;
+  (1) for each pair, create one backend episode, capture a post-reset
+  checkpoint on that instance, and restore it before each arm on the same
+  instance (MuJoCo state is not portable across separate ``gym.make`` resets);
   (2) counterbalance arm order by pair index;
   (3) fail closed: a pair is valid only when both arms start from identical
   observables (task language, target object parse, policy PNG bytes, flattened
   state vector, oracle state, and wrapper counters/latches); any mismatch aborts
   scoring for that batch with an explicit invalid-pair record.
+  First paired artifact `G:\My Drive\Colab\longor_m4_pilot\20261020T203448Z`
+  (commit `cbd043a`): 10/10 valid pairs, bare `3/10`, Longor `6/10`; Longor-only
+  4, bare-only 1, both 2, neither 3 (exact McNemar p=0.375), so still
+  diagnostic. Independent pairing evidence: frame-0 pixel difference between
+  same-pair videos is 1-3 (0-255 MAE) vs 38-113 across pairs. Known limits:
+  restore sets MuJoCo time/qpos/qvel/act only (no forward pass, no controller
+  or robosuite timestep reset) and arm 2 runs in the env that already ran
+  arm 1; the in-run PNG/state/language hashes are copied from the checkpoint,
+  so only the drawer-joint oracle hash is read live. Restore fidelity must be
+  probed before M5 freezes.
   Batch launcher: `validation/run_m4_pilot.py` (artifact outputs:
   `m4_pilot_episodes.jsonl`, `m4_pilot_summary.json`, per-attempt Longor
   records, and optional videos).

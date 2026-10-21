@@ -70,7 +70,8 @@ def test_task_description_from_reset_obs_reads_one_element_sequence() -> None:
 
 def test_task_description_from_reset_obs_reads_one_element_ndarray() -> None:
     obs = {
-        "annotation.human.action.task_description": np.array(["Open the top drawer"])
+        "annotation.human.action.task_description": np.array(
+            ["Open the top drawer"])
     }
     assert _task_description_from_reset_obs(obs) == "Open the top drawer"
 
@@ -298,7 +299,8 @@ def test_record_uses_policy_camera_frame_and_cv2_writer(
     )
     monkeypatch.setitem(sys.modules, "cv2", cv2)
     monkeypatch.setattr(robocasa_env.config, "SAVE_VIDEO", True)
-    monkeypatch.setattr(robocasa_env.config, "VIDEO_PATH", str(tmp_path / "run.mp4"))
+    monkeypatch.setattr(
+        robocasa_env.config, "VIDEO_PATH", str(tmp_path / "run.mp4"))
 
     robocasa = RoboCasaEnv.__new__(RoboCasaEnv)
     robocasa._last_obs = {"video.res256_image_side_0": raw_frame}
@@ -331,7 +333,8 @@ def test_init_env_gym_make_uses_enable_render() -> None:
             with patch.object(RoboCasaEnv, "_record"):
                 env = RoboCasaEnv.__new__(RoboCasaEnv)
                 env._init_env("open_drawer")
-    mock_gym.make.assert_called_once_with(OPEN_DRAWER_GYM_ENV_ID, enable_render=True)
+    mock_gym.make.assert_called_once_with(
+        OPEN_DRAWER_GYM_ENV_ID, enable_render=True)
 
 
 def test_observe_returns_png_bytes() -> None:
@@ -363,11 +366,20 @@ class _FakeMjSimState:
         self.qvel = qvel
         self.act = act
 
-    def _replace(self, **kwargs):
-        data = {"time": self.time, "qpos": self.qpos, "qvel": self.qvel,
-                "act": self.act}
-        data.update(kwargs)
-        return _FakeMjSimState(**data)
+    def flatten(self):
+        parts = [np.array([self.time], dtype=np.float64),
+                 np.asarray(self.qpos, dtype=np.float64).reshape(-1),
+                 np.asarray(self.qvel, dtype=np.float64).reshape(-1)]
+        if self.act is not None:
+            parts.append(np.asarray(self.act, dtype=np.float64).reshape(-1))
+        return np.concatenate(parts)
+
+    @classmethod
+    def from_flat(cls, flat: np.ndarray):
+        time = float(flat[0])
+        qpos = np.array([1.0, 2.0], dtype=np.float64)
+        qvel = np.array([0.1, 0.2], dtype=np.float64)
+        return cls(time, qpos, qvel)
 
 
 class _FakeSim:
@@ -375,13 +387,20 @@ class _FakeSim:
         self._state = _FakeMjSimState(
             0.0, np.array([1.0, 2.0]), np.array([0.1, 0.2]))
         self.set_calls = 0
+        self.forward_calls = 0
 
     def get_state(self):
         return self._state
 
-    def set_state(self, state) -> None:
+    def set_state_from_flattened(self, flat) -> None:
         self.set_calls += 1
-        self._state = state
+        arr = np.asarray(flat, dtype=np.float64)
+        if arr.shape != self._state.flatten().shape:
+            raise RuntimeError("flat shape mismatch")
+        self._state = _FakeMjSimState.from_flat(arr)
+
+    def forward(self) -> None:
+        self.forward_calls += 1
 
 
 def _robocasa_post_reset(task: str = OPEN_CLOSE_DRAWER_TASK) -> RoboCasaEnv:
@@ -393,7 +412,7 @@ def _robocasa_post_reset(task: str = OPEN_CLOSE_DRAWER_TASK) -> RoboCasaEnv:
     robocasa.task_description = f"open the left drawer{_OPEN_CLOSE_SUFFIX}"
     robocasa._last_obs = {"marker": np.array([1.0, 2.0])}
     fake_sim = _FakeSim()
-    kitchen = SimpleNamespace(sim=fake_sim)
+    kitchen = SimpleNamespace(sim=fake_sim, timestep=0)
     robocasa._env = SimpleNamespace(
         unwrapped=_GrootUnwrapped(kitchen), close=lambda: None)
     return robocasa
@@ -402,12 +421,24 @@ def _robocasa_post_reset(task: str = OPEN_CLOSE_DRAWER_TASK) -> RoboCasaEnv:
 def test_capture_episode_checkpoint_post_reset_only() -> None:
     env = _robocasa_post_reset()
     ckpt = env.capture_episode_checkpoint()
-    assert ckpt["version"] == 1
+    assert ckpt["version"] == 2
     assert ckpt["steps"] == 0
     assert ckpt["drawer_was_opened"] is False
     env._steps = 1
     with pytest.raises(RuntimeError, match="immediately after reset"):
         env.capture_episode_checkpoint()
+
+
+def test_checkpoint_roundtrips_robosuite_timestep() -> None:
+    env = _robocasa_post_reset()
+    rs_env = env._sim_env()
+    rs_env.timestep = 42
+    ckpt = env.capture_episode_checkpoint()
+    backend = ckpt["sim_state"]["backend"]
+    assert backend["robosuite_timestep"] == 42
+    rs_env.timestep = 999
+    env.restore_episode_checkpoint(ckpt)
+    assert rs_env.timestep == 42
 
 
 def test_restore_episode_checkpoint_rehydrates_wrapper_and_sim() -> None:
@@ -423,6 +454,7 @@ def test_restore_episode_checkpoint_rehydrates_wrapper_and_sim() -> None:
     assert env._drawer_was_opened is False
     assert np.array_equal(env._last_obs["marker"], np.array([1.0, 2.0]))
     assert sim.set_calls == 1
+    assert sim.forward_calls == 1
 
 
 def test_restore_episode_checkpoint_rejects_version_mismatch() -> None:
@@ -431,6 +463,29 @@ def test_restore_episode_checkpoint_rejects_version_mismatch() -> None:
     ckpt["version"] = 99
     with pytest.raises(RuntimeError, match="unsupported episode checkpoint"):
         env.restore_episode_checkpoint(ckpt)
+
+
+def test_restore_sim_state_rejects_flat_shape_mismatch() -> None:
+    env = _robocasa_post_reset()
+    ckpt = env.capture_episode_checkpoint()
+    sim_state = dict(ckpt["sim_state"])
+    sim_state["flat"] = np.array([1.0, 2.0])
+    with pytest.raises(RuntimeError, match="same backend instance"):
+        env._restore_sim_state(sim_state)
+
+
+def test_capture_sim_state_requires_flatten_api() -> None:
+    env = _robocasa_post_reset()
+    sim = env._sim_env().sim
+
+    class _NoFlattenState:
+        time = 0.0
+        qpos = np.array([1.0])
+        qvel = np.array([0.0])
+
+    sim.get_state = lambda: _NoFlattenState()
+    with pytest.raises(RuntimeError, match="flatten API"):
+        env._capture_sim_state()
 
 
 def test_episode_wrapper_state_exposes_latches() -> None:
