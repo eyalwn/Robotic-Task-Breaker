@@ -30,7 +30,6 @@ def test_sim_env_forwards_public_api(monkeypatch: pytest.MonkeyPatch) -> None:
     backend.step.return_value = False
     backend.success.return_value = True
     backend.check_subtask.return_value = True
-    backend.drawer_joint_state.return_value = {"door": 0.02}
     mock_robocasa = MagicMock()
     mock_robocasa.from_task.return_value = backend
     step = {"skill": "open", "object_name": "drawer"}
@@ -43,13 +42,11 @@ def test_sim_env_forwards_public_api(monkeypatch: pytest.MonkeyPatch) -> None:
     assert env.step([0.0]) is False
     assert env.success() is True
     assert env.check_subtask(step) is True
-    assert env.drawer_joint_state() == {"door": 0.02}
     env.close()
     backend.observe.assert_called_once_with()
     backend.step.assert_called_once_with([0.0])
     backend.check_subtask.assert_called_once_with(step)
     backend.success.assert_called_once_with()
-    backend.drawer_joint_state.assert_called_once_with()
     backend.close.assert_called_once_with()
 
 
@@ -78,15 +75,3 @@ def test_sim_env_unknown_sim_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(config, "SIM_ENV", "isaac")
     with pytest.raises(AssertionError, match="not supported for this env"):
         SimEnv("some_task", 0)
-
-
-def test_sim_env_drawer_joint_state_unsupported_raises(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(config, "SIM_ENV", "robocasa")
-    mock_robocasa = MagicMock()
-    mock_robocasa.from_task.return_value = object()
-    with patch("envs.robocasa_env.RoboCasaEnv", mock_robocasa):
-        env = SimEnv("open_drawer", 0)
-    with pytest.raises(RuntimeError, match="not supported for this env"):
-        env.drawer_joint_state()

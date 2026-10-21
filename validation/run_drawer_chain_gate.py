@@ -69,6 +69,15 @@ def _object_name_from_task_description(task_desc: str) -> str:
     return name
 
 
+def _drawer_joints(env: SimEnv) -> dict[str, float]:
+    """Return drawer joint map when the backend exposes it."""
+    backend = getattr(env, "_env", env)
+    getter = getattr(backend, "drawer_joint_state", None)
+    if getter is None:
+        return {}
+    return getter()
+
+
 def _close_budget_for_episode(env: SimEnv, close_to_horizon: bool) -> int:
     """Return the close-step budget for this episode."""
     if not close_to_horizon:
@@ -105,9 +114,9 @@ def _run_episode(close_to_horizon: bool = False) -> dict[str, object]:
             close_stop_reason = close_res.reason
             close_error = close_res.error
             close_oracle = env.check_subtask(close_step)
-            close_joints = env.drawer_joint_state()
+            close_joints = _drawer_joints(env)
         final_close_oracle = env.check_subtask(close_step)
-        final_joints = env.drawer_joint_state()
+        final_joints = _drawer_joints(env)
         success = env.success()
         return {
             "task_description": task_desc,
