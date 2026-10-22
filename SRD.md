@@ -21,29 +21,9 @@ Longor beats a bare VLA on long-horizon tasks.
   `Runner` episode ("given a subtask-completion oracle").
 - **M3 - DONE.** Drawer open->close chain on `open_close_drawer` reached
   `success=7/10` in the in-scene gate (`validation/run_drawer_chain_gate.py`).
-- **M4 - ACTIVE.** Unpaired Longor-vs-bare comparison on `open_close_drawer`.
-
-### M4 Contract (Unpaired Comparison)
-
-1. Compare two arms:
-   - **Longor arm:** `Runner` path (observe -> plan once -> execute once).
-   - **Bare arm:** direct policy prompting with raw task language.
-2. Run independent episodes per arm under the same frozen stack; no scene
-   pairing and no checkpoint-restore pairing logic.
-3. Episode budget:
-   - Interim look after `20` episodes per arm.
-   - Final look at `50` episodes per arm if interim is not decisive.
-4. Predeclared decision rule (one-sided Fisher exact, `Longor > bare`):
-   - **Early stop claim at 20/arm:** `p <= 0.01` and
-     `success_rate_longor > success_rate_bare`.
-   - **Final claim at 50/arm:** `p <= 0.04` and
-     `success_rate_longor > success_rate_bare`.
-5. Freeze before runs: code revision, GR00T checkpoint, LLM model,
-   actions-per-chunk, horizon/stop policy, and environment configuration.
-6. Report per arm: successes, total episodes, success rate, p-value, and
-   per-episode records.
-
-If the decision rule is not met, the result is "no claim."
+- **M4 - DONE.** Unpaired RoboCasa `open_close_drawer` comparison: Longor
+  `16/20` (80%) vs bare VLA `2/20` (10%), one-sided Fisher exact
+  `p=8.32e-6`. This supports the claim only for the evaluated task distribution.
 
 ## Runtime Architecture Contract
 
