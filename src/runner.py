@@ -22,8 +22,7 @@ class Runner:
         env = None
         try:
             self._planner = LLMPlanner(skill_catalog())
-            env = SimEnv(task, task_idx)
-            self._env = env
+            self._env = SimEnv(task, task_idx)
             self._goal = self._env.task_description
             self._executor = Executor(env=self._env)
         except Exception:

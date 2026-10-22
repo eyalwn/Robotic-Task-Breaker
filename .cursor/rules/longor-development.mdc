@@ -15,7 +15,7 @@ alwaysApply: true
 
 ## Formatting (strict, every edited file)
 
-- PEP 8, except max line length is **85**.
+- PEP 8, except max line length is **85** for code. Do not enforce that limit on `.md` or `.mdc` files, and do not reflow them to satisfy it.
 - A statement that fits in 85 columns MUST be one line.
 - Otherwise use the **fewest lines** PEP 8 allows (visual or hanging indent, whichever is shorter) and keep the closing `)`, `]`, or `}` on the last content line. NEVER use Black/ruff-format "exploded" style. Trailing commas are fine.
 - **Fix-on-touch:** when you edit a file, fix every violation of this section in the whole file, not just the lines you changed. Formatting-only fixes do not count toward the debug budget below.

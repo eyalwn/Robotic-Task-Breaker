@@ -20,7 +20,7 @@ Longor beats a bare VLA on long-horizon tasks.
 - **M2 - DONE.** Historical single Longor OpenDrawer run succeeded in one
   `Runner` episode ("given a subtask-completion oracle").
 - **M3 - DONE.** Drawer open->close chain on `open_close_drawer` reached
-  `success=7/10` in the in-scene gate (`validation/run_drawer_chain_gate.py`).
+  `success=7/10` in the in-scene gate.
 - **M4 - DONE.** Unpaired RoboCasa `open_close_drawer` comparison: Longor
   `16/20` (80%) vs bare VLA `2/20` (10%), one-sided Fisher exact
   `p=8.32e-6`. This supports the claim only for the evaluated task distribution.
