@@ -72,10 +72,6 @@ class LLMPlanner:
         """Bind the skill catalog and planning model."""
         self._catalog = catalog
         self._model_name = config.LLM_MODEL
-        self._max_plan_retries = config.MAX_PLAN_RETRIES
-        if self._max_plan_retries < 1:
-            raise ValueError(
-                f"MAX_PLAN_RETRIES must be >= 1, got {self._max_plan_retries}")
         self._llm = _init_planning_llm(self._model_name)
 
     def plan(self, goal: str, snapshot: bytes) -> object:
@@ -91,42 +87,19 @@ class LLMPlanner:
              "image_url": {"url": f"data:image/png;base64,{image_b64}"}}]
         messages: list[Any] = [SystemMessage(content=system_prompt),
                                HumanMessage(content=task_prompt)]
+        response = self._llm.invoke(messages)
+        usage_summary = _usage_token_summary(response.usage_metadata)
+        if usage_summary:
+            logger.debug("LLMPlanner usage: %s", usage_summary)
 
-        for attempt in range(self._max_plan_retries):
-            logger.info("planning attempt: %d/%d", attempt + 1,
-                        self._max_plan_retries)
-            response = self._llm.invoke(messages)
-            usage_summary = _usage_token_summary(response.usage_metadata)
-            if usage_summary:
-                logger.debug("LLMPlanner usage: %s", usage_summary)
-
-            raw = response.content.strip()
-            raw = _extract_json(raw)
-            logger.info("raw plan_json from LLM: %s", raw)
-
-            try:
-                data = json.loads(raw)
-                validated_plan = parse_planner_payload(data)
-                logger.info("LLMPlanner: valid plan on attempt %d", attempt + 1)
-                return validated_plan
-            except (json.JSONDecodeError, ValueError) as exc:
-                error_msg = str(exc)
-                logger.warning("LLMPlanner: plan invalid on attempt %d: %s",
-                               attempt + 1, error_msg[:200])
-                if attempt >= self._max_plan_retries - 1:
-                    raise RuntimeError(f"LLMPlanner: plan validation failed after "
-                                       f"{self._max_plan_retries} attempts. "
-                                       f"Last error: {error_msg}") from exc
-
-                messages.append(HumanMessage(content=_retry_prompt(
-                    raw=raw, error_msg=error_msg)))
-
-
-def _retry_prompt(raw: str, error_msg: str) -> str:
-    """Build a repair prompt after JSON or schema validation failure."""
-    return ("The plan you emitted is invalid.\n" f"Invalid plan JSON:\n{raw}\n\n"
-            f"Validation error:\n{error_msg}\n\n"
-            "Fix the JSON and respond with ONLY the corrected plan JSON.")
+        raw = _extract_json(response.content.strip())
+        logger.info("raw plan_json from LLM: %s", raw)
+        try:
+            validated_plan = parse_planner_payload(json.loads(raw))
+        except (json.JSONDecodeError, ValueError) as exc:
+            raise RuntimeError(f"LLMPlanner: plan validation failed: {exc}") from exc
+        logger.info("LLMPlanner: valid plan")
+        return validated_plan
 
 
 def _usage_token_summary(usage_metadata: object) -> dict[str, int]:

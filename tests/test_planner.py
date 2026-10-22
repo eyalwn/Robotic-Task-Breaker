@@ -84,33 +84,9 @@ def test_planner_success(monkeypatch: pytest.MonkeyPatch) -> None:
     assert result == parse_planner_payload(VALID_PLAN)
 
 
-def test_planner_retry_on_invalid(monkeypatch: pytest.MonkeyPatch) -> None:
-    responses = [_Response("{bad json"), _Response(json.dumps(VALID_PLAN))]
-    monkeypatch.setattr("planner.init_chat_model", lambda _model: _LLM(responses))
-    monkeypatch.setattr("planner.config.MAX_PLAN_RETRIES", 2)
-    planner = LLMPlanner("catalog")
-    result = planner.plan("pick cube", SNAPSHOT)
-    assert result == parse_planner_payload(VALID_PLAN)
-
-
-def test_planner_retry_prompt_content(monkeypatch: pytest.MonkeyPatch) -> None:
-    invalid = [{"object_name": "cube"}]
-    spy = _SpyLLM([_Response(json.dumps(invalid)),
-                   _Response(json.dumps(VALID_PLAN))])
-    monkeypatch.setattr("planner.init_chat_model", lambda _model: spy)
-    monkeypatch.setattr("planner.config.MAX_PLAN_RETRIES", 2)
-    planner = LLMPlanner("catalog")
-    result = planner.plan("pick cube", SNAPSHOT)
-    assert result == parse_planner_payload(VALID_PLAN)
-    assert len(spy.calls) == 2
-    retry_msg = spy.calls[1][-1].content
-    assert "Fix the JSON" in retry_msg
-
-
-def test_planner_exhausts_retries(monkeypatch: pytest.MonkeyPatch) -> None:
-    responses = [_Response("{bad"), _Response("{bad")]
-    monkeypatch.setattr("planner.init_chat_model", lambda _model: _LLM(responses))
-    monkeypatch.setattr("planner.config.MAX_PLAN_RETRIES", 1)
+def test_planner_invalid_plan_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("planner.init_chat_model",
+                        lambda _model: _LLM([_Response("{bad")]))
     planner = LLMPlanner("catalog")
     with pytest.raises(RuntimeError, match="plan validation failed"):
         planner.plan("pick cube", SNAPSHOT)

@@ -28,7 +28,6 @@ SIM_ENV = "robocasa"  # "robocasa"
 
 # --- Planner ---------------------------------------------------------------
 LLM_MODEL = os.environ.get("LLM_MODEL", "gpt-4.1-mini").strip()
-MAX_PLAN_RETRIES = int(os.environ.get("MAX_PLAN_RETRIES", "3"))
 
 # --- Executor --------------------------------------------------------------
 # Per-skill telemetry thresholds (M4/M5 observational; not default hard stops).
