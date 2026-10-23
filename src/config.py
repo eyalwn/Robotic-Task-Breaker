@@ -28,9 +28,11 @@ SIM_ENV = "robocasa"  # "robocasa"
 
 # --- Planner ---------------------------------------------------------------
 LLM_MODEL = os.environ.get("LLM_MODEL", "gpt-4.1-mini").strip()
+# Extra observe→plan→execute cycles after a subtask timeout.
+MAX_REPLANS = 2
 
 # --- Executor --------------------------------------------------------------
-# Per-skill telemetry thresholds (M4/M5 observational; not default hard stops).
+# Per-skill hard cap. Executor stops the skill when this is reached.
 MAX_SKILL_STEPS = {"open": 720, "close": 400}
 
 # --- VLA server ------------------------------------------------------------

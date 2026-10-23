@@ -24,6 +24,9 @@ Longor beats a bare VLA on long-horizon tasks.
 - **M4 - DONE.** Unpaired RoboCasa `open_close_drawer` comparison: Longor
   `16/20` (80%) vs bare VLA `2/20` (10%), one-sided Fisher exact
   `p=8.32e-6`. This supports the claim only for the evaluated task distribution.
+  Recorded at `826b8e5`. Since then the planner's JSON-repair retries were
+  removed (`003ccca`) and the re-plan loop was restored (`786f8c5`); the loop
+  does not trigger in the default runtime (see Runtime Architecture Contract).
 
 ## Runtime Architecture Contract
 
@@ -52,8 +55,12 @@ Longor beats a bare VLA on long-horizon tasks.
   default runtime; it does not stop execution by itself.
 - Optional hard per-skill caps are passed explicitly via
   `Executor.run(..., skill_step_limits=...)`.
-- Plan-once semantics: one planner call from the initial snapshot, then one
-  execution pass; no suffix retry/replan in runtime.
+- Re-plan loop: `Runner` observes, plans, and executes. After a
+  `subtask_timeout` it observes and plans again, up to `config.MAX_REPLANS`
+  extra cycles. `episode_timeout` and `execution_error` end the run without
+  re-planning. A subtask timeout occurs only when explicit per-skill caps are
+  passed to `Executor.run`; `Runner` passes none, so in the default runtime the
+  loop never re-plans and behavior is plan-once.
 - Subtask oracles are sim-ground-truth checks:
   - `open`: RoboCasa OpenDrawer `_check_success` (drawer >= 95% open)
   - `close`: every normalized drawer-door joint `<= 0.05`

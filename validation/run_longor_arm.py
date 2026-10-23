@@ -1,7 +1,8 @@
 """Run Longor ``Runner`` episodes on ``open_close_drawer`` (M4 Longor arm).
 
 Writes JSONL episode records and a compact summary JSON under one artifact dir.
-Each episode uses ``Runner.run()`` (observe -> plan once -> execute once).
+Each episode uses ``Runner.run()`` (observe, plan, execute, and replan
+after a subtask timeout).
 
 ``Runner`` returns only the final success verdict; episode records use
 ``steps=0`` and ``stop_reason='not_reported_by_runner'`` as explicit

@@ -7,7 +7,8 @@ import pytest
 
 import config
 from conftest import FakeEnv, FakeVLA, build_executor, make_plan, run_plan
-from executor import EpisodeTimeout, SkillTimeout, StopReason, _validate_skill_step_limits
+from executor import (EpisodeTimeout, SkillTimeout, StopReason,
+                      _validate_skill_step_limits)
 
 
 class FakeEnvStepDone(FakeEnv):
@@ -190,8 +191,7 @@ def test_telemetry_threshold_without_hard_stop() -> None:
     with patch("config.MAX_SKILL_STEPS", {"open": 2, "close": 400}):
         result = run_plan(
             executor,
-            make_plan([{"skill": "open", "object_name": "drawer"}]),
-        )
+            make_plan([{"skill": "open", "object_name": "drawer"}]))
     assert result.reason == StopReason.EPISODE_TIMEOUT
     assert result.skill_telemetry[0]["threshold_crossed"] is True
     assert result.skill_telemetry[0]["steps"] == 10

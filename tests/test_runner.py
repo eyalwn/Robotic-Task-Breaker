@@ -6,6 +6,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+import config
 from executor import ExecutionSum, Executor, StopReason
 from plan import Plan
 from runner import Runner
@@ -188,14 +189,27 @@ def test_runner_planner_stop(monkeypatch: pytest.MonkeyPatch) -> None:
     assert executor.run.call_count == 0
 
 
-def test_runner_subtask_timeout_single_execution(
+def test_runner_subtask_timeout_exhausts_replans(
         monkeypatch: pytest.MonkeyPatch) -> None:
+    n = config.MAX_REPLANS + 1
     runner, planner, executor = _runner_with_stub_executor(
-        [ExecutionSum(reason=StopReason.SUBTASK_TIMEOUT)], monkeypatch,
+        [ExecutionSum(reason=StopReason.SUBTASK_TIMEOUT)] * n, monkeypatch,
         env_success=False)
     assert runner.run() is False
-    assert planner.plan_calls == 1
-    assert executor.run.call_count == 1
+    assert planner.plan_calls == n
+    assert executor.run.call_count == n
+
+
+def test_runner_replans_after_subtask_timeout(
+        monkeypatch: pytest.MonkeyPatch) -> None:
+    runner, planner, executor = _runner_with_stub_executor(
+        [ExecutionSum(reason=StopReason.SUBTASK_TIMEOUT,
+                      error="open exceeded 2 steps"),
+         ExecutionSum(reason=StopReason.PLAN_DONE)], monkeypatch)
+    assert runner.run() is True
+    assert planner.plan_calls == 2
+    assert executor.run.call_count == 2
+    assert executor.run.call_args.kwargs == {}
 
 
 def test_runner_episode_timeout_does_not_replan(
