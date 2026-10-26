@@ -1,4 +1,4 @@
-"""Thin facade over the RoboCasa sim backend."""
+"""Thin facade over the sim backend selected by ``config.SIM_ENV``."""
 from __future__ import annotations
 
 import config

@@ -1,4 +1,4 @@
-"""Shared helpers used across robot modules and process entrypoints."""
+"""Logging setup for process entrypoints."""
 from __future__ import annotations
 
 import logging

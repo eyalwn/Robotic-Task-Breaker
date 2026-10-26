@@ -1,4 +1,7 @@
-"""Wire and run planner-executor for one task."""
+"""Wire and run one task: observe -> plan -> execute, re-planning on timeout.
+
+The final verdict is always the sim's ``env.success()`` at the terminal state.
+"""
 
 import logging
 from typing import Literal

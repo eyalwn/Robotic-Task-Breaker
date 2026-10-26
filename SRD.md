@@ -26,7 +26,8 @@ Longor beats a bare VLA on long-horizon tasks.
   `p=8.32e-6`. This supports the claim only for the evaluated task distribution.
   Recorded at `826b8e5`. Since then the planner's JSON-repair retries were
   removed (`003ccca`) and the re-plan loop was restored (`786f8c5`); the loop
-  does not trigger in the default runtime (see Runtime Architecture Contract).
+  does not trigger in the default runtime (`Runner` passes no per-skill step
+  caps to `Executor.run`, so no subtask timeout can occur).
 
 ## Runtime Architecture Contract
 
@@ -34,39 +35,24 @@ Longor beats a bare VLA on long-horizon tasks.
   `src/envs/`.
 - Dependency direction is strict:
   `config -> vla_client/envs.sim_env -> plan -> skills -> executor -> planner -> runner`.
-- `src/config.py` is the only runtime reader of `os.environ`.
-- `SimEnv(task, task_idx=0)` owns backend instantiation and forwards
-  `observe`, `step`, `success`, `check_subtask`, `close`, `steps`,
-  `horizon`, `task_description`.
-- `observe()` returns `(images, state)` where `images` is 3 lossless PNG frames
-  and `state` is a flattened float list.
-- VLA integration lives in `src/executor.py`; actions from `src/vla_client.py`
-  are passed to `env.step(action)` unchanged aside from shape/finiteness
-  validation.
-- Planner output is either:
-  - step array: `[{"skill":"open","object_name":"..."}, ...]`, or
-  - STOP sentinel: `{"stop":"<reason>"}`.
-- Runtime skill prompts stay exact:
-  - `open(object_name)` -> `open the <object_name>`
-  - `close(object_name)` -> `close the <object_name>`
-- Episode horizons are backend-owned: `open_drawer=720`,
-  `open_close_drawer=1000`.
-- `config.MAX_SKILL_STEPS` (`open=720`, `close=400`) is telemetry-only in the
-  default runtime; it does not stop execution by itself.
-- Optional hard per-skill caps are passed explicitly via
-  `Executor.run(..., skill_step_limits=...)`.
-- Re-plan loop: `Runner` observes, plans, and executes. After a
-  `subtask_timeout` it observes and plans again, up to `config.MAX_REPLANS`
-  extra cycles. `episode_timeout` and `execution_error` end the run without
-  re-planning. A subtask timeout occurs only when explicit per-skill caps are
-  passed to `Executor.run`; `Runner` passes none, so in the default runtime the
-  loop never re-plans and behavior is plan-once.
-- Subtask oracles are sim-ground-truth checks:
-  - `open`: RoboCasa OpenDrawer `_check_success` (drawer >= 95% open)
-  - `close`: every normalized drawer-door joint `<= 0.05`
-- RoboCasa rendering contract: render contexts are finalized in their owning
-  EGL context to avoid post-GC frame corruption.
-- Terminal verdict is always `env.success()` at the final state.
+- Module responsibilities (rough; each module's docstring is the detailed
+  description and must agree with this list):
+  - `config`: single source of truth for configuration and the only runtime
+    reader of `os.environ`.
+  - `vla_client`: HTTP client for the VLA policy service.
+  - `envs.sim_env`: thin facade; builds and forwards to the sim backend
+    selected by `config.SIM_ENV`.
+  - `envs.robocasa_env`: the RoboCasa backend (observations, actions, and
+    sim-ground-truth subtask/goal checks).
+  - `plan`: plan types, validation, and the STOP sentinel.
+  - `skills`: skill catalog shown to the planner.
+  - `executor`: runs a plan's steps, turning each skill into a VLA prompt and
+    stepping the env with the VLA's actions until the subtask check passes.
+  - `planner`: LLM planner; goal plus scene snapshot in, plan out.
+  - `runner`: wires the above for one task and runs observe -> plan ->
+    execute (re-plan after a subtask timeout); the final verdict is always
+    `env.success()`.
+  - `utils`: logging setup for process entrypoints.
 
 ## VLA Service Contract
 
@@ -87,10 +73,22 @@ HTTP `:8765` to upstream GR00T ZMQ `:5555`).
   remapping, rescaling, or sign changes.
 - Backend-specific camera/state mismatches must fail as HTTP 400.
 
-## Historical Findings (legacy stacks, concise)
+## Historical Findings (concise)
 
-Legacy LIBERO/VLABench stacks were removed from the current runtime. Findings
-remain as milestone context only.
+Legacy LIBERO/VLABench stacks and rejected RoboCasa tasks were removed from the
+current runtime. Findings remain as milestone context only.
+
+- **RoboCasa subtask-selection rule (`9a711b7` SRD):** a subtask is admissible
+  only if its exact prompt wording is in the checkpoint's training set.
+  `nvidia/GR00T-N1.6-3B` was trained on 24 atomic RoboCasa tasks, including
+  `open|close the left|right drawer`; composite tasks and unseen wording are
+  expected to fail. The M4 composite prompt (`<open phrase>, then close it`)
+  is not a training prompt.
+- **RoboCasa rejected tasks (`637a88f`, `4921d1d`, `9a711b7`):** `KettleBoiling`
+  bare VLA 0/10 and in-scene place gate 0/5 (burner wording triggered
+  `TurnOnStove` behavior); `SnackSorting` in-scene `put_in` gate 0/10
+  (`pick the bar from the drawer and place it in the bowl` is not a training
+  phrase; runs hovered at the drawer or pushed the bowl).
 
 - **Pi05 / LIBERO subtask-language finding (`19d1c585` era SRD):**
   `pi05_libero` mostly ignored subtask wording in-scene (e.g., asked for tomato
@@ -100,6 +98,20 @@ remain as milestone context only.
   one LIBERO-10 task-0 Longor run reached `is_success=True` / `status=done`,
   and M1-for-pi05 was marked done. Evidence is commit history + external Colab
   artifacts.
+- **SmolVLA / LIBERO prompt sweep (2026-08-14..15, `8fac337` notebook):**
+  on `libero_10` task 0 the first subtask (`pick up the alphabet soup`) failed
+  in 4/4 Colab runs. A sweep scored with the `grab` subtask check grasped for
+  2/5 prompts at both 120- and 280-step budgets: the original task
+  description and `put the alphabet soup in the basket`. `pick up the
+  alphabet soup`, `pick up the alphabet soup and place it in the basket`, and
+  `grasp the alphabet soup` failed, so the step budget was not the cause. Raw
+  notebook output was not committed.
+- **LIBERO memorization hypothesis (2026-08-17 chats):** a code review found
+  no path by which the original task text reaches the VLA. The behavior (SmolVLA
+  wording sensitivity above; Pi05 following the original task order) fits a
+  VLA fitted to fixed scene/instruction pairs. The control that would confirm
+  it (an empty or unrelated in-distribution prompt in the same scene) was
+  proposed but not run, so this stays a hypothesis.
 - **SmolVLA gate failure (`d2046b1`, `c42de0e`):**
   `lerobot/smolvla_vlabench` on VLABench `select_fruit` ended 0/8 before OOM;
   not diagnostic for a Longor comparison.

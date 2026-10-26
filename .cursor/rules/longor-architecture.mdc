@@ -8,9 +8,11 @@ alwaysApply: true
 - `SRD.md` is the source of truth for Longor architecture, milestone claims, and
   VLA service contract. If a change modifies those contracts, update `SRD.md`
   first and map code changes to that update.
-- Enforce the runtime contract exactly as defined in `SRD.md` (module layout,
-  dependency direction, env facade behavior, planner/executor/runner boundaries,
-  and VLA service wire contract).
+- Enforce `SRD.md` exactly for module layout, dependency direction, per-module
+  responsibilities, and the VLA service wire contract.
+- A module's docstring holds its detailed behavior and must agree with its
+  `SRD.md` responsibility line. If a change shifts what a module is responsible
+  for, update the `SRD.md` line first, then the docstring, then the code.
 - Keep source layout flat under `src/`, with simulation backends only under
   `src/envs/`. Do not introduce `core/`, `sim/`, `vla/`, `robots/`, registries,
   or backend-protocol abstractions.
