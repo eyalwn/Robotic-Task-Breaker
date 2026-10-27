@@ -28,16 +28,11 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--episodes", type=int, required=True)
     parser.add_argument("--artifact-dir", type=Path, required=True)
     parser.add_argument(
-        "--append",
-        action="store_true",
-        help="Append episodes to existing JSONL and refresh summary.",
-    )
+        "--append", action="store_true",
+        help="Append episodes to existing JSONL and refresh " "summary.")
     parser.add_argument(
-        "--start-index",
-        type=int,
-        default=0,
-        help="First episode index for record metadata (default 0).",
-    )
+        "--start-index", type=int, default=0,
+        help="First episode index for record metadata " "(default 0).")
     return parser.parse_args()
 
 
@@ -54,8 +49,7 @@ def _object_name_from_task_description(task_desc: str) -> str:
             f"expected reset language 'open the <name>', got {open_phrase!r}")
     name = open_phrase[len(prefix) :].strip()
     if not name:
-        raise RuntimeError(
-            f"empty object name in task description {task_desc!r}")
+        raise RuntimeError(f"empty object name in task description {task_desc!r}")
     return name
 
 
@@ -84,26 +78,14 @@ def _run_episode(episode_index: int) -> dict[str, object]:
             stop_reason = "episode_done"
         else:
             stop_reason = "episode_timeout"
-        return {
-            "arm": "bare",
-            "episode_index": episode_index,
-            "task_description": task_desc,
-            "success": success,
-            "steps": env.steps,
-            "stop_reason": stop_reason,
-            "error": error,
-        }
+        return {"arm": "bare", "episode_index": episode_index,
+                "task_description": task_desc, "success": success,
+                "steps": env.steps, "stop_reason": stop_reason, "error": error}
     except Exception as exc:
         error = str(exc)
-        return {
-            "arm": "bare",
-            "episode_index": episode_index,
-            "task_description": task_desc,
-            "success": False,
-            "steps": env.steps,
-            "stop_reason": "execution_error",
-            "error": error,
-        }
+        return {"arm": "bare", "episode_index": episode_index,
+                "task_description": task_desc, "success": False, "steps": env.steps,
+                "stop_reason": "execution_error", "error": error}
     finally:
         env.close()
 
@@ -123,19 +105,12 @@ def _summarize(rows: list[dict[str, object]]) -> dict[str, object]:
     successes = sum(1 for row in rows if bool(row.get("success")))
     total = len(rows)
     rate = (successes / total) if total else 0.0
-    return {
-        "arm": "bare",
-        "task": _TASK,
-        "episodes": total,
-        "successes": successes,
-        "success_rate": rate,
-    }
+    return {"arm": "bare", "task": _TASK, "episodes": total,
+            "successes": successes, "success_rate": rate}
 
 
-def _write_artifacts(
-        artifact_dir: Path,
-        new_rows: list[dict[str, object]],
-        append: bool) -> dict[str, object]:
+def _write_artifacts(artifact_dir: Path, new_rows: list[dict[str, object]],
+                     append: bool) -> dict[str, object]:
     artifact_dir.mkdir(parents=True, exist_ok=True)
     records_path = artifact_dir / _RECORDS_NAME
     summary_path = artifact_dir / _SUMMARY_NAME

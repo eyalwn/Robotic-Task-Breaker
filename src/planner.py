@@ -71,13 +71,12 @@ class LLMPlanner:
     def __init__(self, catalog: str) -> None:
         """Bind the skill catalog and planning model."""
         self._catalog = catalog
-        self._model_name = config.LLM_MODEL
-        self._llm = _init_planning_llm(self._model_name)
+        self._llm = _init_planning_llm(config.LLM_MODEL)
 
     def plan(self, goal: str, snapshot: bytes) -> object:
         """Return executable steps or a STOP sentinel dict."""
-        system_prompt = _SYSTEM_TEMPLATE.format(catalog=self._catalog,
-                                                plan_spec=_PLAN_SPEC)
+        system_prompt = _SYSTEM_TEMPLATE.format(
+            catalog=self._catalog, plan_spec=_PLAN_SPEC)
         task_text = f"Goal: {goal}\n\n"
 
         image_b64 = base64.b64encode(snapshot).decode("utf-8")
@@ -85,8 +84,8 @@ class LLMPlanner:
             {"type": "text", "text": task_text},
             {"type": "image_url",
              "image_url": {"url": f"data:image/png;base64,{image_b64}"}}]
-        messages: list[Any] = [SystemMessage(content=system_prompt),
-                               HumanMessage(content=task_prompt)]
+        messages: list[Any] = [
+            SystemMessage(content=system_prompt), HumanMessage(content=task_prompt)]
         response = self._llm.invoke(messages)
         usage_summary = _usage_token_summary(response.usage_metadata)
         if usage_summary:

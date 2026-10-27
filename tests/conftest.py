@@ -1,8 +1,6 @@
 """Shared fixtures for hermetic Longor unit tests."""
 from __future__ import annotations
 
-import pytest
-
 from executor import Executor
 from plan import Plan
 
@@ -10,14 +8,8 @@ from plan import Plan
 class FakeEnv:
     """Minimal env stub for executor skill tests."""
 
-    def __init__(
-        self,
-        *,
-        subtask_satisfied=None,
-        subtask_after=None,
-        steps: int = 0,
-        horizon: int = 720,
-    ) -> None:
+    def __init__(self, *, subtask_satisfied=None, subtask_after=None,
+                 steps: int = 0, horizon: int = 720) -> None:
         self._steps = steps
         self._horizon = horizon
         self.step_calls: list[list[float]] = []
@@ -58,19 +50,10 @@ class FakeVLA:
         self.actions = actions if actions is not None else [[0.1] * 7]
         self.calls: list[tuple[tuple[bytes, ...], list[float], str]] = []
 
-    def predict(
-        self,
-        images: tuple[bytes, ...],
-        state: list[float],
-        task: str,
-    ) -> list[list[float]]:
+    def predict(self, images: tuple[bytes, ...], state: list[float],
+                task: str) -> list[list[float]]:
         self.calls.append((images, state, task))
         return self.actions
-
-
-@pytest.fixture
-def fake_env() -> FakeEnv:
-    return FakeEnv()
 
 
 def build_executor(*, env=None, vla=None) -> Executor:
@@ -81,8 +64,8 @@ def build_executor(*, env=None, vla=None) -> Executor:
     return executor
 
 
-def run_plan(executor: Executor, steps: Plan, **run_kwargs: object):
-    return executor.run(steps, **run_kwargs)  # type: ignore[arg-type]
+def run_plan(executor: Executor, steps: Plan):
+    return executor.run(steps)
 
 
 def make_plan(steps=None) -> Plan:

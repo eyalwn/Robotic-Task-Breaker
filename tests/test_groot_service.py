@@ -9,22 +9,12 @@ import pytest
 from PIL import Image
 
 from envs.robocasa_env import (
-    ACTION_DIMS,
-    ACTION_KEYS,
-    STATE_KEYS,
-    expected_action_dim,
-    expected_state_dim,
-    unflatten_state,
-)
-from groot_service import (
-    GROOT_LANGUAGE_KEY,
-    actions_to_wire_format,
-    build_groot_observation,
-    decode_image,
-    groot_action_dict_to_chunk,
-    parse_state_field,
-    truncate_action_chunk,
-)
+    ACTION_DIMS, ACTION_KEYS, STATE_KEYS, expected_action_dim, expected_state_dim,
+    unflatten_state)
+from groot_service import (GROOT_LANGUAGE_KEY, actions_to_wire_format,
+                           build_groot_observation, decode_image,
+                           groot_action_dict_to_chunk, parse_state_field,
+                           truncate_action_chunk)
 
 
 def _state_json() -> str:

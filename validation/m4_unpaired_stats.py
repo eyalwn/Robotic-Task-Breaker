@@ -20,22 +20,16 @@ _FINAL_P = 0.04
 def _parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--mode",
-        choices=("interim", "final"),
-        required=True,
-        help="interim=20/arm thresholds; final=50/arm thresholds.",
-    )
+        "--mode", choices=("interim", "final"), required=True,
+        help="interim=20/arm thresholds; final=50/arm " "thresholds.")
     parser.add_argument("--longor-summary", type=Path)
     parser.add_argument("--bare-summary", type=Path)
     parser.add_argument("--longor-successes", type=int)
     parser.add_argument("--longor-total", type=int)
     parser.add_argument("--bare-successes", type=int)
     parser.add_argument("--bare-total", type=int)
-    parser.add_argument(
-        "--output",
-        type=Path,
-        help="Optional path for machine-readable JSON verdict.",
-    )
+    parser.add_argument("--output", type=Path,
+                        help="Optional path for machine-readable JSON verdict.")
     return parser.parse_args()
 
 
@@ -99,46 +93,31 @@ def fisher_exact_greater(longor_succ: int, longor_total: int,
     return min(1.0, p_value)
 
 
-def evaluate(
-        longor_succ: int,
-        longor_total: int,
-        bare_succ: int,
-        bare_total: int,
-        mode: str) -> dict[str, object]:
+def evaluate(longor_succ: int, longor_total: int, bare_succ: int,
+             bare_total: int, mode: str) -> dict[str, object]:
     """Return verdict payload for interim or final M4 look."""
     expected_n = _INTERIM_N if mode == "interim" else _FINAL_N
     p_cutoff = _INTERIM_P if mode == "interim" else _FINAL_P
     sr_longor = longor_succ / longor_total if longor_total else 0.0
     sr_bare = bare_succ / bare_total if bare_total else 0.0
-    p_value = fisher_exact_greater(
-        longor_succ, longor_total, bare_succ, bare_total)
+    p_value = fisher_exact_greater(longor_succ, longor_total, bare_succ, bare_total)
     claim = (p_value <= p_cutoff and sr_longor > sr_bare
              and longor_total >= expected_n and bare_total >= expected_n)
     return {
-        "mode": mode,
-        "expected_episodes_per_arm": expected_n,
+        "mode": mode, "expected_episodes_per_arm": expected_n,
         "p_threshold": p_cutoff,
-        "longor": {
-            "successes": longor_succ,
-            "episodes": longor_total,
-            "success_rate": sr_longor,
-        },
-        "bare": {
-            "successes": bare_succ,
-            "episodes": bare_total,
-            "success_rate": sr_bare,
-        },
-        "p_value_one_sided": p_value,
-        "claim": claim,
-        "verdict": "claim" if claim else "no_claim",
-    }
+        "longor": {"successes": longor_succ, "episodes": longor_total,
+                   "success_rate": sr_longor},
+        "bare": {"successes": bare_succ, "episodes": bare_total,
+                 "success_rate": sr_bare},
+        "p_value_one_sided": p_value, "claim": claim,
+        "verdict": "claim" if claim else "no_claim"}
 
 
 def main() -> int:
     args = _parse_args()
     longor_succ, longor_total, bare_succ, bare_total = _counts_from_args(args)
-    result = evaluate(
-        longor_succ, longor_total, bare_succ, bare_total, args.mode)
+    result = evaluate(longor_succ, longor_total, bare_succ, bare_total, args.mode)
     line = (f"M4 {result['mode']}: {result['verdict']} "
             f"(p={result['p_value_one_sided']:.6f}, "
             f"SR_longor={result['longor']['success_rate']:.3f}, "

@@ -7,10 +7,8 @@ from plan import get_stop_reason, is_stop_plan, parse_planner_payload
 
 OPEN_STEP = {"skill": "open", "object_name": "right drawer"}
 CLOSE_STEP = {"skill": "close", "object_name": "drawer"}
-OPEN_CLOSE_PLAN = [
-    {"skill": "open", "object_name": "left drawer"},
-    {"skill": "close", "object_name": "left drawer"},
-]
+OPEN_CLOSE_PLAN = [{"skill": "open", "object_name": "left drawer"},
+                   {"skill": "close", "object_name": "left drawer"}]
 
 
 def test_parse_open_step_array() -> None:
@@ -56,8 +54,7 @@ def test_reject_open_blank_object_name() -> None:
 def test_reject_open_extra_key() -> None:
     with pytest.raises(ValueError, match="unexpected keys"):
         parse_planner_payload(
-            [{"skill": "open", "object_name": "drawer", "source_name": "x"}]
-        )
+            [{"skill": "open", "object_name": "drawer", "source_name": "x"}])
 
 
 def test_parse_close_step() -> None:
@@ -73,28 +70,19 @@ def test_reject_close_missing_object_name() -> None:
 def test_reject_close_extra_key() -> None:
     with pytest.raises(ValueError, match="unexpected keys"):
         parse_planner_payload(
-            [{"skill": "close", "object_name": "drawer", "source_name": "x"}]
-        )
+            [{"skill": "close", "object_name": "drawer", "source_name": "x"}])
 
 
 def test_reject_removed_place_skill() -> None:
     with pytest.raises(ValueError, match="unsupported skill"):
-        parse_planner_payload([{
-            "skill": "place",
-            "object_name": "k",
-            "source_name": "c",
-            "destination_name": "d",
-        }])
+        parse_planner_payload([{"skill": "place", "object_name": "k",
+                                "source_name": "c", "destination_name": "d"}])
 
 
 def test_reject_removed_put_in_skill() -> None:
     with pytest.raises(ValueError, match="unsupported skill"):
-        parse_planner_payload([{
-            "skill": "put_in",
-            "object_name": "bar",
-            "source_name": "drawer",
-            "container_name": "bowl",
-        }])
+        parse_planner_payload([{"skill": "put_in", "object_name": "bar",
+                                "source_name": "drawer", "container_name": "bowl"}])
 
 
 def test_reject_removed_turn_on_skill() -> None:

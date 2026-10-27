@@ -38,8 +38,7 @@ _TASK_HORIZONS = {OPEN_DRAWER_TASK: 720, OPEN_CLOSE_DRAWER_TASK: 1000}
 _DRAWER_CLOSED_JOINT_MAX = 0.05
 _OPEN_CLOSE_SUFFIX = ", then close it"
 
-CAMERA_KEYS = ("res256_image_side_0", "res256_image_side_1",
-               "res256_image_wrist_0")
+CAMERA_KEYS = ("res256_image_side_0", "res256_image_side_1", "res256_image_wrist_0")
 STATE_KEYS = ("gripper_qpos", "base_position", "base_rotation",
               "end_effector_position_relative", "end_effector_rotation_relative",
               "gripper_qvel", "end_effector_position_absolute",
@@ -160,8 +159,8 @@ def _import_robocasa_gym():
     try:
         import gymnasium as gym
         with warnings.catch_warnings():
-            warnings.filterwarnings("ignore", message=".*offscreen render.*",
-                                    category=UserWarning)
+            warnings.filterwarnings(
+                "ignore", message=".*offscreen render.*", category=UserWarning)
             import robocasa  # noqa: F401
             from robocasa.utils.gym_utils import GrootRoboCasaEnv  # noqa: F401
             import robosuite  # noqa: F401
@@ -177,8 +176,8 @@ def _resolve_gym_env_id(task: str) -> str:
     env_id = _TASK_GYM_ENV_IDS.get(task)
     if env_id is None:
         supported = ", ".join(sorted(_TASK_GYM_ENV_IDS))
-        raise RuntimeError(f"RoboCasa backend supports tasks {supported!r} only, "
-                           f"got {task!r}")
+        raise RuntimeError(
+            f"RoboCasa backend supports tasks {supported!r} only, " f"got {task!r}")
     return env_id
 
 
@@ -215,10 +214,10 @@ class RoboCasaEnv:
     ``open_close_drawer``)."""
 
     @classmethod
-    def from_task(cls, task: str, task_idx: int = 0) -> "RoboCasaEnv":
+    def from_task(cls, task: str, task_idx: int) -> "RoboCasaEnv":
         """Build one RoboCasa episode.
 
-        ``task_idx`` is reserved for future eval sets.
+        ``task_idx`` is reserved for future eval sets and must be 0.
         """
         if task_idx != 0:
             raise RuntimeError("RoboCasa backend supports task_idx=0 only")
@@ -286,8 +285,8 @@ class RoboCasaEnv:
                 f"unexpected camera shape for {flat_key}: {arr.shape}")
         return np.ascontiguousarray(arr, dtype=np.uint8)
 
-    def _state_groups_from_obs(self,
-                               obs: dict[str, object]) -> dict[str, list[float]]:
+    def _state_groups_from_obs(
+            self, obs: dict[str, object]) -> dict[str, list[float]]:
         groups: dict[str, list[float]] = {}
         for key, width in zip(STATE_KEYS, STATE_DIMS):
             flat_key = f"state.{key}"
@@ -333,9 +332,9 @@ class RoboCasaEnv:
             height, width = frame.shape[:2]
             path = Path(config.VIDEO_PATH)
             path.parent.mkdir(parents=True, exist_ok=True)
-            self._writer = cv2.VideoWriter(str(path),
-                                           cv2.VideoWriter_fourcc(*"mp4v"),
-                                           config.VIDEO_FPS, (width, height))
+            self._writer = cv2.VideoWriter(
+                str(path), cv2.VideoWriter_fourcc(*"mp4v"), config.VIDEO_FPS,
+                (width, height))
             if not self._writer.isOpened():
                 raise RuntimeError(f"cv2.VideoWriter failed to open {path}")
         self._writer.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))

@@ -52,19 +52,8 @@ def test_final_uses_higher_p_threshold() -> None:
 
 def test_cli_accepts_direct_counts(capsys: pytest.CaptureFixture[str]) -> None:
     stats = _load_stats()
-    argv = [
-        "m4_unpaired_stats.py",
-        "--mode",
-        "interim",
-        "--longor-successes",
-        "14",
-        "--longor-total",
-        "20",
-        "--bare-successes",
-        "9",
-        "--bare-total",
-        "20",
-    ]
+    argv = ["m4_unpaired_stats.py", "--mode", "interim", "--longor-successes", "14",
+            "--longor-total", "20", "--bare-successes", "9", "--bare-total", "20"]
     sys.argv = argv
     assert stats.main() == 0
     out = capsys.readouterr().out
@@ -81,17 +70,8 @@ def test_cli_reads_summary_files(tmp_path: Path) -> None:
     bare.write_text(
         json.dumps({"successes": 8, "episodes": 20}) + "\n", encoding="utf-8")
     out_path = tmp_path / "verdict.json"
-    sys.argv = [
-        "m4_unpaired_stats.py",
-        "--mode",
-        "interim",
-        "--longor-summary",
-        str(longor),
-        "--bare-summary",
-        str(bare),
-        "--output",
-        str(out_path),
-    ]
+    sys.argv = ["m4_unpaired_stats.py", "--mode", "interim", "--longor-summary",
+                str(longor), "--bare-summary", str(bare), "--output", str(out_path)]
     assert stats.main() == 0
     payload = json.loads(out_path.read_text(encoding="utf-8"))
     assert payload["longor"]["successes"] == 15

@@ -52,22 +52,21 @@ class Runner:
 
     def _execute(self) -> tuple[RunStatus, str, str, int]:
         """Plan and execute, with extra planner calls after subtask timeouts."""
-        status: RunStatus = "plan_failed"
         error = ""
         stop_reason = ""
         total_steps = 0
+        status: RunStatus = "execution_error"
         for attempt in range(config.MAX_REPLANS + 1):
             images, _state = self._env.observe()
             current_plan = self._planner.plan(self._goal, images[0])
             if is_stop_plan(current_plan):
                 return ("stopped", get_stop_reason(current_plan),
                         "planner_stop", total_steps)
-            execution_sum = self._executor.run(list(current_plan))
+            execution_sum = self._executor.run(current_plan)
             stop_reason = execution_sum.reason
             total_steps += execution_sum.steps
             if execution_sum.reason == StopReason.PLAN_DONE:
                 return "done", "", stop_reason, total_steps
-            status = "execution_error"
             if execution_sum.reason == StopReason.SUBTASK_TIMEOUT:
                 error = execution_sum.error or "subtask step cap exceeded"
             elif execution_sum.reason == StopReason.EPISODE_TIMEOUT:
@@ -103,8 +102,8 @@ class Runner:
         else:
             logger.info("Task failed: %r (status=%s)", self._goal, status)
 
-        summary_parts = [f"success={success}", f"plan_status={status}",
-                         f"steps={total_steps}"]
+        summary_parts = [
+            f"success={success}", f"plan_status={status}", f"steps={total_steps}"]
         if stop_reason:
             summary_parts.append(f"stop_reason={stop_reason}")
         if error:

@@ -54,11 +54,8 @@ def _install(monkeypatch):
             egl.current = None  # gl_ctx.free() ends with eglReleaseThread()
 
     _register(
-        monkeypatch,
-        _module("mujoco"),
-        _module("mujoco.egl", egl_ext=egl),
-        _module("robosuite"),
-        _module("robosuite.renderers"),
+        monkeypatch, _module("mujoco"), _module("mujoco.egl", egl_ext=egl),
+        _module("robosuite"), _module("robosuite.renderers"),
         _module("robosuite.renderers.context",
                 egl_context=SimpleNamespace(EGL_DISPLAY="display")),
         _module("robosuite.utils"),

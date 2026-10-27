@@ -26,8 +26,8 @@ Longor beats a bare VLA on long-horizon tasks.
   `p=8.32e-6`. This supports the claim only for the evaluated task distribution.
   Recorded at `826b8e5`. Since then the planner's JSON-repair retries were
   removed (`003ccca`) and the re-plan loop was restored (`786f8c5`); the loop
-  does not trigger in the default runtime (`Runner` passes no per-skill step
-  caps to `Executor.run`, so no subtask timeout can occur).
+  does not trigger on the M4 tasks (`Executor` reads `config.MAX_SKILL_STEPS`,
+  which sits above the episode horizons, so no subtask timeout can occur).
 
 ## Runtime Architecture Contract
 

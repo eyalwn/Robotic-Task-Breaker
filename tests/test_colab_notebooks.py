@@ -67,22 +67,13 @@ def _bash_n_syntax_ok(body: str) -> str | None:
     bash = shutil.which("bash")
     if bash is None:
         return None
-    with tempfile.NamedTemporaryFile(
-        mode="w",
-        suffix=".sh",
-        delete=False,
-        encoding="utf-8",
-        newline="\n",
-    ) as handle:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".sh", delete=False,
+                                     encoding="utf-8", newline="\n") as handle:
         handle.write(body)
         path = handle.name
     try:
         proc = subprocess.run(
-            [bash, "-n", path],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
+            [bash, "-n", path], capture_output=True, text=True, timeout=30)
     finally:
         Path(path).unlink(missing_ok=True)
     if proc.returncode != 0:
@@ -92,10 +83,7 @@ def _bash_n_syntax_ok(body: str) -> str | None:
 
 
 @pytest.mark.parametrize(
-    "notebook_path",
-    sorted(COLAB_DIR.glob("*.ipynb")),
-    ids=lambda p: p.name,
-)
+    "notebook_path", sorted(COLAB_DIR.glob("*.ipynb")), ids=lambda p: p.name)
 def test_colab_notebook_code_cell_syntax(notebook_path: Path) -> None:
     """Every Colab code cell must parse as Python or valid %%bash shell."""
     nb = json.loads(notebook_path.read_text(encoding="utf-8"))

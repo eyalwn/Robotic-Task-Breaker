@@ -56,9 +56,8 @@ def _suppress_gymnasium_passive_obs_warnings() -> None:
                             module=r"gymnasium\.utils\.passive_env_checker")
 
 
-def configure_logging(*, level: str = "", extra_logger_names: tuple[str, ...] = (),
-                      fmt: str = _DEFAULT_FORMAT, stream: TextIO = sys.stdout,
-                      force: bool = True) -> None:
+def configure_logging(*, level: str = "", fmt: str = _DEFAULT_FORMAT,
+                      stream: TextIO = sys.stdout) -> None:
     """Configure root logging: project namespaces verbose, 3rd-party quiet.
 
     Root stays at WARNING so third-party INFO/DEBUG is suppressed. Longor
@@ -72,8 +71,7 @@ def configure_logging(*, level: str = "", extra_logger_names: tuple[str, ...] = 
         raise ValueError(f"Invalid log level: {level!r}")
     level = resolved
 
-    logging.basicConfig(level=logging.WARNING, format=fmt, stream=stream,
-                        force=force)
+    logging.basicConfig(level=logging.WARNING, format=fmt, stream=stream, force=True)
     noise_filter = _UpstreamNoiseFilter()
     for handler in logging.root.handlers:
         if (isinstance(handler, logging.StreamHandler)
@@ -81,7 +79,7 @@ def configure_logging(*, level: str = "", extra_logger_names: tuple[str, ...] = 
             handler.setLevel(level)
             handler.addFilter(noise_filter)
 
-    for name in _PROJECT_LOGGER_NAMES + extra_logger_names:
+    for name in _PROJECT_LOGGER_NAMES:
         logging.getLogger(name).setLevel(level)
     for name in _QUIET_LOGGER_NAMES:
         _pin_quiet_logger(name)

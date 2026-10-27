@@ -6,8 +6,8 @@ from typing import TypeAlias
 Step: TypeAlias = dict[str, str]
 Plan: TypeAlias = list[Step]
 
-_SKILL_ARG_KEYS: dict[str, tuple[str, ...]] = {"open": ("object_name",),
-                                               "close": ("object_name",)}
+_SKILL_ARG_KEYS: dict[str, tuple[str, ...]] = {
+    "open": ("object_name",), "close": ("object_name",)}
 
 
 def is_stop_plan(data: object) -> bool:
@@ -22,8 +22,7 @@ def get_stop_reason(data: object) -> str:
     """Return the stop reason from a sentinel STOP plan."""
     if not is_stop_plan(data):
         raise ValueError("plan is not a STOP plan")
-    reason = str(data["stop"]).strip()
-    return reason if reason else "planner stopped"
+    return str(data["stop"]).strip()
 
 
 def parse_planner_payload(data: object) -> object:

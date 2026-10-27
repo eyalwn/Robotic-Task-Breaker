@@ -31,8 +31,7 @@ class SkillTimeout(Exception):
 class EpisodeTimeout(Exception):
     """Episode step cap reached without subtask success."""
 
-    def __init__(self, message: str, *,
-                 partial_telemetry: dict[str, Any] | None = None) -> None:
+    def __init__(self, message: str, *, partial_telemetry: dict[str, Any]) -> None:
         super().__init__(message)
         self.partial_telemetry = partial_telemetry
 
@@ -40,15 +39,14 @@ class EpisodeTimeout(Exception):
 class ExecutionSum:
     """Payload returned when plan execution pauses or finishes."""
 
-    def __init__(self, *, reason: str, steps: int = 0, error: str = "",
-                 next_step_idx: int = 0,
-                 skill_telemetry: list[dict[str, Any]] | None = None) -> None:
+    def __init__(self, *, reason: str, steps: int, error: str = "",
+                 next_step_idx: int, skill_telemetry: list[dict[str, Any]]) -> None:
         """Capture why execution stopped, resume index, and per-skill telemetry."""
         self.reason = reason
         self.steps = steps
         self.error = error
         self.next_step_idx = next_step_idx
-        self.skill_telemetry = list(skill_telemetry or [])
+        self.skill_telemetry = list(skill_telemetry)
 
 
 class Executor:
@@ -59,40 +57,37 @@ class Executor:
         self._env = env
         self._vla = VLAClient()
 
-    def run(self, steps: Plan,
-            skill_step_limits: dict[str, int] | None = None) -> ExecutionSum:
-        """Execute steps until done, explicit skill cap, horizon, or error."""
-        limits = _validate_skill_step_limits(skill_step_limits)
+    def run(self, steps: Plan) -> ExecutionSum:
+        """Execute steps until done, skill cap, horizon, or error."""
         steps_at_start = self._env.steps
         telemetry: list[dict[str, Any]] = []
         for idx, step in enumerate(steps):
             try:
                 logger.info("executing step: %s", step["skill"])
-                telemetry.append(self._run_step(step, limits))
+                telemetry.append(self._run_step(step))
                 logger.info("skill done successfully: %s", step["skill"])
             except SkillTimeout as exc:
                 logger.info("skill timed out: %s", exc)
-                return ExecutionSum(reason=StopReason.SUBTASK_TIMEOUT,
-                                    steps=self._env.steps - steps_at_start,
-                                    error=str(exc), next_step_idx=idx,
-                                    skill_telemetry=telemetry)
+                return ExecutionSum(
+                    reason=StopReason.SUBTASK_TIMEOUT,
+                    steps=self._env.steps - steps_at_start, error=str(exc),
+                    next_step_idx=idx, skill_telemetry=telemetry)
             except EpisodeTimeout as exc:
                 logger.info("episode timed out: %s", exc)
-                if exc.partial_telemetry is not None:
-                    telemetry.append(exc.partial_telemetry)
-                return ExecutionSum(reason=StopReason.EPISODE_TIMEOUT,
-                                    steps=self._env.steps - steps_at_start,
-                                    error=str(exc), next_step_idx=idx,
-                                    skill_telemetry=telemetry)
+                telemetry.append(exc.partial_telemetry)
+                return ExecutionSum(
+                    reason=StopReason.EPISODE_TIMEOUT,
+                    steps=self._env.steps - steps_at_start, error=str(exc),
+                    next_step_idx=idx, skill_telemetry=telemetry)
             except Exception as exc:
                 logger.exception("executor error")
-                return ExecutionSum(reason=StopReason.EXECUTION_ERROR,
-                                    steps=self._env.steps - steps_at_start,
-                                    error=str(exc), next_step_idx=idx,
-                                    skill_telemetry=telemetry)
-        return ExecutionSum(reason=StopReason.PLAN_DONE,
-                            steps=self._env.steps - steps_at_start,
-                            next_step_idx=len(steps), skill_telemetry=telemetry)
+                return ExecutionSum(
+                    reason=StopReason.EXECUTION_ERROR,
+                    steps=self._env.steps - steps_at_start, error=str(exc),
+                    next_step_idx=idx, skill_telemetry=telemetry)
+        return ExecutionSum(
+            reason=StopReason.PLAN_DONE, steps=self._env.steps - steps_at_start,
+            next_step_idx=len(steps), skill_telemetry=telemetry)
 
     def _build_vla_task(self, step: dict[str, str]) -> str:
         """Build the VLA task string for one step."""
@@ -103,18 +98,12 @@ class Executor:
             return f"close the {step['object_name']}"
         raise KeyError(f"unsupported skill: {skill!r}")
 
-    def _run_step(self, step: dict[str, str],
-                  skill_step_limits: dict[str, int] | None) -> dict[str, Any]:
+    def _run_step(self, step: dict[str, str]) -> dict[str, Any]:
         """Run one skill until subtask success or a hard cap.
 
         Raise SkillTimeout or EpisodeTimeout.
         """
         skill_key = step["skill"]
-        if self._env.steps >= self._env.horizon:
-            raise EpisodeTimeout(
-                f"episode hits maximum steps-budget: {self._env.steps} steps",
-                partial_telemetry={"skill": skill_key, "steps": 0,
-                                   "threshold_crossed": False})
         prompt = self._build_vla_task(step)
         logger.debug("full skill prompt: %s", prompt)
         threshold = config.MAX_SKILL_STEPS[skill_key]
@@ -133,38 +122,18 @@ class Executor:
                 if is_done:
                     return {"skill": skill_key, "steps": skill_steps,
                             "threshold_crossed": threshold_crossed}
-                self._enforce_hard_caps(step, skill_steps, skill_step_limits,
-                                        threshold_crossed)
+                self._enforce_hard_caps(step, skill_steps, threshold_crossed)
 
     def _enforce_hard_caps(self, step: dict[str, str], skill_steps: int,
-                           skill_step_limits: dict[str, int] | None,
                            threshold_crossed: bool) -> None:
-        """Raise SkillTimeout / EpisodeTimeout when an explicit cap is exceeded."""
+        """Raise SkillTimeout / EpisodeTimeout when a cap is exceeded."""
         skill_key = step["skill"]
-        if skill_step_limits is not None:
-            limit = skill_step_limits.get(skill_key)
-            if limit is not None and skill_steps >= limit:
-                raise SkillTimeout(
-                    f"{step['skill']} exceeded explicit cap of {limit} steps")
+        limit = config.MAX_SKILL_STEPS[skill_key]
+        if skill_steps >= limit:
+            raise SkillTimeout(
+                f"{step['skill']} exceeded explicit cap of {limit} steps")
         if self._env.steps >= self._env.horizon:
             raise EpisodeTimeout(
                 f"episode hits maximum steps-budget: {self._env.steps} steps",
                 partial_telemetry={"skill": skill_key, "steps": skill_steps,
                                    "threshold_crossed": threshold_crossed})
-
-
-def _validate_skill_step_limits(
-        skill_step_limits: dict[str, int] | None) -> dict[str, int] | None:
-    """Validate optional per-skill hard caps; fail fast on bad input."""
-    if skill_step_limits is None:
-        return None
-    validated: dict[str, int] = {}
-    for skill, cap in skill_step_limits.items():
-        if skill not in config.MAX_SKILL_STEPS:
-            raise ValueError(
-                f"unsupported skill in skill_step_limits: {skill!r}")
-        if cap < 1:
-            raise ValueError(
-                f"skill_step_limits[{skill!r}] must be >= 1, got {cap}")
-        validated[skill] = cap
-    return validated

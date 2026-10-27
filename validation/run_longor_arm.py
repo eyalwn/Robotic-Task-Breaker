@@ -32,16 +32,11 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--episodes", type=int, required=True)
     parser.add_argument("--artifact-dir", type=Path, required=True)
     parser.add_argument(
-        "--append",
-        action="store_true",
-        help="Append episodes to existing JSONL and refresh summary.",
-    )
+        "--append", action="store_true",
+        help="Append episodes to existing JSONL and refresh " "summary.")
     parser.add_argument(
-        "--start-index",
-        type=int,
-        default=0,
-        help="First episode index for record metadata (default 0).",
-    )
+        "--start-index", type=int, default=0,
+        help="First episode index for record metadata " "(default 0).")
     return parser.parse_args()
 
 
@@ -52,25 +47,13 @@ def _run_episode(episode_index: int) -> dict[str, object]:
         runner = Runner(_TASK, 0)
         task_desc = runner._goal
         success = runner.run()
-        return {
-            "arm": "longor",
-            "episode_index": episode_index,
-            "task_description": task_desc,
-            "success": success,
-            "steps": 0,
-            "stop_reason": _RUNNER_STOP_PLACEHOLDER,
-            "error": "",
-        }
+        return {"arm": "longor", "episode_index": episode_index,
+                "task_description": task_desc, "success": success, "steps": 0,
+                "stop_reason": _RUNNER_STOP_PLACEHOLDER, "error": ""}
     except Exception as exc:
-        return {
-            "arm": "longor",
-            "episode_index": episode_index,
-            "task_description": task_desc,
-            "success": False,
-            "steps": 0,
-            "stop_reason": "execution_error",
-            "error": str(exc),
-        }
+        return {"arm": "longor", "episode_index": episode_index,
+                "task_description": task_desc, "success": False, "steps": 0,
+                "stop_reason": "execution_error", "error": str(exc)}
 
 
 def _load_records(path: Path) -> list[dict[str, object]]:
@@ -88,19 +71,12 @@ def _summarize(rows: list[dict[str, object]]) -> dict[str, object]:
     successes = sum(1 for row in rows if bool(row.get("success")))
     total = len(rows)
     rate = (successes / total) if total else 0.0
-    return {
-        "arm": "longor",
-        "task": _TASK,
-        "episodes": total,
-        "successes": successes,
-        "success_rate": rate,
-    }
+    return {"arm": "longor", "task": _TASK, "episodes": total,
+            "successes": successes, "success_rate": rate}
 
 
-def _write_artifacts(
-        artifact_dir: Path,
-        new_rows: list[dict[str, object]],
-        append: bool) -> dict[str, object]:
+def _write_artifacts(artifact_dir: Path, new_rows: list[dict[str, object]],
+                     append: bool) -> dict[str, object]:
     artifact_dir.mkdir(parents=True, exist_ok=True)
     records_path = artifact_dir / _RECORDS_NAME
     summary_path = artifact_dir / _SUMMARY_NAME

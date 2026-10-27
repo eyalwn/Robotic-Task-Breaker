@@ -16,16 +16,15 @@ def _load_longor_arm():
     src = str(_REPO_ROOT / "src")
     if src not in sys.path:
         sys.path.insert(0, src)
-    spec = importlib.util.spec_from_file_location(
-        "run_longor_arm", _LONGOR_ARM_PATH)
+    spec = importlib.util.spec_from_file_location("run_longor_arm", _LONGOR_ARM_PATH)
     assert spec and spec.loader
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
 
 
-def test_run_episode_writes_summary(tmp_path: Path,
-                                    monkeypatch: pytest.MonkeyPatch) -> None:
+def test_run_episode_writes_summary(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     longor_arm = _load_longor_arm()
     task_desc = "open the right drawer, then close it"
 
@@ -44,34 +43,25 @@ def test_run_episode_writes_summary(tmp_path: Path,
     monkeypatch.setattr(longor_arm, "configure_logging", lambda: None)
 
     sys.argv = [
-        "run_longor_arm.py",
-        "--episodes",
-        "2",
-        "--artifact-dir",
-        str(tmp_path),
-    ]
+        "run_longor_arm.py", "--episodes", "2", "--artifact-dir", str(tmp_path)]
     assert longor_arm.main() == 0
     records = [
-        json.loads(line)
-        for line in (tmp_path / "longor_episodes.jsonl").read_text(
-            encoding="utf-8").splitlines()
-        if line.strip()
-    ]
+        json.loads(line) for line in (tmp_path / "longor_episodes.jsonl").read_text(
+            encoding="utf-8").splitlines() if line.strip()]
     assert len(records) == 2
     assert all(row["arm"] == "longor" for row in records)
     assert all(row["task_description"] == task_desc for row in records)
     assert all(row["success"] is True for row in records)
-    assert all(
-        row["stop_reason"] == longor_arm._RUNNER_STOP_PLACEHOLDER
-        for row in records)
+    assert all(row["stop_reason"] == longor_arm._RUNNER_STOP_PLACEHOLDER
+               for row in records)
     summary = json.loads(
         (tmp_path / "longor_summary.json").read_text(encoding="utf-8"))
     assert summary["episodes"] == 2
     assert summary["successes"] == 2
 
 
-def test_run_episode_runner_init_error(tmp_path: Path,
-                                       monkeypatch: pytest.MonkeyPatch) -> None:
+def test_run_episode_runner_init_error(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     longor_arm = _load_longor_arm()
 
     class _BrokenRunner:

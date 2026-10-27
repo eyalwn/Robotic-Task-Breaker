@@ -55,8 +55,8 @@ class _FakeEnv:
         self.closed = True
 
 
-def test_run_episode_writes_summary(tmp_path: Path,
-                                    monkeypatch: pytest.MonkeyPatch) -> None:
+def test_run_episode_writes_summary(
+        tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     bare = _load_bare()
     fake_env = _FakeEnv()
 
@@ -100,19 +100,11 @@ def test_run_episode_writes_summary(tmp_path: Path,
     monkeypatch.setattr(bare, "configure_logging", lambda: None)
 
     sys.argv = [
-        "run_bare_policy.py",
-        "--episodes",
-        "2",
-        "--artifact-dir",
-        str(tmp_path),
-    ]
+        "run_bare_policy.py", "--episodes", "2", "--artifact-dir", str(tmp_path)]
     assert bare.main() == 0
     records = [
-        json.loads(line)
-        for line in (tmp_path / "bare_episodes.jsonl").read_text(
-            encoding="utf-8").splitlines()
-        if line.strip()
-    ]
+        json.loads(line) for line in (tmp_path / "bare_episodes.jsonl").read_text(
+            encoding="utf-8").splitlines() if line.strip()]
     assert len(records) == 2
     assert all(row["arm"] == "bare" for row in records)
     summary = json.loads(

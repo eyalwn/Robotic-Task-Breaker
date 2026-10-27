@@ -21,18 +21,9 @@ from PIL import Image
 
 import config
 from envs.robocasa_env import (
-    ACTION_DIMS,
-    ACTION_KEYS,
-    CAMERA_KEYS,
-    IMAGE_SIZE,
-    STATE_DIMS,
-    STATE_KEYS,
-    expected_action_dim,
-    expected_state_dim,
-    flatten_action_timestep,
-    unflatten_state,
-    validate_finite_vector,
-)
+    ACTION_DIMS, ACTION_KEYS, CAMERA_KEYS, IMAGE_SIZE, STATE_DIMS, STATE_KEYS,
+    expected_action_dim, expected_state_dim, flatten_action_timestep,
+    unflatten_state, validate_finite_vector)
 from utils import configure_logging
 
 configure_logging(fmt="%(asctime)s %(levelname)s %(message)s")
@@ -57,16 +48,16 @@ def decode_image(raw_bytes: bytes) -> np.ndarray:
     return np.array(img, dtype=np.uint8)
 
 
-def parse_state_field(state: str, expected_dim: int = _STATE_DIM) -> np.ndarray:
-    """Parse and validate the flattened RoboCasa proprioceptive state JSON field."""
+def parse_state_field(state: str) -> np.ndarray:
+    """Parse and validate the flattened RoboCasa proprioceptive state JSON."""
     if not state:
-        raise ValueError(f"state is required ({expected_dim} floats as JSON array)")
+        raise ValueError(f"state is required ({_STATE_DIM} floats as JSON array)")
     try:
         arr = np.array(_json.loads(state), dtype=np.float32).reshape(-1)
     except (ValueError, TypeError, _json.JSONDecodeError) as exc:
         raise ValueError(f"invalid state JSON: {exc}") from exc
-    if arr.size != expected_dim:
-        raise ValueError(f"state must have {expected_dim} floats, got {arr.size}")
+    if arr.size != _STATE_DIM:
+        raise ValueError(f"state must have {_STATE_DIM} floats, got {arr.size}")
     validate_finite_vector(arr.tolist(), "state")
     return arr
 
@@ -95,18 +86,11 @@ def actions_to_wire_format(chunk: np.ndarray) -> list[list[float]]:
     return out
 
 
-def build_groot_observation(
-    side0: np.ndarray,
-    side1: np.ndarray,
-    wrist: np.ndarray,
-    task: str,
-    state: np.ndarray,
-) -> dict[str, object]:
+def build_groot_observation(side0: np.ndarray, side1: np.ndarray, wrist: np.ndarray,
+                            task: str, state: np.ndarray) -> dict[str, object]:
     """Map Longor multipart inputs to Gr00tSimPolicyWrapper flat observation keys."""
     state_groups = unflatten_state(state.tolist())
-    obs: dict[str, object] = {
-        GROOT_LANGUAGE_KEY: (task,),
-    }
+    obs: dict[str, object] = {GROOT_LANGUAGE_KEY: (task,),}
     cameras = (side0, side1, wrist)
     for cam_key, rgb in zip(CAMERA_KEYS, cameras):
         batched = rgb.reshape(1, 1, _IMAGE_SIZE, _IMAGE_SIZE, 3)
@@ -151,30 +135,21 @@ def _load_upstream_client():
     try:
         from gr00t.policy.server_client import PolicyClient
     except ImportError as exc:
-        raise ImportError(
-            "Isaac-GR00T is not installed. Run the M2 GR00T server stack on Linux "
-            "and install upstream gr00t in the VLA Python environment."
-        ) from exc
-    client = PolicyClient(
-        host=GROOT_UPSTREAM_HOST,
-        port=GROOT_UPSTREAM_PORT,
-    )
+        raise ImportError("Isaac-GR00T is not installed. Run the M2 GR00T "
+                          "server stack on Linux and install upstream gr00t "
+                          "in the VLA Python environment.") from exc
+    client = PolicyClient(host=GROOT_UPSTREAM_HOST, port=GROOT_UPSTREAM_PORT)
     if not client.ping():
-        raise RuntimeError(
-            f"upstream GR00T policy server unreachable at "
-            f"{GROOT_UPSTREAM_HOST}:{GROOT_UPSTREAM_PORT}"
-        )
+        raise RuntimeError("upstream GR00T policy server unreachable at "
+                           f"{GROOT_UPSTREAM_HOST}:{GROOT_UPSTREAM_PORT}")
     return client
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _upstream
-    log.info(
-        "Connecting GR00T adapter to upstream %s:%d ...",
-        GROOT_UPSTREAM_HOST,
-        GROOT_UPSTREAM_PORT,
-    )
+    log.info("Connecting GR00T adapter to upstream %s:%d ...",
+             GROOT_UPSTREAM_HOST, GROOT_UPSTREAM_PORT)
     t0 = time.perf_counter()
     try:
         _upstream = await asyncio.to_thread(_load_upstream_client)
@@ -185,11 +160,8 @@ async def lifespan(app: FastAPI):
         log.error("Upstream connect failed: %s", exc)
         sys.exit(1)
     elapsed = time.perf_counter() - t0
-    log.info(
-        "GR00T adapter ready in %.1fs — listening on port %d",
-        elapsed,
-        config.VLA_PORT,
-    )
+    log.info("GR00T adapter ready in %.1fs — listening on port %d", elapsed,
+             config.VLA_PORT)
     yield
     _upstream = None
 
@@ -203,19 +175,14 @@ def health():
 
 
 @app.post("/predict")
-async def predict(
-    images: list[UploadFile] = File(...),
-    task: str = Form("Open the drawer"),
-    state: str = Form(""),
-):
+async def predict(images: list[UploadFile] = File(...),
+                  task: str = Form("Open the drawer"), state: str = Form("")):
     if _upstream is None:
         raise HTTPException(status_code=503, detail="Model not loaded")
 
     if len(images) != _EXPECTED_IMAGES:
-        raise HTTPException(
-            status_code=400,
-            detail=f"expected {_EXPECTED_IMAGES} images, got {len(images)}",
-        )
+        raise HTTPException(status_code=400, detail=(
+            f"expected {_EXPECTED_IMAGES} images, got {len(images)}"))
 
     try:
         decoded = []
@@ -224,8 +191,7 @@ async def predict(
             decoded.append(decode_image(raw))
         state_arr = parse_state_field(state)
         obs = build_groot_observation(
-            decoded[0], decoded[1], decoded[2], task, state_arr
-        )
+            decoded[0], decoded[1], decoded[2], task, state_arr)
         action_dict, _info = await asyncio.to_thread(_upstream.get_action, obs)
         chunk = groot_action_dict_to_chunk(action_dict)
         truncated = truncate_action_chunk(chunk, config.VLA_ACTIONS_PER_CHUNK)

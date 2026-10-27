@@ -37,8 +37,7 @@ def test_upstream_optional_dep_noise_filtered(capsys) -> None:
     previous_level = root.level
     robocasa = logging.getLogger("robocasa")
     mimicgen_msg = (
-        "mimicgen environments not imported since mimicgen is not installed!"
-    )
+        "mimicgen environments not imported since mimicgen is not installed!")
     try:
         configure_logging(level="DEBUG", stream=sys.stdout)
         robocasa.warning(mimicgen_msg)
@@ -61,10 +60,8 @@ def test_gymnasium_passive_obs_warning_filter_registered() -> None:
     try:
         configure_logging(level="DEBUG", stream=sys.stdout)
         patterns = [
-            item[1].pattern
-            for item in warnings.filters
-            if item[0] == "ignore" and item[1] is not None
-        ]
+            item[1].pattern for item in warnings.filters
+            if item[0] == "ignore" and item[1] is not None]
     finally:
         root.handlers = previous_handlers
         root.setLevel(previous_level)

@@ -32,8 +32,8 @@ LLM_MODEL = os.environ.get("LLM_MODEL", "gpt-4.1-mini").strip()
 MAX_REPLANS = 2
 
 # --- Executor --------------------------------------------------------------
-# Per-skill hard cap. Executor stops the skill when this is reached.
-MAX_SKILL_STEPS = {"open": 720, "close": 400}
+# Per-skill hard cap. Above episode horizons so an M4 run is not cut short.
+MAX_SKILL_STEPS = {"open": 2000, "close": 2000}
 
 # --- VLA server ------------------------------------------------------------
 # VLA backend selection (launcher default)

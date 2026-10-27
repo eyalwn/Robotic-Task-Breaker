@@ -85,8 +85,8 @@ def test_planner_success(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_planner_invalid_plan_raises(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("planner.init_chat_model",
-                        lambda _model: _LLM([_Response("{bad")]))
+    monkeypatch.setattr(
+        "planner.init_chat_model", lambda _model: _LLM([_Response("{bad")]))
     planner = LLMPlanner("catalog")
     with pytest.raises(RuntimeError, match="plan validation failed"):
         planner.plan("pick cube", SNAPSHOT)
@@ -94,8 +94,8 @@ def test_planner_invalid_plan_raises(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_planner_strips_markdown_fences(monkeypatch: pytest.MonkeyPatch) -> None:
     fenced = f"```json\n{json.dumps(VALID_PLAN)}\n```"
-    monkeypatch.setattr("planner.init_chat_model",
-                        lambda _model: _LLM([_Response(fenced)]))
+    monkeypatch.setattr(
+        "planner.init_chat_model", lambda _model: _LLM([_Response(fenced)]))
     planner = LLMPlanner("catalog")
     result = planner.plan("pick cube", SNAPSHOT)
     assert result == parse_planner_payload(VALID_PLAN)

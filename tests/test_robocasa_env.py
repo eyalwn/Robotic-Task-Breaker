@@ -10,16 +10,9 @@ import pytest
 
 from envs import robocasa_env
 from envs.robocasa_env import (
-    OPEN_CLOSE_DRAWER_TASK,
-    OPEN_DRAWER_GYM_ENV_ID,
-    OPEN_DRAWER_TASK,
-    STATE_DIMS,
-    STATE_KEYS,
-    RoboCasaEnv,
-    _OPEN_CLOSE_SUFFIX,
-    _resolve_gym_env_id,
-    _task_description_from_reset_obs,
-)
+    OPEN_CLOSE_DRAWER_TASK, OPEN_DRAWER_GYM_ENV_ID, OPEN_DRAWER_TASK, STATE_DIMS,
+    STATE_KEYS, RoboCasaEnv, _OPEN_CLOSE_SUFFIX, _resolve_gym_env_id,
+    _task_description_from_reset_obs)
 
 
 def test_resolve_gym_env_id_open_close_drawer() -> None:
@@ -45,16 +38,12 @@ def test_init_env_open_close_drawer_appends_suffix() -> None:
     mock_env.reset.return_value = ({}, {})
     mock_gym.make.return_value = mock_env
     with patch.object(robocasa_env, "_import_robocasa_gym", return_value=mock_gym):
-        with patch.object(
-            robocasa_env,
-            "_task_description_from_reset_obs",
-            return_value="open the left drawer",
-        ):
+        with patch.object(robocasa_env, "_task_description_from_reset_obs",
+                          return_value="open the left drawer"):
             with patch.object(RoboCasaEnv, "_record"):
                 env = RoboCasaEnv.__new__(RoboCasaEnv)
                 env._init_env(OPEN_CLOSE_DRAWER_TASK)
-    assert env.task_description == (
-        f"open the left drawer{_OPEN_CLOSE_SUFFIX}")
+    assert env.task_description == (f"open the left drawer{_OPEN_CLOSE_SUFFIX}")
     assert env._drawer_was_opened is False
 
 
@@ -69,10 +58,8 @@ def test_task_description_from_reset_obs_reads_one_element_sequence() -> None:
 
 
 def test_task_description_from_reset_obs_reads_one_element_ndarray() -> None:
-    obs = {
-        "annotation.human.action.task_description": np.array(
-            ["Open the top drawer"])
-    }
+    obs = {"annotation.human.action.task_description": np.array(
+        ["Open the top drawer"])}
     assert _task_description_from_reset_obs(obs) == "Open the top drawer"
 
 
@@ -84,8 +71,7 @@ def test_task_description_from_reset_obs_raises_when_missing() -> None:
 def test_task_description_from_reset_obs_raises_when_blank() -> None:
     with pytest.raises(RuntimeError, match="blank"):
         _task_description_from_reset_obs(
-            {"annotation.human.action.task_description": "   "}
-        )
+            {"annotation.human.action.task_description": "   "})
 
 
 class _GrootUnwrapped:
@@ -104,18 +90,14 @@ class _OpenDrawerTask:
 
 
 def _robocasa_with_kitchen(
-    task: str,
-    opened: bool,
-    *,
-    door_state: dict[str, float] | None = None,
-) -> tuple[RoboCasaEnv, _OpenDrawerTask]:
+        task: str, opened: bool, *,
+        door_state: dict[str, float] | None = None) -> tuple[
+            RoboCasaEnv, _OpenDrawerTask]:
     drawer_task = _OpenDrawerTask(opened)
     kitchen = drawer_task
     if door_state is not None:
-        kitchen = SimpleNamespace(
-            _check_success=drawer_task._check_success,
-            drawer=_FakeDrawer(door_state),
-        )
+        kitchen = SimpleNamespace(_check_success=drawer_task._check_success,
+                                  drawer=_FakeDrawer(door_state))
     robocasa = RoboCasaEnv.__new__(RoboCasaEnv)
     robocasa._task = task
     robocasa._drawer_was_opened = False
@@ -190,8 +172,7 @@ def test_drawer_close_oracle_raises_when_no_door_state() -> None:
 def test_drawer_close_oracle_raises_when_drawer_missing() -> None:
     robocasa = RoboCasaEnv.__new__(RoboCasaEnv)
     robocasa._task = OPEN_CLOSE_DRAWER_TASK
-    robocasa._env = SimpleNamespace(
-        unwrapped=_GrootUnwrapped(SimpleNamespace()))
+    robocasa._env = SimpleNamespace(unwrapped=_GrootUnwrapped(SimpleNamespace()))
     with pytest.raises(RuntimeError, match="missing drawer fixture"):
         robocasa._drawer_close_oracle()
 
@@ -259,7 +240,7 @@ def test_step_latches_drawer_was_opened_for_open_close_task() -> None:
 
 
 def test_record_uses_policy_camera_frame_and_cv2_writer(
-    monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
+        monkeypatch: pytest.MonkeyPatch, tmp_path) -> None:
     raw_frame = np.arange(4 * 6 * 3, dtype=np.uint8).reshape(4, 6, 3)
 
     written: list[np.ndarray] = []
@@ -280,7 +261,7 @@ def test_record_uses_policy_camera_frame_and_cv2_writer(
     writer = _Writer()
 
     def _video_writer(
-        path: str, fourcc: str, fps: int, size: tuple[int, int]) -> _Writer:
+            path: str, fourcc: str, fps: int, size: tuple[int, int]) -> _Writer:
         writer_init["path"] = path
         writer_init["fourcc"] = fourcc
         writer_init["fps"] = fps
@@ -292,15 +273,11 @@ def test_record_uses_policy_camera_frame_and_cv2_writer(
         return "mp4v"
 
     cv2 = SimpleNamespace(
-        VideoWriter_fourcc=_fourcc,
-        VideoWriter=_video_writer,
-        COLOR_RGB2BGR=4,
-        cvtColor=lambda frame, code: frame[:, :, ::-1],
-    )
+        VideoWriter_fourcc=_fourcc, VideoWriter=_video_writer, COLOR_RGB2BGR=4,
+        cvtColor=lambda frame, code: frame[:, :, ::-1])
     monkeypatch.setitem(sys.modules, "cv2", cv2)
     monkeypatch.setattr(robocasa_env.config, "SAVE_VIDEO", True)
-    monkeypatch.setattr(
-        robocasa_env.config, "VIDEO_PATH", str(tmp_path / "run.mp4"))
+    monkeypatch.setattr(robocasa_env.config, "VIDEO_PATH", str(tmp_path / "run.mp4"))
 
     robocasa = RoboCasaEnv.__new__(RoboCasaEnv)
     robocasa._last_obs = {"video.res256_image_side_0": raw_frame}
@@ -325,16 +302,12 @@ def test_init_env_gym_make_uses_enable_render() -> None:
     mock_env.reset.return_value = ({}, {})
     mock_gym.make.return_value = mock_env
     with patch.object(robocasa_env, "_import_robocasa_gym", return_value=mock_gym):
-        with patch.object(
-            robocasa_env,
-            "_task_description_from_reset_obs",
-            return_value="Open drawer",
-        ):
+        with patch.object(robocasa_env, "_task_description_from_reset_obs",
+                          return_value="Open drawer"):
             with patch.object(RoboCasaEnv, "_record"):
                 env = RoboCasaEnv.__new__(RoboCasaEnv)
                 env._init_env("open_drawer")
-    mock_gym.make.assert_called_once_with(
-        OPEN_DRAWER_GYM_ENV_ID, enable_render=True)
+    mock_gym.make.assert_called_once_with(OPEN_DRAWER_GYM_ENV_ID, enable_render=True)
 
 
 def test_observe_returns_png_bytes() -> None:
@@ -353,9 +326,8 @@ class _FakeGymStepEnv:
     def __init__(self) -> None:
         self.step_obs = {"from_step": True}
 
-    def step(
-        self, native: dict[str, np.ndarray]
-    ) -> tuple[object, float, bool, bool, dict]:
+    def step(self, native: dict[str, np.ndarray]) -> tuple[
+            object, float, bool, bool, dict]:
         return self.step_obs, 0.0, False, False, {}
 
 
@@ -368,7 +340,6 @@ def test_step_stores_obs_returned_by_gym_step() -> None:
     robocasa._steps = 0
     robocasa._writer = None
     with patch.object(RoboCasaEnv, "_record"):
-        done = robocasa.step(
-            [0.0] * robocasa_env.expected_action_dim())
+        done = robocasa.step([0.0] * robocasa_env.expected_action_dim())
     assert done is False
     assert robocasa._last_obs is fake.step_obs
