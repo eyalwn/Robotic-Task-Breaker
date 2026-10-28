@@ -1,4 +1,4 @@
-"""Single source of truth for Longor configuration.
+"""Single source of truth for Robotic Task Breaker configuration.
 
 Only secrets and switches worth flipping between runs live in ``.env``. Everything
 else is a constant below: to retune the system, edit this file.

@@ -1,11 +1,11 @@
-# Longor SRD
+# Robotic Task Breaker SRD
 
-Architecture and evaluation contract for Longor. Setup and runbook instructions
+Architecture and evaluation contract for Robotic Task Breaker. Setup and runbook instructions
 live in `README.md`.
 
 ## Hypothesis
 
-Longor beats a bare VLA on long-horizon tasks.
+Robotic Task Breaker beats a bare VLA on long-horizon tasks.
 
 ## Scope
 
@@ -17,11 +17,11 @@ Longor beats a bare VLA on long-horizon tasks.
 
 - **M1 - DONE.** Upstream-only RoboCasa / GR00T N1.6 OpenDrawer gate passed
   (`8/10` with threshold `>=7/10`).
-- **M2 - DONE.** Historical single Longor OpenDrawer run succeeded in one
+- **M2 - DONE.** Historical single Robotic Task Breaker OpenDrawer run succeeded in one
   `Runner` episode ("given a subtask-completion oracle").
 - **M3 - DONE.** Drawer open->close chain on `open_close_drawer` reached
   `success=7/10` in the in-scene gate.
-- **M4 - DONE.** Unpaired RoboCasa `open_close_drawer` comparison: Longor
+- **M4 - DONE.** Unpaired RoboCasa `open_close_drawer` comparison: Robotic Task Breaker
   `16/20` (80%) vs bare VLA `2/20` (10%), one-sided Fisher exact
   `p=8.32e-6`. This supports the claim only for the evaluated task distribution.
   Recorded at `826b8e5`. Since then the planner's JSON-repair retries were
@@ -95,7 +95,7 @@ current runtime. Findings remain as milestone context only.
   sauce first, still approached alphabet soup). Qualitative finding; not
   reproducible from the current tree.
 - **Pi05 / LIBERO E2E milestone (`9b437ef`, `6641b39`):**
-  one LIBERO-10 task-0 Longor run reached `is_success=True` / `status=done`,
+  one LIBERO-10 task-0 Robotic Task Breaker run reached `is_success=True` / `status=done`,
   and M1-for-pi05 was marked done. Evidence is commit history + external Colab
   artifacts.
 - **SmolVLA / LIBERO prompt sweep (2026-08-14..15, `8fac337` notebook):**
@@ -114,8 +114,8 @@ current runtime. Findings remain as milestone context only.
   proposed but not run, so this stays a hypothesis.
 - **SmolVLA gate failure (`d2046b1`, `c42de0e`):**
   `lerobot/smolvla_vlabench` on VLABench `select_fruit` ended 0/8 before OOM;
-  not diagnostic for a Longor comparison.
+  not diagnostic for a Robotic Task Breaker comparison.
 - **Legacy VLABench rates (`19d1c585`, `c42de0e`):**
-  bare `pi0-fast` baseline reached 6/10 on held-out `select_fruit`; Longor on
+  bare `pi0-fast` baseline reached 6/10 on held-out `select_fruit`; Robotic Task Breaker on
   `cook_dishes` reached 0/10 (6 physical stalls, 4 oracle-grounding mismatch).
   Raw run artifacts are external.

@@ -1,4 +1,4 @@
-"""Shared fixtures for hermetic Longor unit tests."""
+"""Shared fixtures for hermetic Robotic Task Breaker unit tests."""
 from __future__ import annotations
 
 from executor import Executor

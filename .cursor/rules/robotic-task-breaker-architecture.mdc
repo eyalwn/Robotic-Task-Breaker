@@ -1,11 +1,11 @@
 ---
-description: Longor architecture boundaries and contract guardrails
+description: Robotic Task Breaker architecture boundaries and contract guardrails
 alwaysApply: true
 ---
 
-# Longor architecture boundaries
+# Robotic Task Breaker architecture boundaries
 
-- `SRD.md` is the source of truth for Longor architecture, milestone claims, and
+- `SRD.md` is the source of truth for Robotic Task Breaker architecture, milestone claims, and
   VLA service contract. If a change modifies those contracts, update `SRD.md`
   first and map code changes to that update.
 - Enforce `SRD.md` exactly for module layout, dependency direction, per-module

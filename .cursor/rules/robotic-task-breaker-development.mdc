@@ -1,9 +1,9 @@
 ---
-description: Longor coding conventions, public API hygiene, and development process for all agents
+description: Robotic Task Breaker coding conventions, public API hygiene, and development process for all agents
 alwaysApply: true
 ---
 
-# Longor development conventions
+# Robotic Task Breaker development conventions
 
 ## Priorities and process
 

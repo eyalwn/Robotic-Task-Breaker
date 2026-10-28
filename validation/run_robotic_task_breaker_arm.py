@@ -1,8 +1,8 @@
-"""Run Longor ``Runner`` episodes on ``open_close_drawer`` (M4 Longor arm).
+"""Run Robotic Task Breaker ``Runner`` episodes on ``open_close_drawer``.
 
-Writes JSONL episode records and a compact summary JSON under one artifact dir.
-Each episode uses ``Runner.run()`` (observe, plan, execute, and replan
-after a subtask timeout).
+M4 comparison arm. Writes JSONL episode records and a compact summary JSON
+under one artifact dir. Each episode uses ``Runner.run()`` (observe, plan,
+execute, and replan after a subtask timeout).
 
 ``Runner`` returns only the final success verdict; episode records use
 ``steps=0`` and ``stop_reason='not_reported_by_runner'`` as explicit
@@ -22,8 +22,8 @@ from runner import Runner  # noqa: E402
 from utils import configure_logging  # noqa: E402
 
 _TASK = "open_close_drawer"
-_RECORDS_NAME = "longor_episodes.jsonl"
-_SUMMARY_NAME = "longor_summary.json"
+_RECORDS_NAME = "robotic_task_breaker_episodes.jsonl"
+_SUMMARY_NAME = "robotic_task_breaker_summary.json"
 _RUNNER_STOP_PLACEHOLDER = "not_reported_by_runner"
 
 
@@ -41,17 +41,17 @@ def _parse_args() -> argparse.Namespace:
 
 
 def _run_episode(episode_index: int) -> dict[str, object]:
-    """Run one Longor episode via ``Runner`` and return a JSON record."""
+    """Run one Robotic Task Breaker episode and return a JSON record."""
     task_desc = ""
     try:
         runner = Runner(_TASK, 0)
         task_desc = runner._goal
         success = runner.run()
-        return {"arm": "longor", "episode_index": episode_index,
+        return {"arm": "robotic_task_breaker", "episode_index": episode_index,
                 "task_description": task_desc, "success": success, "steps": 0,
                 "stop_reason": _RUNNER_STOP_PLACEHOLDER, "error": ""}
     except Exception as exc:
-        return {"arm": "longor", "episode_index": episode_index,
+        return {"arm": "robotic_task_breaker", "episode_index": episode_index,
                 "task_description": task_desc, "success": False, "steps": 0,
                 "stop_reason": "execution_error", "error": str(exc)}
 
@@ -71,7 +71,7 @@ def _summarize(rows: list[dict[str, object]]) -> dict[str, object]:
     successes = sum(1 for row in rows if bool(row.get("success")))
     total = len(rows)
     rate = (successes / total) if total else 0.0
-    return {"arm": "longor", "task": _TASK, "episodes": total,
+    return {"arm": "robotic_task_breaker", "task": _TASK, "episodes": total,
             "successes": successes, "success_rate": rate}
 
 
@@ -100,9 +100,9 @@ def main() -> int:
         ep_idx = args.start_index + offset
         row = _run_episode(ep_idx)
         new_rows.append(row)
-        print(f"longor episode={ep_idx} success={row['success']} "
-              f"steps={row['steps']} stop_reason={row['stop_reason']!r} "
-              f"error={row['error']!r}")
+        print(f"robotic_task_breaker episode={ep_idx} "
+              f"success={row['success']} steps={row['steps']} "
+              f"stop_reason={row['stop_reason']!r} error={row['error']!r}")
     summary = _write_artifacts(args.artifact_dir, new_rows, args.append)
     print(f"summary episodes={summary['episodes']} "
           f"successes={summary['successes']} "

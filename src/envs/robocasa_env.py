@@ -172,7 +172,7 @@ def _import_robocasa_gym():
 
 
 def _resolve_gym_env_id(task: str) -> str:
-    """Map a Longor task name to the RoboCasa gym registration id."""
+    """Map a Robotic Task Breaker task name to its RoboCasa gym id."""
     env_id = _TASK_GYM_ENV_IDS.get(task)
     if env_id is None:
         supported = ", ".join(sorted(_TASK_GYM_ENV_IDS))

@@ -1,4 +1,4 @@
-"""M4 unpaired Longor-vs-bare decision stats (one-sided Fisher exact).
+"""M4 unpaired Robotic Task Breaker vs bare stats (one-sided Fisher exact).
 
 Compares success counts with predeclared interim (20/arm) and final (50/arm)
 thresholds from ``SRD.md``.
@@ -8,7 +8,6 @@ from __future__ import annotations
 import argparse
 import json
 import math
-import sys
 from pathlib import Path
 
 _INTERIM_N = 20
@@ -22,10 +21,10 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--mode", choices=("interim", "final"), required=True,
         help="interim=20/arm thresholds; final=50/arm " "thresholds.")
-    parser.add_argument("--longor-summary", type=Path)
+    parser.add_argument("--robotic-task-breaker-summary", type=Path)
     parser.add_argument("--bare-summary", type=Path)
-    parser.add_argument("--longor-successes", type=int)
-    parser.add_argument("--longor-total", type=int)
+    parser.add_argument("--robotic-task-breaker-successes", type=int)
+    parser.add_argument("--robotic-task-breaker-total", type=int)
     parser.add_argument("--bare-successes", type=int)
     parser.add_argument("--bare-total", type=int)
     parser.add_argument("--output", type=Path,
@@ -41,14 +40,18 @@ def _load_summary(path: Path | None) -> tuple[int, int]:
 
 
 def _counts_from_args(args: argparse.Namespace) -> tuple[int, int, int, int]:
-    if args.longor_summary is not None:
-        longor_succ, longor_total = _load_summary(args.longor_summary)
-    elif args.longor_successes is not None and args.longor_total is not None:
-        longor_succ, longor_total = args.longor_successes, args.longor_total
+    summary = args.robotic_task_breaker_summary
+    successes = args.robotic_task_breaker_successes
+    total = args.robotic_task_breaker_total
+    if summary is not None:
+        arm_succ, arm_total = _load_summary(summary)
+    elif successes is not None and total is not None:
+        arm_succ, arm_total = successes, total
     else:
         raise SystemExit(
-            "Provide --longor-summary or both --longor-successes and "
-            "--longor-total")
+            "Provide --robotic-task-breaker-summary or both "
+            "--robotic-task-breaker-successes and "
+            "--robotic-task-breaker-total")
     if args.bare_summary is not None:
         bare_succ, bare_total = _load_summary(args.bare_summary)
     elif args.bare_successes is not None and args.bare_total is not None:
@@ -56,7 +59,7 @@ def _counts_from_args(args: argparse.Namespace) -> tuple[int, int, int, int]:
     else:
         raise SystemExit(
             "Provide --bare-summary or both --bare-successes and --bare-total")
-    return longor_succ, longor_total, bare_succ, bare_total
+    return arm_succ, arm_total, bare_succ, bare_total
 
 
 def _hypergeom_pmf(k: int, n: int, K: int, N: int) -> float:
@@ -66,11 +69,12 @@ def _hypergeom_pmf(k: int, n: int, K: int, N: int) -> float:
     return (math.comb(K, k) * math.comb(N - K, n - k)) / math.comb(N, n)
 
 
-def fisher_exact_greater(longor_succ: int, longor_total: int,
-                         bare_succ: int, bare_total: int) -> float:
-    """One-sided Fisher exact p-value for Longor success rate > bare."""
-    a = longor_succ
-    b = longor_total - longor_succ
+def fisher_exact_greater(
+        arm_succ: int, arm_total: int, bare_succ: int,
+        bare_total: int) -> float:
+    """One-sided Fisher exact p-value for Robotic Task Breaker > bare."""
+    a = arm_succ
+    b = arm_total - arm_succ
     c = bare_succ
     d = bare_total - bare_succ
     row1 = a + b
@@ -93,21 +97,22 @@ def fisher_exact_greater(longor_succ: int, longor_total: int,
     return min(1.0, p_value)
 
 
-def evaluate(longor_succ: int, longor_total: int, bare_succ: int,
-             bare_total: int, mode: str) -> dict[str, object]:
+def evaluate(
+        arm_succ: int, arm_total: int, bare_succ: int, bare_total: int,
+        mode: str) -> dict[str, object]:
     """Return verdict payload for interim or final M4 look."""
     expected_n = _INTERIM_N if mode == "interim" else _FINAL_N
     p_cutoff = _INTERIM_P if mode == "interim" else _FINAL_P
-    sr_longor = longor_succ / longor_total if longor_total else 0.0
+    sr_arm = arm_succ / arm_total if arm_total else 0.0
     sr_bare = bare_succ / bare_total if bare_total else 0.0
-    p_value = fisher_exact_greater(longor_succ, longor_total, bare_succ, bare_total)
-    claim = (p_value <= p_cutoff and sr_longor > sr_bare
-             and longor_total >= expected_n and bare_total >= expected_n)
+    p_value = fisher_exact_greater(arm_succ, arm_total, bare_succ, bare_total)
+    claim = (p_value <= p_cutoff and sr_arm > sr_bare
+             and arm_total >= expected_n and bare_total >= expected_n)
     return {
         "mode": mode, "expected_episodes_per_arm": expected_n,
         "p_threshold": p_cutoff,
-        "longor": {"successes": longor_succ, "episodes": longor_total,
-                   "success_rate": sr_longor},
+        "robotic_task_breaker": {"successes": arm_succ, "episodes": arm_total,
+                                 "success_rate": sr_arm},
         "bare": {"successes": bare_succ, "episodes": bare_total,
                  "success_rate": sr_bare},
         "p_value_one_sided": p_value, "claim": claim,
@@ -116,11 +121,12 @@ def evaluate(longor_succ: int, longor_total: int, bare_succ: int,
 
 def main() -> int:
     args = _parse_args()
-    longor_succ, longor_total, bare_succ, bare_total = _counts_from_args(args)
-    result = evaluate(longor_succ, longor_total, bare_succ, bare_total, args.mode)
+    arm_succ, arm_total, bare_succ, bare_total = _counts_from_args(args)
+    result = evaluate(arm_succ, arm_total, bare_succ, bare_total, args.mode)
+    rate = result["robotic_task_breaker"]["success_rate"]
     line = (f"M4 {result['mode']}: {result['verdict']} "
             f"(p={result['p_value_one_sided']:.6f}, "
-            f"SR_longor={result['longor']['success_rate']:.3f}, "
+            f"SR_robotic_task_breaker={rate:.3f}, "
             f"SR_bare={result['bare']['success_rate']:.3f})")
     print(line)
     payload = json.dumps(result, indent=2, sort_keys=True)

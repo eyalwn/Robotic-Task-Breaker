@@ -1,5 +1,6 @@
 """
-GR00T N1.6 HTTP adapter: Longor /predict contract to upstream ZeroMQ policy server.
+GR00T N1.6 HTTP adapter: Robotic Task Breaker /predict contract to
+upstream ZeroMQ policy server.
 
 Bridges multipart PNG + flat state to ``Gr00tSimPolicyWrapper`` flat keys on
 ``127.0.0.1:5555``. Validates camera/state/action shape and finiteness only.
@@ -88,7 +89,8 @@ def actions_to_wire_format(chunk: np.ndarray) -> list[list[float]]:
 
 def build_groot_observation(side0: np.ndarray, side1: np.ndarray, wrist: np.ndarray,
                             task: str, state: np.ndarray) -> dict[str, object]:
-    """Map Longor multipart inputs to Gr00tSimPolicyWrapper flat observation keys."""
+    """Map Robotic Task Breaker multipart inputs to flat
+    Gr00tSimPolicyWrapper observation keys."""
     state_groups = unflatten_state(state.tolist())
     obs: dict[str, object] = {GROOT_LANGUAGE_KEY: (task,),}
     cameras = (side0, side1, wrist)

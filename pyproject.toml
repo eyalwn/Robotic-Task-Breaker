@@ -3,7 +3,7 @@ requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "longor"
+name = "robotic-task-breaker"
 version = "0.0.0"
 description = "Long-horizon robot task planning and execution"
 readme = "README.md"

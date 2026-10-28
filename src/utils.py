@@ -60,8 +60,9 @@ def configure_logging(*, level: str = "", fmt: str = _DEFAULT_FORMAT,
                       stream: TextIO = sys.stdout) -> None:
     """Configure root logging: project namespaces verbose, 3rd-party quiet.
 
-    Root stays at WARNING so third-party INFO/DEBUG is suppressed. Longor
-    logger trees are raised to ``level`` (arg or ``config.LOG_LEVEL``).
+    Root stays at WARNING so third-party INFO/DEBUG is suppressed.
+    Robotic Task Breaker logger trees are raised to ``level``
+    (arg or ``config.LOG_LEVEL``).
     Call from process entrypoints only — not on library import.
     """
     if not level:
