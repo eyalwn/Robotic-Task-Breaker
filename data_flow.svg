@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="520" height="820" viewBox="0 0 520 820" role="img" aria-labelledby="title desc">
+  <title id="title">Robotic Task Breaker data flow</title>
+  <desc id="desc">Vertical time-ordered data flow. The user goal goes to the Planner, which adds an image from the environment and sends both to the LLM. The LLM sends a plan as subtasks to the Executor. The Executor adds images from the environment and sends the subtask to the VLA server. Robot actions then go to the simulator.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M 0 1.2 L 10 5 L 0 8.8 Z" fill="#292524"/>
+    </marker>
+    <marker id="arrow-gray" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" orient="auto" markerUnits="userSpaceOnUse">
+      <path d="M 0 1.2 L 10 5 L 0 8.8 Z" fill="#78716c"/>
+    </marker>
+  </defs>
+
+  <rect width="520" height="820" fill="#f6f5f2"/>
+  <text x="36" y="40" fill="#1c1917" font-family="Segoe UI, Arial, sans-serif" font-size="26" font-weight="700">Robotic Task Breaker</text>
+  <text x="36" y="66" fill="#57534e" font-family="Segoe UI, Arial, sans-serif" font-size="15">Data flow, in time order</text>
+
+  <rect x="48" y="92" width="200" height="56" rx="14" fill="#f5f5f4" stroke="#d6d3d1" stroke-width="1.5"/>
+  <text x="148" y="126" text-anchor="middle" fill="#1c1917" font-family="Segoe UI, Arial, sans-serif" font-size="17" font-weight="700">User goal</text>
+
+  <rect x="48" y="206" width="200" height="56" rx="14" fill="#e7f0fa" stroke="#9bb8d4" stroke-width="1.5"/>
+  <text x="148" y="240" text-anchor="middle" fill="#1c1917" font-family="Segoe UI, Arial, sans-serif" font-size="17" font-weight="700">Planner</text>
+
+  <rect x="48" y="320" width="200" height="56" rx="14" fill="#efe8f7" stroke="#c4b3dc" stroke-width="1.5"/>
+  <text x="148" y="354" text-anchor="middle" fill="#1c1917" font-family="Segoe UI, Arial, sans-serif" font-size="17" font-weight="700">LLM</text>
+
+  <rect x="48" y="434" width="200" height="56" rx="14" fill="#e5f3ec" stroke="#9dccb4" stroke-width="1.5"/>
+  <text x="148" y="468" text-anchor="middle" fill="#1c1917" font-family="Segoe UI, Arial, sans-serif" font-size="17" font-weight="700">Executor</text>
+
+  <rect x="48" y="548" width="200" height="56" rx="14" fill="#f8ebe6" stroke="#e0b5a6" stroke-width="1.5"/>
+  <text x="148" y="582" text-anchor="middle" fill="#1c1917" font-family="Segoe UI, Arial, sans-serif" font-size="17" font-weight="700">VLA server</text>
+
+  <rect x="48" y="662" width="200" height="56" rx="14" fill="#f3efe6" stroke="#c4b49a" stroke-width="1.5"/>
+  <text x="148" y="696" text-anchor="middle" fill="#1c1917" font-family="Segoe UI, Arial, sans-serif" font-size="17" font-weight="700">Robot Simulator</text>
+
+  <line x1="148" y1="148" x2="148" y2="206" fill="none" stroke="#292524" stroke-width="2.25" marker-end="url(#arrow)"/>
+
+  <line x1="148" y1="262" x2="148" y2="320" fill="none" stroke="#292524" stroke-width="2.25" marker-end="url(#arrow)"/>
+  <text x="164" y="298" fill="#44403c" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="600">goal + image</text>
+
+  <line x1="148" y1="376" x2="148" y2="434" fill="none" stroke="#292524" stroke-width="2.25" marker-end="url(#arrow)"/>
+  <text x="164" y="412" fill="#44403c" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="600">plan as subtasks</text>
+
+  <line x1="148" y1="490" x2="148" y2="548" fill="none" stroke="#292524" stroke-width="2.25" marker-end="url(#arrow)"/>
+  <text x="164" y="526" fill="#44403c" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="600">subtask + images</text>
+
+  <line x1="148" y1="604" x2="148" y2="662" fill="none" stroke="#292524" stroke-width="2.25" marker-end="url(#arrow)"/>
+  <text x="164" y="640" fill="#44403c" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="600">robot actions</text>
+
+  <polyline points="248,676 360,676 360,234 248,234" fill="none" stroke="#78716c" stroke-width="1.75" marker-end="url(#arrow-gray)"/>
+  <text x="304" y="222" text-anchor="middle" fill="#57534e" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="600">image</text>
+
+  <polyline points="248,704 440,704 440,462 248,462" fill="none" stroke="#78716c" stroke-width="1.75" marker-end="url(#arrow-gray)"/>
+  <text x="344" y="450" text-anchor="middle" fill="#57534e" font-family="Segoe UI, Arial, sans-serif" font-size="13" font-weight="600">images</text>
+
+  <text x="36" y="790" fill="#78716c" font-family="Segoe UI, Arial, sans-serif" font-size="14">Gray arrows are inputs read at that step.</text>
+</svg>

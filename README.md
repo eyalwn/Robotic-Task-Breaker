@@ -5,6 +5,7 @@
 - [About](#about)
 - [How Robotic Task Breaker works](#how-robotic-task-breaker-works)
 - [Architecture](#architecture)
+- [Data Flow](#data-flow)
 - [Engineering practices](#engineering-practices)
 - [Research evidence](#research-evidence)
 - [Research conclusions](#research-conclusions)
@@ -39,6 +40,12 @@ To see what this result means and where it stops holding, read the [Research con
 - **[RoboCasaEnv](src/envs/robocasa_env.py)** is the RoboCasa backend. It renders the scene and steps the robot.
 - **[VLAClient](src/vla_client.py)** sends images, robot state, and the subtask text to the VLA service, then returns the actions.
 - **[run_vla_server.py](services/run_vla_server.py)** starts the HTTP service in front of the selected VLA. The current service adapts GR00T.
+
+
+
+## Data Flow
+
+![Data flow from the user goal through the Planner, LLM, Executor, and VLA server to the robot simulator](data_flow.svg)
 
 
 
